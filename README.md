@@ -8,17 +8,8 @@ Swipe right on movies and music you love. Get personalized recommendations based
 - Vercel (Hosting)
 
 ## Development
+
 ```bash
 cd frontend
 npm install
 npm run dev
-```
-
-## Features
-- 🎬 Movie recommendations from TMDB
-- 🎵 Music recommendations from Spotify
-- 👆 Tinder-style swiping interface
-- 📋 Watch/Listen list
-- 🎭 Mood-based discovery
-- 👑 Admin dashboard
-
