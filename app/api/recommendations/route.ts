@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     if (error) throw error
     
     // Transform the data to match the expected format
-    const transformed = data?.map((rec: any) => ({
+    const transformed = (data || []).map((rec: any) => ({
       id: rec.id,
       user_id: rec.user_id,
       content_id: rec.content_id,
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       created_at: rec.created_at,
       profiles: Array.isArray(rec.profiles) ? rec.profiles[0] : rec.profiles,
       content: Array.isArray(rec.content) ? rec.content[0] : rec.content
-    })) || []
+    }))
     
     return NextResponse.json({ recommendations: transformed })
   } catch (error) {
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     }
     
     // Insert the recommendation
-    const { data, error } = await supabase
+    const { error: insertError } = await supabase
       .from('recommendations')
       .insert({
         user_id: session.user.id,
@@ -61,29 +61,41 @@ export async function POST(req: NextRequest) {
         recommendation_tier,
         comment: comment || null
       })
-      .select()
     
-    if (error) throw error
+    if (insertError) throw insertError
     
-    // Update the content's stats
-    const updateField = recommendation_tier === 'highly' ? 'stats_highly' : 
-                        recommendation_tier === 'recommended' ? 'stats_recommended' : 'stats_not'
-    
-    // Get current stats and increment
-    const { data: contentData } = await supabase
+    // Update the content's stats - fetch current values first
+    const { data: contentData, error: fetchError } = await supabase
       .from('content')
-      .select(updateField)
+      .select('stats_highly, stats_recommended, stats_not')
       .eq('id', content_id)
       .single()
     
-    const currentValue = contentData?.[updateField] || 0
+    if (fetchError) throw fetchError
     
-    await supabase
+    // Calculate new values
+    let newStats = { ...contentData }
+    if (recommendation_tier === 'highly') {
+      newStats.stats_highly = (contentData?.stats_highly || 0) + 1
+    } else if (recommendation_tier === 'recommended') {
+      newStats.stats_recommended = (contentData?.stats_recommended || 0) + 1
+    } else if (recommendation_tier === 'not') {
+      newStats.stats_not = (contentData?.stats_not || 0) + 1
+    }
+    
+    // Update the content table
+    const { error: updateError } = await supabase
       .from('content')
-      .update({ [updateField]: currentValue + 1 })
+      .update({
+        stats_highly: newStats.stats_highly,
+        stats_recommended: newStats.stats_recommended,
+        stats_not: newStats.stats_not
+      })
       .eq('id', content_id)
     
-    return NextResponse.json({ success: true, data })
+    if (updateError) throw updateError
+    
+    return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error saving recommendation:', error)
     return NextResponse.json({ error: 'Failed to save recommendation' }, { status: 500 })
