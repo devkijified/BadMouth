@@ -2,11 +2,16 @@
 
 import { Film, Music, Home, User, Sparkles, Heart } from 'lucide-react'
 
+interface ContentItem {
+  id: string
+  title: string
+}
+
 interface MobileNavProps {
   activeTab: 'movie' | 'music'
   onTabChange: (tab: 'movie' | 'music') => void
-  onViewDetails: (item: any) => void
-  items: any[]
+  onViewDetails: (item: ContentItem) => void
+  items: ContentItem[]
 }
 
 export default function MobileNav({ activeTab, onTabChange, onViewDetails, items }: MobileNavProps) {
