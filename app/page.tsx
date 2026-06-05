@@ -12,6 +12,8 @@ import MobileNav from '@/components/MobileNav'
 import SearchModal from '@/components/SearchModal'
 import RecommendModal from '@/components/RecommendModal'
 import HomeFeed from '@/components/HomeFeed'
+import TrendingBar from '@/components/TrendingBar'
+import QuickStats from '@/components/QuickStats'
 import { ContentItem, Category } from '@/types/content'
 
 export default function HomePage() {
@@ -497,6 +499,8 @@ export default function HomePage() {
               onRecommend={handleRecommend}
               activeTab={activeTab} 
             />
+            <TrendingBar />
+            <QuickStats userId={user.id} />
             <div className="container mx-auto px-4">
               <HomeFeed 
                 onViewDetails={handleViewDetails}
