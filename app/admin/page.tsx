@@ -33,7 +33,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
 
   // Available genres for filtering
-  const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock']
+  const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller']
 
   // Load watchlist from localStorage
   useEffect(() => {
@@ -59,7 +59,7 @@ export default function HomePage() {
     
     setCategories(categoriesData || [])
     
-    // Load content
+    // Load content for current tab
     const { data: contentData } = await supabase
       .from('content')
       .select('*')
@@ -85,8 +85,9 @@ export default function HomePage() {
 
   const addToWatchlist = (item: any) => {
     if (watchlist.some(i => i.id === item.id)) {
-      setWatchlist(watchlist.filter(i => i.id !== item.id))
-      localStorage.setItem('badmouth_watchlist', JSON.stringify(watchlist.filter(i => i.id !== item.id)))
+      const newWatchlist = watchlist.filter(i => i.id !== item.id)
+      setWatchlist(newWatchlist)
+      localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
       setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
     } else {
       const newWatchlist = [...watchlist, item]
@@ -101,7 +102,7 @@ export default function HomePage() {
 
   // Filter content by search and genre
   const getFilteredContent = () => {
-    let filtered = allContent
+    let filtered = [...allContent]
     if (searchQuery) {
       filtered = filtered.filter(item => 
         item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -324,6 +325,7 @@ export default function HomePage() {
       )}
 
       <main className="pt-16">
+        {/* Hero Carousel - first 3 items */}
         <HeroCarousel items={allContent.slice(0, 3)} onViewDetails={handleViewDetails} activeTab={activeTab} />
         
         <div className="container mx-auto px-4">
@@ -354,6 +356,7 @@ export default function HomePage() {
             />
           )}
           
+          {/* Community Recommendations */}
           <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
         </div>
       </main>
@@ -391,11 +394,24 @@ export default function HomePage() {
               </div>
               
               {/* Movie Details */}
-              {selectedContent.type === 'movie' && (
+              {selectedContent.type === 'movie' && selectedContent.director && (
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
-                  <div><span className="text-gray-400">🎬 Director:</span> {selectedContent.director || 'N/A'}</div>
+                  <div><span className="text-gray-400">🎬 Director:</span> {selectedContent.director}</div>
                   <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
                   <div><span className="text-gray-400">⏱️ Runtime:</span> {selectedContent.runtime || 'N/A'}</div>
+                  <div><span className="text-gray-400">🎭 Genre:</span> {selectedContent.genre}</div>
+                  {selectedContent.actors && selectedContent.actors.length > 0 && (
+                    <div className="col-span-2"><span className="text-gray-400">⭐ Cast:</span> {selectedContent.actors.join(', ')}</div>
+                  )}
+                </div>
+              )}
+              
+              {/* Music Details */}
+              {selectedContent.type === 'music' && selectedContent.artist && (
+                <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
+                  <div><span className="text-gray-400">🎤 Artist:</span> {selectedContent.artist}</div>
+                  <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
+                  <div><span className="text-gray-400">⏱️ Duration:</span> {selectedContent.duration || 'N/A'}</div>
                   <div><span className="text-gray-400">🎭 Genre:</span> {selectedContent.genre}</div>
                 </div>
               )}
