@@ -1,5 +1,5 @@
 'use client'
-
+import { ContentItem, Category } from '@/types/content'
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
