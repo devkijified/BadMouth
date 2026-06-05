@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
-import { Search, Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, ExternalLink } from 'lucide-react'
+import { Search, Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, ExternalLink, Shield } from 'lucide-react'
+import Link from 'next/link'
 import HeroCarousel from '@/components/HeroCarousel'
 import ContentRow from '@/components/ContentRow'
 import SocialRecommendations from '@/components/SocialRecommendations'
@@ -35,6 +36,46 @@ export default function HomePage() {
 
   // Available genres for filtering
   const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller']
+
+  // Close all panels
+  const closeAllPanels = () => {
+    setShowWatchlist(false)
+    setShowProfile(false)
+    setShowNotifications(false)
+  }
+
+  // Toggle watchlist panel (close others)
+  const toggleWatchlist = () => {
+    if (showWatchlist) {
+      setShowWatchlist(false)
+    } else {
+      setShowProfile(false)
+      setShowNotifications(false)
+      setShowWatchlist(true)
+    }
+  }
+
+  // Toggle profile panel (close others)
+  const toggleProfile = () => {
+    if (showProfile) {
+      setShowProfile(false)
+    } else {
+      setShowWatchlist(false)
+      setShowNotifications(false)
+      setShowProfile(true)
+    }
+  }
+
+  // Toggle notifications panel (close others)
+  const toggleNotifications = () => {
+    if (showNotifications) {
+      setShowNotifications(false)
+    } else {
+      setShowWatchlist(false)
+      setShowProfile(false)
+      setShowNotifications(true)
+    }
+  }
 
   // Load watchlist from localStorage
   useEffect(() => {
@@ -160,14 +201,14 @@ export default function HomePage() {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-4">
         <div className="text-center">
-          <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-r from-green-600 to-teal-600 rounded-full flex items-center justify-center">
+          <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-r from-teal-600 to-blue-600 rounded-full flex items-center justify-center">
             <Sparkles className="text-white" size={32} />
           </div>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-green-600 to-teal-600 bg-clip-text text-transparent mb-2">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-teal-600 to-blue-600 bg-clip-text text-transparent mb-2">
             BADMOUTH
           </h1>
           <p className="text-gray-400 mb-6">Your AI-powered movie & music recommendation engine</p>
-          <a href="/auth" className="inline-block px-8 py-3 bg-gradient-to-r from-green-600 to-teal-600 rounded-lg font-semibold">
+          <a href="/auth" className="inline-block px-8 py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-lg font-semibold">
             Get Started
           </a>
         </div>
@@ -178,7 +219,7 @@ export default function HomePage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500"></div>
       </div>
     )
   }
@@ -218,12 +259,27 @@ export default function HomePage() {
               <p className="p-4 text-gray-500 text-center">Your watchlist is empty</p>
             ) : (
               watchlist.map((item) => (
-                <div key={item.id} className="p-3 border-b border-gray-800 flex justify-between items-center">
+                <div 
+                  key={item.id} 
+                  className="p-3 border-b border-gray-800 flex justify-between items-center cursor-pointer hover:bg-gray-800 transition"
+                  onClick={() => {
+                    handleViewDetails(item)
+                    setShowWatchlist(false)
+                  }}
+                >
                   <div>
                     <p className="font-medium text-sm">{item.title}</p>
                     <p className="text-xs text-gray-400">{item.type}</p>
                   </div>
-                  <button onClick={() => removeFromWatchlist(item.id)} className="text-red-500 text-xs">Remove</button>
+                  <button 
+                    onClick={(e) => { 
+                      e.stopPropagation()
+                      removeFromWatchlist(item.id)
+                    }} 
+                    className="text-red-500 text-xs hover:text-red-400"
+                  >
+                    Remove
+                  </button>
                 </div>
               ))
             )}
@@ -268,16 +324,16 @@ export default function HomePage() {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-8">
-              <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="text-xl font-bold bg-gradient-to-r from-green-500 to-teal-500 bg-clip-text text-transparent">
+              <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="text-xl font-bold bg-gradient-to-r from-teal-500 to-blue-500 bg-clip-text text-transparent">
                 BADMOUTH
               </button>
               
               <nav className="hidden md:flex gap-6">
                 <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="text-white font-medium">Home</button>
-                <button onClick={() => setActiveTab('movie')} className={`flex items-center gap-1 transition ${activeTab === 'movie' ? 'text-green-500 border-b-2 border-green-500 pb-1' : 'text-gray-300 hover:text-white'}`}>
+                <button onClick={() => setActiveTab('movie')} className={`flex items-center gap-1 transition ${activeTab === 'movie' ? 'text-teal-500 border-b-2 border-teal-500 pb-1' : 'text-gray-300 hover:text-white'}`}>
                   <Film size={16} /> Movies
                 </button>
-                <button onClick={() => setActiveTab('music')} className={`flex items-center gap-1 transition ${activeTab === 'music' ? 'text-green-500 border-b-2 border-green-500 pb-1' : 'text-gray-300 hover:text-white'}`}>
+                <button onClick={() => setActiveTab('music')} className={`flex items-center gap-1 transition ${activeTab === 'music' ? 'text-teal-500 border-b-2 border-teal-500 pb-1' : 'text-gray-300 hover:text-white'}`}>
                   <Music size={16} /> Music
                 </button>
               </nav>
@@ -293,7 +349,7 @@ export default function HomePage() {
                       placeholder="Search movies or music..." 
                       value={searchQuery} 
                       onChange={(e) => setSearchQuery(e.target.value)} 
-                      className="px-4 py-1 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-green-500 text-sm w-48 md:w-64" 
+                      className="px-4 py-1 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500 text-sm w-48 md:w-64" 
                       autoFocus 
                     />
                     <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} className="ml-2 text-gray-400 hover:text-white">
@@ -318,8 +374,8 @@ export default function HomePage() {
                       {genres.map(genre => (
                         <button 
                           key={genre} 
-                          onClick={() => { setSelectedGenre(genre); setShowGenreFilter(false); }} 
-                          className={`w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-800 ${selectedGenre === genre ? 'text-green-500' : 'text-gray-300'}`}
+                          onClick={() => { setSelectedGenre(genre); setShowGenreFilter(false); getFilteredContent(); }} 
+                          className={`w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-800 ${selectedGenre === genre ? 'text-teal-500' : 'text-gray-300'}`}
                         >
                           {genre === 'all' ? 'All Genres' : genre}
                         </button>
@@ -329,17 +385,24 @@ export default function HomePage() {
                 )}
               </div>
               
-              <button onClick={() => setShowNotifications(true)} className="text-gray-300 hover:text-white relative">
+              <button onClick={toggleNotifications} className="text-gray-300 hover:text-white relative">
                 <Bell size={20} />
                 {notifications.length > 0 && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />}
               </button>
               
-              <button onClick={() => setShowWatchlist(true)} className="text-gray-300 hover:text-white relative">
+              <button onClick={toggleWatchlist} className="text-gray-300 hover:text-white relative">
                 <Heart size={20} />
-                {watchlist.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full text-[10px] flex items-center justify-center">{watchlist.length}</span>}
+                {watchlist.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-teal-500 rounded-full text-[10px] flex items-center justify-center text-white">{watchlist.length}</span>}
               </button>
+
+              {/* Admin Button - Only for kijified@gmail.com */}
+              {user?.email === 'kijified@gmail.com' && (
+                <Link href="/admin" className="text-gray-300 hover:text-teal-500 transition">
+                  <Shield size={20} />
+                </Link>
+              )}
               
-              <button onClick={() => setShowProfile(true)} className="hidden md:flex items-center gap-2 text-gray-300 hover:text-white">
+              <button onClick={toggleProfile} className="hidden md:flex items-center gap-2 text-gray-300 hover:text-white">
                 <img 
                   src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} 
                   alt="Profile" 
@@ -378,9 +441,14 @@ export default function HomePage() {
             <div className="space-y-2">
               <button onClick={() => { setActiveTab('movie'); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎬 Movies</button>
               <button onClick={() => { setActiveTab('music'); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎵 Music</button>
-              <button onClick={() => { setShowWatchlist(true); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">❤️ Watchlist ({watchlist.length})</button>
-              <button onClick={() => { setShowProfile(true); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">👤 Profile</button>
-              <button onClick={() => { setShowNotifications(true); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🔔 Notifications</button>
+              <button onClick={() => { toggleWatchlist(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">❤️ Watchlist ({watchlist.length})</button>
+              <button onClick={() => { toggleProfile(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">👤 Profile</button>
+              <button onClick={() => { toggleNotifications(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🔔 Notifications</button>
+              {user?.email === 'kijified@gmail.com' && (
+                <Link href="/admin" onClick={() => setIsSidebarOpen(false)} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg flex items-center gap-2">
+                  <Shield size={16} /> Admin
+                </Link>
+              )}
               <button onClick={signOut} className="w-full text-left p-3 text-red-500 hover:bg-gray-800 rounded-lg flex items-center gap-2">
                 <LogOut size={16} /> Sign Out
               </button>
@@ -409,7 +477,7 @@ export default function HomePage() {
           ))}
           
           {/* Search Results */}
-          {searchQuery && filteredContent.length > 0 && (
+          {searchQuery && (
             <ContentRow 
               title={`Search Results for "${searchQuery}"`}
               items={filteredContent}
@@ -444,7 +512,7 @@ export default function HomePage() {
               {/* Stats with Labels */}
               <div className="flex gap-6 mb-4 p-3 bg-gray-800/50 rounded-lg">
                 <div className="text-center">
-                  <div className="text-2xl text-green-500">🔥</div>
+                  <div className="text-2xl text-teal-500">🔥</div>
                   <div className="text-xs text-gray-400 mt-1">HIGHLY RECOMMENDED</div>
                   <div className="font-bold">{selectedContent.stats_highly || 0}</div>
                 </div>
@@ -465,7 +533,7 @@ export default function HomePage() {
                 <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
                 <div className="flex flex-wrap gap-2">
                   {selectedContent.platforms?.map((platform: string, idx: number) => (
-                    <button key={idx} className="px-4 py-2 bg-green-600 rounded-lg text-sm font-medium hover:bg-green-700 transition flex items-center gap-2">
+                    <button key={idx} className="px-4 py-2 bg-teal-600 rounded-lg text-sm font-medium hover:bg-teal-700 transition flex items-center gap-2">
                       {platform} <ExternalLink size={12} />
                     </button>
                   ))}
