@@ -39,13 +39,13 @@ export default function QuickStats({ userId }: QuickStatsProps) {
     setStats({
       totalRecommendations: recCount || 0,
       totalWatchlist: watchlist.length,
-      topGenre: 'Action', // This would come from analytics
+      topGenre: 'Action',
       contributionLevel: level
     })
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8 px-4">
       <div className="bg-gray-800/50 rounded-xl p-3 text-center">
         <ThumbsUp className="w-5 h-5 text-teal-500 mx-auto mb-1" />
         <p className="text-2xl font-bold">{stats.totalRecommendations}</p>
