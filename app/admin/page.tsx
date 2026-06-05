@@ -9,27 +9,58 @@ import ContentRow from '@/components/ContentRow'
 import SocialRecommendations from '@/components/SocialRecommendations'
 import MobileNav from '@/components/MobileNav'
 
+// Define types for our data
+interface ContentItem {
+  id: string
+  title: string
+  description: string
+  long_description?: string
+  image_url: string
+  backdrop_url?: string
+  type: 'movie' | 'music'
+  year: number
+  director?: string
+  artist?: string
+  actors?: string[]
+  platforms: string[]
+  trailer_url?: string
+  runtime?: string
+  duration?: string
+  genre: string
+  stats_highly: number
+  stats_recommended: number
+  stats_not: number
+}
+
+interface Category {
+  id: string
+  name: string
+  description: string
+  type: 'movie' | 'music'
+  display_order: number
+}
+
 export default function HomePage() {
   const { user, signOut } = useAuth()
   const [activeTab, setActiveTab] = useState<'movie' | 'music'>('movie')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
-  const [selectedContent, setSelectedContent] = useState<any>(null)
+  const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const [selectedGenre, setSelectedGenre] = useState<string>('all')
   const [showGenreFilter, setShowGenreFilter] = useState(false)
-  const [watchlist, setWatchlist] = useState<any[]>([])
+  const [watchlist, setWatchlist] = useState<ContentItem[]>([])
   const [notifications, setNotifications] = useState<string[]>([])
   const [showWatchlist, setShowWatchlist] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   
   // Data from Supabase
-  const [categories, setCategories] = useState<any[]>([])
-  const [allContent, setAllContent] = useState<any[]>([])
-  const [contentByCategory, setContentByCategory] = useState<Record<string, any[]>>({})
+  const [categories, setCategories] = useState<Category[]>([])
+  const [allContent, setAllContent] = useState<ContentItem[]>([])
+  const [contentByCategory, setContentByCategory] = useState<Record<string, ContentItem[]>>({})
   const [loading, setLoading] = useState(true)
 
   // Available genres for filtering
@@ -38,8 +69,19 @@ export default function HomePage() {
   // Load watchlist from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('badmouth_watchlist')
-    if (saved) setWatchlist(JSON.parse(saved))
+    if (saved) {
+      try {
+        setWatchlist(JSON.parse(saved))
+      } catch (e) {
+        console.error('Failed to parse watchlist', e)
+      }
+    }
   }, [])
+
+  // Save watchlist to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('badmouth_watchlist', JSON.stringify(watchlist))
+  }, [watchlist])
 
   // Load data from Supabase
   useEffect(() => {
@@ -49,50 +91,56 @@ export default function HomePage() {
   const loadData = async () => {
     setLoading(true)
     
-    // Load categories for current tab
-    const { data: categoriesData } = await supabase
-      .from('categories')
-      .select('*')
-      .eq('type', activeTab)
-      .eq('is_active', true)
-      .order('display_order')
-    
-    setCategories(categoriesData || [])
-    
-    // Load content for current tab
-    const { data: contentData } = await supabase
-      .from('content')
-      .select('*')
-      .eq('type', activeTab)
-    
-    setAllContent(contentData || [])
-    
-    // Load content-category relationships
-    const { data: relations } = await supabase
-      .from('content_categories')
-      .select('*')
-    
-    // Organize content by category
-    const byCategory: Record<string, any[]> = {}
-    for (const category of categoriesData || []) {
-      const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
-      byCategory[category.name] = contentData?.filter(c => contentIds.includes(c.id)) || []
+    try {
+      // Load categories for current tab
+      const { data: categoriesData, error: categoriesError } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('type', activeTab)
+        .eq('is_active', true)
+        .order('display_order')
+      
+      if (categoriesError) throw categoriesError
+      setCategories(categoriesData || [])
+      
+      // Load content for current tab
+      const { data: contentData, error: contentError } = await supabase
+        .from('content')
+        .select('*')
+        .eq('type', activeTab)
+      
+      if (contentError) throw contentError
+      setAllContent(contentData || [])
+      
+      // Load content-category relationships
+      const { data: relations, error: relationsError } = await supabase
+        .from('content_categories')
+        .select('*')
+      
+      if (relationsError) throw relationsError
+      
+      // Organize content by category
+      const byCategory: Record<string, ContentItem[]> = {}
+      for (const category of categoriesData || []) {
+        const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
+        byCategory[category.name] = contentData?.filter(c => contentIds.includes(c.id)) || []
+      }
+      setContentByCategory(byCategory)
+    } catch (error) {
+      console.error('Error loading data:', error)
+    } finally {
+      setLoading(false)
     }
-    setContentByCategory(byCategory)
-    
-    setLoading(false)
   }
 
-  const addToWatchlist = (item: any) => {
+  const addToWatchlist = (item: ContentItem) => {
     if (watchlist.some(i => i.id === item.id)) {
       const newWatchlist = watchlist.filter(i => i.id !== item.id)
       setWatchlist(newWatchlist)
-      localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
       setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
     } else {
       const newWatchlist = [...watchlist, item]
       setWatchlist(newWatchlist)
-      localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
       setNotifications([`✨ "${item.title}" added to watchlist!`, ...notifications.slice(0, 4)])
     }
     setTimeout(() => setNotifications(prev => prev.slice(1)), 3000)
@@ -101,7 +149,7 @@ export default function HomePage() {
   const isInWatchlist = (id: string) => watchlist.some(i => i.id === id)
 
   // Filter content by search and genre
-  const getFilteredContent = () => {
+  const getFilteredContent = (): ContentItem[] => {
     let filtered = [...allContent]
     if (searchQuery) {
       filtered = filtered.filter(item => 
@@ -115,7 +163,7 @@ export default function HomePage() {
     return filtered
   }
 
-  const handleViewDetails = (item: any) => {
+  const handleViewDetails = (item: ContentItem) => {
     setSelectedContent(item)
     setShowDetailsModal(true)
   }
@@ -211,7 +259,11 @@ export default function HomePage() {
             <button onClick={() => setShowProfile(false)}><X size={16} /></button>
           </div>
           <div className="p-4 text-center">
-            <img src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} alt="Profile" className="w-20 h-20 rounded-full mx-auto mb-3" />
+            <img 
+              src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} 
+              alt="Profile" 
+              className="w-20 h-20 rounded-full mx-auto mb-3" 
+            />
             <h4 className="font-semibold">{user.user_metadata?.username || user.email?.split('@')[0]}</h4>
             <p className="text-xs text-gray-400 mb-3">{user.email}</p>
             <div className="grid grid-cols-2 gap-3 text-center">
@@ -256,11 +308,22 @@ export default function HomePage() {
               <div className="relative">
                 {showSearch ? (
                   <div className="flex items-center">
-                    <input type="text" placeholder="Search movies or music..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="px-4 py-1 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-green-500 text-sm w-48 md:w-64" autoFocus />
-                    <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} className="ml-2 text-gray-400 hover:text-white"><X size={18} /></button>
+                    <input 
+                      type="text" 
+                      placeholder="Search movies or music..." 
+                      value={searchQuery} 
+                      onChange={(e) => setSearchQuery(e.target.value)} 
+                      className="px-4 py-1 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-green-500 text-sm w-48 md:w-64" 
+                      autoFocus 
+                    />
+                    <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} className="ml-2 text-gray-400 hover:text-white">
+                      <X size={18} />
+                    </button>
                   </div>
                 ) : (
-                  <button onClick={() => setShowSearch(true)} className="text-gray-300 hover:text-white"><Search size={20} /></button>
+                  <button onClick={() => setShowSearch(true)} className="text-gray-300 hover:text-white">
+                    <Search size={20} />
+                  </button>
                 )}
               </div>
 
@@ -273,7 +336,11 @@ export default function HomePage() {
                   <div className="absolute top-8 right-0 w-48 bg-gray-900 rounded-xl shadow-xl border border-gray-700 z-50">
                     <div className="p-2">
                       {genres.map(genre => (
-                        <button key={genre} onClick={() => { setSelectedGenre(genre); setShowGenreFilter(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-800 ${selectedGenre === genre ? 'text-green-500' : 'text-gray-300'}`}>
+                        <button 
+                          key={genre} 
+                          onClick={() => { setSelectedGenre(genre); setShowGenreFilter(false); }} 
+                          className={`w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-800 ${selectedGenre === genre ? 'text-green-500' : 'text-gray-300'}`}
+                        >
                           {genre === 'all' ? 'All Genres' : genre}
                         </button>
                       ))}
@@ -293,10 +360,16 @@ export default function HomePage() {
               </button>
               
               <button onClick={() => setShowProfile(true)} className="hidden md:flex items-center gap-2 text-gray-300 hover:text-white">
-                <img src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} alt="Profile" className="w-8 h-8 rounded-full" />
+                <img 
+                  src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} 
+                  alt="Profile" 
+                  className="w-8 h-8 rounded-full" 
+                />
               </button>
               
-              <button onClick={() => setIsSidebarOpen(true)} className="md:hidden text-gray-300 hover:text-white"><Menu size={20} /></button>
+              <button onClick={() => setIsSidebarOpen(true)} className="md:hidden text-gray-300 hover:text-white">
+                <Menu size={20} />
+              </button>
             </div>
           </div>
         </div>
@@ -307,10 +380,20 @@ export default function HomePage() {
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/80" onClick={() => setIsSidebarOpen(false)} />
           <div className="absolute right-0 top-0 bottom-0 w-64 bg-gray-900 shadow-xl p-4">
-            <div className="flex justify-between items-center mb-6"><span className="text-lg font-bold">Menu</span><button onClick={() => setIsSidebarOpen(false)}><X size={20} /></button></div>
+            <div className="flex justify-between items-center mb-6">
+              <span className="text-lg font-bold">Menu</span>
+              <button onClick={() => setIsSidebarOpen(false)}><X size={20} /></button>
+            </div>
             <div className="flex items-center gap-3 mb-6 p-3 bg-gray-800 rounded-lg">
-              <img src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} alt="Profile" className="w-10 h-10 rounded-full" />
-              <div><div className="text-sm font-semibold">{user.user_metadata?.username || user.email?.split('@')[0]}</div><div className="text-xs text-gray-400">{user.email}</div></div>
+              <img 
+                src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} 
+                alt="Profile" 
+                className="w-10 h-10 rounded-full" 
+              />
+              <div>
+                <div className="text-sm font-semibold">{user.user_metadata?.username || user.email?.split('@')[0]}</div>
+                <div className="text-xs text-gray-400">{user.email}</div>
+              </div>
             </div>
             <div className="space-y-2">
               <button onClick={() => { setActiveTab('movie'); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎬 Movies</button>
@@ -318,7 +401,9 @@ export default function HomePage() {
               <button onClick={() => { setShowWatchlist(true); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">❤️ Watchlist ({watchlist.length})</button>
               <button onClick={() => { setShowProfile(true); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">👤 Profile</button>
               <button onClick={() => { setShowNotifications(true); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🔔 Notifications</button>
-              <button onClick={signOut} className="w-full text-left p-3 text-red-500 hover:bg-gray-800 rounded-lg flex items-center gap-2"><LogOut size={16} /> Sign Out</button>
+              <button onClick={signOut} className="w-full text-left p-3 text-red-500 hover:bg-gray-800 rounded-lg flex items-center gap-2">
+                <LogOut size={16} /> Sign Out
+              </button>
             </div>
           </div>
         </div>
@@ -367,7 +452,9 @@ export default function HomePage() {
           <div className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="relative">
               <img src={selectedContent.backdrop_url || selectedContent.image_url} alt={selectedContent.title} className="w-full h-48 object-cover" />
-              <button onClick={() => setShowDetailsModal(false)} className="absolute top-4 right-4 p-2 bg-black/50 rounded-full"><X size={20} /></button>
+              <button onClick={() => setShowDetailsModal(false)} className="absolute top-4 right-4 p-2 bg-black/50 rounded-full">
+                <X size={20} />
+              </button>
             </div>
             <div className="p-5">
               <h2 className="text-2xl font-bold mb-1">{selectedContent.title}</h2>
@@ -376,9 +463,21 @@ export default function HomePage() {
               
               {/* Stats with Labels */}
               <div className="flex gap-6 mb-4 p-3 bg-gray-800/50 rounded-lg">
-                <div className="text-center"><div className="text-2xl text-green-500">🔥</div><div className="text-xs text-gray-400 mt-1">HIGHLY RECOMMENDED</div><div className="font-bold">{selectedContent.stats_highly || 0}</div></div>
-                <div className="text-center"><div className="text-2xl text-blue-500">👍</div><div className="text-xs text-gray-400 mt-1">RECOMMENDED</div><div className="font-bold">{selectedContent.stats_recommended || 0}</div></div>
-                <div className="text-center"><div className="text-2xl text-gray-500">👎</div><div className="text-xs text-gray-400 mt-1">NOT RECOMMENDED</div><div className="font-bold">{selectedContent.stats_not || 0}</div></div>
+                <div className="text-center">
+                  <div className="text-2xl text-green-500">🔥</div>
+                  <div className="text-xs text-gray-400 mt-1">HIGHLY RECOMMENDED</div>
+                  <div className="font-bold">{selectedContent.stats_highly || 0}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl text-blue-500">👍</div>
+                  <div className="text-xs text-gray-400 mt-1">RECOMMENDED</div>
+                  <div className="font-bold">{selectedContent.stats_recommended || 0}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl text-gray-500">👎</div>
+                  <div className="text-xs text-gray-400 mt-1">NOT RECOMMENDED</div>
+                  <div className="font-bold">{selectedContent.stats_not || 0}</div>
+                </div>
               </div>
               
               {/* Where to Watch / Listen */}
@@ -403,16 +502,6 @@ export default function HomePage() {
                   {selectedContent.actors && selectedContent.actors.length > 0 && (
                     <div className="col-span-2"><span className="text-gray-400">⭐ Cast:</span> {selectedContent.actors.join(', ')}</div>
                   )}
-                </div>
-              )}
-              
-              {/* Music Details */}
-              {selectedContent.type === 'music' && selectedContent.artist && (
-                <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
-                  <div><span className="text-gray-400">🎤 Artist:</span> {selectedContent.artist}</div>
-                  <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
-                  <div><span className="text-gray-400">⏱️ Duration:</span> {selectedContent.duration || 'N/A'}</div>
-                  <div><span className="text-gray-400">🎭 Genre:</span> {selectedContent.genre}</div>
                 </div>
               )}
               
