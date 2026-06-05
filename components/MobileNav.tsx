@@ -44,12 +44,13 @@ export default function MobileNav({
               <span className="text-[10px] mt-1">Movies</span>
             </button>
             
-            <Link 
-              href="/explore"
+            <button 
+              onClick={onWatchlistClick}
               className="flex flex-col items-center justify-center -mt-8 w-14 h-14 bg-gradient-to-r from-teal-600 to-blue-600 rounded-full shadow-lg hover:scale-110 transition-transform"
             >
-              <Compass size={24} className="text-white" />
-            </Link>
+              <Heart size={24} className="text-white" />
+              <span className="text-[8px] mt-0.5 text-white">Watchlist</span>
+            </button>
             
             <button 
               onClick={() => onTabChange('music')}
