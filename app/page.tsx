@@ -1,5 +1,5 @@
 'use client'
-import { ContentItem, Category } from '@/types/content'
+
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
@@ -8,37 +8,7 @@ import HeroCarousel from '@/components/HeroCarousel'
 import ContentRow from '@/components/ContentRow'
 import SocialRecommendations from '@/components/SocialRecommendations'
 import MobileNav from '@/components/MobileNav'
-
-// Define types for our data
-interface ContentItem {
-  id: string
-  title: string
-  description: string
-  long_description?: string
-  image_url: string
-  backdrop_url?: string
-  type: 'movie' | 'music'
-  year: number
-  director?: string
-  artist?: string
-  actors?: string[]
-  platforms: string[]
-  trailer_url?: string
-  runtime?: string
-  duration?: string
-  genre: string
-  stats_highly: number
-  stats_recommended: number
-  stats_not: number
-}
-
-interface Category {
-  id: string
-  name: string
-  description: string
-  type: 'movie' | 'music'
-  display_order: number
-}
+import { ContentItem, Category } from '@/types/content'
 
 export default function HomePage() {
   const { user, signOut } = useAuth()
