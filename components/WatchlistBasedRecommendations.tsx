@@ -36,23 +36,28 @@ export default function WatchlistBasedRecommendations({
   const loadRecommendations = async () => {
     setLoading(true)
     
-    // Get genres from watchlist items
+    // Get genres and artists from watchlist items
     const watchlistGenres = new Set<string>()
+    const watchlistArtists = new Set<string>()
+    
     watchlist.forEach(item => {
       if (item.genre) watchlistGenres.add(item.genre)
+      if (item.artist) watchlistArtists.add(item.artist)
     })
     
-    if (watchlistGenres.size === 0) {
+    if (watchlistGenres.size === 0 && watchlistArtists.size === 0) {
       setLoading(false)
       return
     }
     
-    // Get content that matches watchlist genres but isn't in watchlist
-    const { data } = await supabase
-      .from('content')
-      .select('*')
-      .in('genre', Array.from(watchlistGenres))
-      .limit(12)
+    // Build query based on watchlist preferences
+    let query = supabase.from('content').select('*')
+    
+    if (watchlistGenres.size > 0) {
+      query = query.in('genre', Array.from(watchlistGenres))
+    }
+    
+    const { data } = await query.limit(12)
     
     // Filter out items already in watchlist
     const filtered = data?.filter(item => !watchlist.some(w => w.id === item.id)) || []
@@ -60,6 +65,7 @@ export default function WatchlistBasedRecommendations({
     setLoading(false)
   }
 
+  // Only show if watchlist has items AND we have recommendations
   if (watchlist.length === 0 || recommendations.length === 0) return null
 
   return (
