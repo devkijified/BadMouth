@@ -1,6 +1,7 @@
 'use client'
 
 import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle, Heart } from 'lucide-react'
+import Link from 'next/link'
 import { ContentItem } from '@/types/content'
 
 interface ContentRowProps {
@@ -38,7 +39,12 @@ export default function ContentRow({
     <div className="mb-8">
       <div className="flex justify-between items-center mb-3 px-4">
         <h2 className="text-xl md:text-2xl font-semibold">{title}</h2>
-        <button className="text-sm text-teal-400 hover:text-teal-300 transition">View All →</button>
+        <Link 
+          href="/explore" 
+          className="text-sm text-teal-400 hover:text-teal-300 transition flex items-center gap-1"
+        >
+          View All <span className="text-lg">→</span>
+        </Link>
       </div>
 
       <div className="relative group">
@@ -94,7 +100,6 @@ export default function ContentRow({
               <div className="p-2">
                 <h3 className="font-semibold text-sm truncate">{item.title}</h3>
                 {item.artist && <p className="text-xs text-gray-400">{item.artist}</p>}
-                {/* Mobile responsive stats */}
                 <div className="flex justify-between mt-1">
                   <span className="flex items-center gap-0.5">
                     <span className="text-teal-500 text-xs sm:text-sm">🔥</span>
