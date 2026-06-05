@@ -263,6 +263,25 @@ export default function HomePage() {
 
   const filteredContent = getFilteredContent()
 
+  // Platform links mapping for external sites
+  const platformLinks: Record<string, string> = {
+    'Netflix': 'https://netflix.com',
+    'Prime Video': 'https://primevideo.com',
+    'Amazon Prime': 'https://primevideo.com',
+    'Max': 'https://max.com',
+    'HBO Max': 'https://max.com',
+    'Hulu': 'https://hulu.com',
+    'Disney+': 'https://disneyplus.com',
+    'Paramount+': 'https://paramountplus.com',
+    'Apple TV+': 'https://tv.apple.com',
+    'Peacock': 'https://peacocktv.com',
+    'Spotify': 'https://spotify.com',
+    'Apple Music': 'https://music.apple.com',
+    'YouTube Music': 'https://music.youtube.com',
+    'Tidal': 'https://tidal.com',
+    'Deezer': 'https://deezer.com',
+  }
+
   return (
     <div className="min-h-screen bg-black">
       <SearchModal 
@@ -319,7 +338,7 @@ export default function HomePage() {
                   }}
                 >
                   <div>
-                    <p className="font-medium text-sm">{item.title}</p>
+                    <p className="font-medium text-sm truncate max-w-[150px]">{item.title}</p>
                     <p className="text-xs text-gray-400">{item.type}</p>
                   </div>
                   <button 
@@ -573,14 +592,24 @@ export default function HomePage() {
                 </div>
               </div>
               
+              {/* Where to Watch / Listen - Working Links */}
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
                 <div className="flex flex-wrap gap-2">
-                  {selectedContent.platforms?.map((platform: string, idx: number) => (
-                    <button key={idx} className="px-4 py-2 bg-teal-600 rounded-lg text-sm font-medium hover:bg-teal-700 transition">
-                      {platform}
-                    </button>
-                  ))}
+                  {selectedContent.platforms?.map((platform: string, idx: number) => {
+                    const link = platformLinks[platform] || '#'
+                    return (
+                      <a 
+                        key={idx} 
+                        href={link} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 bg-teal-600 rounded-lg text-sm font-medium hover:bg-teal-700 transition flex items-center gap-2"
+                      >
+                        {platform} <span className="text-xs">↗</span>
+                      </a>
+                    )
+                  })}
                 </div>
               </div>
               
@@ -590,6 +619,9 @@ export default function HomePage() {
                   <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
                   <div><span className="text-gray-400">⏱️ Runtime:</span> {selectedContent.runtime || 'N/A'}</div>
                   <div><span className="text-gray-400">🎭 Genre:</span> {selectedContent.genre}</div>
+                  {selectedContent.actors && selectedContent.actors.length > 0 && (
+                    <div className="col-span-2"><span className="text-gray-400">⭐ Cast:</span> {selectedContent.actors.join(', ')}</div>
+                  )}
                 </div>
               )}
               
