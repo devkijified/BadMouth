@@ -6,8 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useRouter } from 'next/navigation'
 import { 
   Plus, Edit, Trash2, Film, Music, Layers, Shield, X, 
-  Users, TrendingUp, Settings, Eye, Heart, Star, Calendar,
-  Search, Filter, ChevronDown, CheckCircle, XCircle, AlertCircle
+  Users, TrendingUp, Settings, Heart, Star, Search
 } from 'lucide-react'
 import Link from 'next/link'
 import { ContentItem, Category } from '@/types/content'
@@ -28,7 +27,6 @@ export default function AdminPage() {
   // Modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [showContentModal, setShowContentModal] = useState(false)
-  const [showUserModal, setShowUserModal] = useState(false)
   const [editingItem, setEditingItem] = useState<any>(null)
   
   // Search/filter states
@@ -370,7 +368,7 @@ export default function AdminPage() {
                           <img src={userItem.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userItem.username}`} className="w-8 h-8 rounded-full" />
                           <span className="text-sm">{userItem.id?.slice(0, 8)}...</span>
                         </div>
-                      </td>
+                       </td>
                       <td className="px-4 py-3">{userItem.username || 'No username'}</td>
                       <td className="px-4 py-3">
                         <select
@@ -386,7 +384,7 @@ export default function AdminPage() {
                       <td className="px-4 py-3 text-sm">{new Date(userItem.created_at).toLocaleDateString()}</td>
                       <td className="px-4 py-3">
                         <button onClick={() => updateUserRole(userItem.id, userItem.role === 'admin' ? 'user' : 'admin')} 
-                          className="text-teal-500 hover:text-teal-400 mr-2 text-sm">
+                          className="text-teal-500 hover:text-teal-400 text-sm">
                           Toggle Admin
                         </button>
                       </td>
@@ -476,6 +474,7 @@ export default function AdminPage() {
                           setContentForm({ 
                             ...item, 
                             long_description: item.long_description || '',
+                            backdrop_url: item.backdrop_url || '',
                             actors: item.actors?.join(', ') || '', 
                             platforms: item.platforms?.join(', ') || '', 
                             category_ids: [] 
