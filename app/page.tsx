@@ -12,7 +12,7 @@ import MobileNav from '@/components/MobileNav'
 import { ContentItem, Category } from '@/types/content'
 
 export default function HomePage() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, signOut, loading: authLoading } = useAuth()  // ← Make sure signOut is here
   const [activeTab, setActiveTab] = useState<'movie' | 'music'>('movie')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
