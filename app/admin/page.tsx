@@ -5,41 +5,10 @@ import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
 import { useRouter } from 'next/navigation'
 import { Plus, Edit, Trash2, Film, Music, Layers, Shield, X } from 'lucide-react'
-
-// Define types for admin
-interface Category {
-  id: string
-  name: string
-  description: string
-  type: 'movie' | 'music'
-  is_active: boolean
-  display_order: number
-}
-
-interface ContentItem {
-  id: string
-  title: string
-  description: string
-  long_description: string | null
-  image_url: string
-  backdrop_url: string | null
-  type: 'movie' | 'music'
-  year: number
-  director: string | null
-  artist: string | null
-  actors: string[] | null
-  platforms: string[]
-  trailer_url: string | null
-  runtime: string | null
-  duration: string | null
-  genre: string
-  stats_highly: number
-  stats_recommended: number
-  stats_not: number
-}
+import { ContentItem, Category } from '@/types/content'
 
 export default function AdminPage() {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const router = useRouter()
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -80,16 +49,28 @@ export default function AdminPage() {
   })
 
   useEffect(() => {
-    checkAdminAndLoadData()
-  }, [])
+    if (!authLoading) {
+      checkAdminAndLoadData()
+    }
+  }, [authLoading, user])
 
   const checkAdminAndLoadData = async () => {
+    // First check by email (most reliable)
+    if (user?.email === 'kijified@gmail.com') {
+      setIsAdmin(true)
+      await loadCategories()
+      await loadContent()
+      setLoading(false)
+      return
+    }
+    
+    // Fallback: check role in database
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', user?.id)
       .single()
-
+    
     if (profile?.role === 'admin') {
       setIsAdmin(true)
       await loadCategories()
@@ -154,7 +135,6 @@ export default function AdminPage() {
       genre: contentForm.genre,
     }
     
-    // Add type-specific fields
     if (contentForm.type === 'movie') {
       dataToSave.director = contentForm.director || null
       dataToSave.actors = contentForm.actors.split(',').map(a => a.trim()).filter(a => a)
@@ -177,7 +157,6 @@ export default function AdminPage() {
       contentId = data?.[0]?.id
     }
     
-    // Link content to categories
     if (contentId && contentForm.category_ids.length) {
       await supabase.from('content_categories').delete().eq('content_id', contentId)
       const links = contentForm.category_ids.map(catId => ({
@@ -204,10 +183,10 @@ export default function AdminPage() {
     }
   }
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500"></div>
       </div>
     )
   }
@@ -219,7 +198,7 @@ export default function AdminPage() {
           <Shield size={48} className="text-red-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
           <p className="text-gray-400">Admin privileges required</p>
-          <button onClick={() => router.push('/')} className="mt-4 px-4 py-2 bg-green-600 rounded-lg">Go Home</button>
+          <button onClick={() => router.push('/')} className="mt-4 px-4 py-2 bg-teal-600 rounded-lg">Go Home</button>
         </div>
       </div>
     )
@@ -229,19 +208,19 @@ export default function AdminPage() {
     <div className="min-h-screen bg-black">
       <div className="container mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-green-500 to-teal-500 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-teal-500 to-blue-500 bg-clip-text text-transparent">
             Admin Dashboard
           </h1>
           <div className="flex gap-2">
             <button 
               onClick={() => { setActiveTab('categories'); setShowCategoryModal(true); setEditingItem(null); setCategoryForm({ name: '', description: '', type: 'movie', is_active: true, display_order: 0 }) }} 
-              className="px-4 py-2 bg-green-600 rounded-lg flex items-center gap-2 hover:bg-green-700 transition"
+              className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2 hover:bg-teal-700 transition"
             >
               <Plus size={16} /> Add Category
             </button>
             <button 
               onClick={() => { setActiveTab('content'); setShowContentModal(true); setEditingItem(null); setContentForm({ ...contentForm, category_ids: [] }) }} 
-              className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2 hover:bg-teal-700 transition"
+              className="px-4 py-2 bg-blue-600 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition"
             >
               <Plus size={16} /> Add Content
             </button>
@@ -251,13 +230,13 @@ export default function AdminPage() {
         <div className="flex gap-2 mb-6 border-b border-gray-800">
           <button 
             onClick={() => setActiveTab('categories')} 
-            className={`px-4 py-2 transition ${activeTab === 'categories' ? 'text-green-500 border-b-2 border-green-500' : 'text-gray-400'}`}
+            className={`px-4 py-2 transition ${activeTab === 'categories' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}
           >
             <Layers size={16} className="inline mr-1" /> Categories
           </button>
           <button 
             onClick={() => setActiveTab('content')} 
-            className={`px-4 py-2 transition ${activeTab === 'content' ? 'text-green-500 border-b-2 border-green-500' : 'text-gray-400'}`}
+            className={`px-4 py-2 transition ${activeTab === 'content' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}
           >
             <Film size={16} className="inline mr-1" /> Content
           </button>
@@ -358,19 +337,19 @@ export default function AdminPage() {
               placeholder="Name" 
               value={categoryForm.name} 
               onChange={e => setCategoryForm({ ...categoryForm, name: e.target.value })} 
-              className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-green-500" 
+              className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" 
             />
             <input 
               type="text" 
               placeholder="Description" 
               value={categoryForm.description} 
               onChange={e => setCategoryForm({ ...categoryForm, description: e.target.value })} 
-              className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-green-500" 
+              className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" 
             />
             <select 
               value={categoryForm.type} 
               onChange={e => setCategoryForm({ ...categoryForm, type: e.target.value as 'movie' | 'music' })} 
-              className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-green-500"
+              className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500"
             >
               <option value="movie">Movies</option>
               <option value="music">Music</option>
@@ -380,10 +359,10 @@ export default function AdminPage() {
               placeholder="Display Order" 
               value={categoryForm.display_order} 
               onChange={e => setCategoryForm({ ...categoryForm, display_order: parseInt(e.target.value) })} 
-              className="w-full mb-4 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-green-500" 
+              className="w-full mb-4 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" 
             />
             <div className="flex gap-2">
-              <button onClick={saveCategory} className="flex-1 py-2 bg-green-600 rounded hover:bg-green-700 transition">Save</button>
+              <button onClick={saveCategory} className="flex-1 py-2 bg-teal-600 rounded hover:bg-teal-700 transition">Save</button>
               <button onClick={() => setShowCategoryModal(false)} className="flex-1 py-2 bg-gray-700 rounded hover:bg-gray-600 transition">Cancel</button>
             </div>
           </div>
@@ -399,18 +378,18 @@ export default function AdminPage() {
               <button onClick={() => setShowContentModal(false)} className="p-1 hover:bg-gray-800 rounded"><X size={20} /></button>
             </div>
             <div className="space-y-3">
-              <input type="text" placeholder="Title" value={contentForm.title} onChange={e => setContentForm({ ...contentForm, title: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-green-500" />
-              <textarea placeholder="Description" value={contentForm.description} onChange={e => setContentForm({ ...contentForm, description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-green-500" rows={2} />
-              <textarea placeholder="Long Description" value={contentForm.long_description} onChange={e => setContentForm({ ...contentForm, long_description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-green-500" rows={3} />
-              <input type="text" placeholder="Image URL" value={contentForm.image_url} onChange={e => setContentForm({ ...contentForm, image_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-green-500" />
-              <input type="text" placeholder="Backdrop URL (optional)" value={contentForm.backdrop_url} onChange={e => setContentForm({ ...contentForm, backdrop_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-green-500" />
+              <input type="text" placeholder="Title" value={contentForm.title} onChange={e => setContentForm({ ...contentForm, title: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
+              <textarea placeholder="Description" value={contentForm.description} onChange={e => setContentForm({ ...contentForm, description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" rows={2} />
+              <textarea placeholder="Long Description" value={contentForm.long_description} onChange={e => setContentForm({ ...contentForm, long_description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" rows={3} />
+              <input type="text" placeholder="Image URL" value={contentForm.image_url} onChange={e => setContentForm({ ...contentForm, image_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              <input type="text" placeholder="Backdrop URL (optional)" value={contentForm.backdrop_url} onChange={e => setContentForm({ ...contentForm, backdrop_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               
-              <select value={contentForm.type} onChange={e => setContentForm({ ...contentForm, type: e.target.value as 'movie' | 'music' })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-green-500">
+              <select value={contentForm.type} onChange={e => setContentForm({ ...contentForm, type: e.target.value as 'movie' | 'music' })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded">
                 <option value="movie">Movie</option>
                 <option value="music">Music</option>
               </select>
               
-              <input type="number" placeholder="Year" value={contentForm.year} onChange={e => setContentForm({ ...contentForm, year: parseInt(e.target.value) })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-green-500" />
+              <input type="number" placeholder="Year" value={contentForm.year} onChange={e => setContentForm({ ...contentForm, year: parseInt(e.target.value) })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               
               {contentForm.type === 'movie' ? (
                 <>
@@ -449,7 +428,7 @@ export default function AdminPage() {
               </div>
             </div>
             <div className="flex gap-2 mt-6">
-              <button onClick={saveContent} className="flex-1 py-2 bg-green-600 rounded hover:bg-green-700 transition">Save</button>
+              <button onClick={saveContent} className="flex-1 py-2 bg-teal-600 rounded hover:bg-teal-700 transition">Save</button>
               <button onClick={() => setShowContentModal(false)} className="flex-1 py-2 bg-gray-700 rounded hover:bg-gray-600 transition">Cancel</button>
             </div>
           </div>
