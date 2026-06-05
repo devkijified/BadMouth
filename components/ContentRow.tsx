@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle, Heart } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 
@@ -95,10 +94,20 @@ export default function ContentRow({
               <div className="p-2">
                 <h3 className="font-semibold text-sm truncate">{item.title}</h3>
                 {item.artist && <p className="text-xs text-gray-400">{item.artist}</p>}
-                <div className="flex justify-between mt-1 text-[11px]">
-                  <span className="flex items-center gap-0.5"><span className="text-teal-500">🔥</span> {item.stats_highly || 0}</span>
-                  <span className="flex items-center gap-0.5"><span className="text-blue-500">👍</span> {item.stats_recommended || 0}</span>
-                  <span className="flex items-center gap-0.5"><span className="text-gray-500">👎</span> {item.stats_not || 0}</span>
+                {/* Mobile responsive stats */}
+                <div className="flex justify-between mt-1">
+                  <span className="flex items-center gap-0.5">
+                    <span className="text-teal-500 text-xs sm:text-sm">🔥</span>
+                    <span className="text-[10px] sm:text-xs text-gray-300">{item.stats_highly || 0}</span>
+                  </span>
+                  <span className="flex items-center gap-0.5">
+                    <span className="text-blue-500 text-xs sm:text-sm">👍</span>
+                    <span className="text-[10px] sm:text-xs text-gray-300">{item.stats_recommended || 0}</span>
+                  </span>
+                  <span className="flex items-center gap-0.5">
+                    <span className="text-gray-500 text-xs sm:text-sm">👎</span>
+                    <span className="text-[10px] sm:text-xs text-gray-300">{item.stats_not || 0}</span>
+                  </span>
                 </div>
               </div>
             </div>
