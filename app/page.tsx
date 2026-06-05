@@ -2,13 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { Search, Bell, User, Menu, Film, Music, Home, Heart, Sparkles } from 'lucide-react'
+import { Search, Bell, User, Menu, Film, Music, Home as HomeIcon, Heart, Sparkles } from 'lucide-react'
 import HeroCarousel from '@/components/HeroCarousel'
 import ContentRow from '@/components/ContentRow'
 import SocialRecommendations from '@/components/SocialRecommendations'
 import MobileNav from '@/components/MobileNav'
 
-export default function Home() {
+export default function HomePage() {
   const { user, signOut } = useAuth()
   const [activeTab, setActiveTab] = useState<'movies' | 'music'>('movies')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -72,14 +72,14 @@ export default function Home() {
               
               {/* Desktop Navigation */}
               <nav className="hidden md:flex gap-6">
-                <button className="nav-link text-white font-medium">Home</button>
-                <button className="nav-link flex items-center gap-1">
+                <button className="text-white font-medium">Home</button>
+                <button className="text-gray-300 hover:text-white flex items-center gap-1">
                   <Film size={16} /> Movies
                 </button>
-                <button className="nav-link flex items-center gap-1">
+                <button className="text-gray-300 hover:text-white flex items-center gap-1">
                   <Music size={16} /> Music
                 </button>
-                <button className="nav-link flex items-center gap-1">
+                <button className="text-gray-300 hover:text-white flex items-center gap-1">
                   <Heart size={16} /> Watchlist
                 </button>
               </nav>
@@ -87,20 +87,20 @@ export default function Home() {
 
             {/* Search and Profile */}
             <div className="flex items-center gap-4">
-              <button className="hidden md:block nav-link">
+              <button className="hidden md:block text-gray-300 hover:text-white">
                 <Search size={20} />
               </button>
-              <button className="nav-link">
+              <button className="text-gray-300 hover:text-white">
                 <Bell size={20} />
               </button>
-              <button className="flex items-center gap-2 nav-link">
+              <button className="flex items-center gap-2 text-gray-300 hover:text-white">
                 <img 
                   src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`}
                   alt="Profile"
                   className="w-8 h-8 rounded-full"
                 />
               </button>
-              <button className="md:hidden nav-link" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+              <button className="md:hidden text-gray-300 hover:text-white" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
                 <Menu size={20} />
               </button>
             </div>
