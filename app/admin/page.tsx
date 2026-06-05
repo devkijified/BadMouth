@@ -6,10 +6,12 @@ import { useAuth } from '@/hooks/useAuth'
 import { useRouter } from 'next/navigation'
 import { 
   Plus, Edit, Trash2, Film, Music, Layers, Shield, X, 
-  Users, TrendingUp, Settings, Heart, Star, Search
+  Users, TrendingUp, Settings, Heart, Star, Search as SearchIcon,
+  Loader2
 } from 'lucide-react'
 import Link from 'next/link'
 import { ContentItem, Category } from '@/types/content'
+import toast from 'react-hot-toast'
 
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth()
@@ -32,6 +34,12 @@ export default function AdminPage() {
   // Search/filter states
   const [searchQuery, setSearchQuery] = useState('')
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | 'movie' | 'music'>('all')
+  
+  // Deezer search states
+  const [deezerSearchResults, setDeezerSearchResults] = useState<any[]>([])
+  const [showDeezerSearch, setShowDeezerSearch] = useState(false)
+  const [deezerSearchQuery, setDeezerSearchQuery] = useState('')
+  const [searchingDeezer, setSearchingDeezer] = useState(false)
 
   // Category form state
   const [categoryForm, setCategoryForm] = useState({
@@ -63,29 +71,6 @@ export default function AdminPage() {
     stats_recommended: 0,
     stats_not: 0,
     category_ids: [] as string[]
-  })
-
-  // Helper function to convert database item to form data
-  const itemToFormData = (item: any) => ({
-    title: item.title || '',
-    description: item.description || '',
-    long_description: item.long_description || '',
-    image_url: item.image_url || '',
-    backdrop_url: item.backdrop_url || '',
-    type: item.type || 'movie',
-    year: item.year || new Date().getFullYear(),
-    director: item.director || '',
-    artist: item.artist || '',
-    actors: item.actors?.join(', ') || '',
-    platforms: item.platforms?.join(', ') || '',
-    trailer_url: item.trailer_url || '',
-    runtime: item.runtime || '',
-    duration: item.duration || '',
-    genre: item.genre || '',
-    stats_highly: item.stats_highly || 0,
-    stats_recommended: item.stats_recommended || 0,
-    stats_not: item.stats_not || 0,
-    category_ids: []
   })
 
   useEffect(() => {
@@ -151,6 +136,59 @@ export default function AdminPage() {
     setRecommendations(data || [])
   }
 
+  const searchDeezerForMusic = async () => {
+    if (!deezerSearchQuery.trim()) {
+      toast.error('Please enter a song or artist name')
+      return
+    }
+    setSearchingDeezer(true)
+    try {
+      const response = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(deezerSearchQuery)}&limit=15`)
+      const data = await response.json()
+      setDeezerSearchResults(data.data || [])
+      if (data.data?.length === 0) {
+        toast.error('No results found on Deezer')
+      }
+    } catch (error) {
+      console.error('Deezer search error:', error)
+      toast.error('Failed to search Deezer')
+    } finally {
+      setSearchingDeezer(false)
+    }
+  }
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  const importFromDeezer = (track: any) => {
+    setContentForm({
+      ...contentForm,
+      title: track.title,
+      artist: track.artist.name,
+      description: `By ${track.artist.name} - ${track.album.title}`,
+      long_description: `"${track.title}" by ${track.artist.name} from the album "${track.album.title}". ${track.rank ? `Popularity rank: ${track.rank.toLocaleString()}.` : ''}`,
+      image_url: track.album.cover_xl,
+      backdrop_url: track.album.cover_xl,
+      type: 'music',
+      year: track.release_date ? new Date(track.release_date).getFullYear() : new Date().getFullYear(),
+      duration: formatDuration(track.duration),
+      genre: track.artist.name.split(' ')[0],
+      platforms: ['Spotify', 'Apple Music', 'Deezer'],
+      trailer_url: track.preview,
+      stats_highly: track.rank ? Math.floor(track.rank / 10000) : 0,
+      stats_recommended: track.rank ? Math.floor(track.rank / 20000) : 0,
+      stats_not: 0,
+      category_ids: []
+    })
+    setShowDeezerSearch(false)
+    setDeezerSearchQuery('')
+    setDeezerSearchResults([])
+    toast.success(`Imported "${track.title}" from Deezer!`)
+  }
+
   const saveCategory = async () => {
     if (editingItem) {
       await supabase.from('categories').update(categoryForm).eq('id', editingItem.id)
@@ -161,12 +199,14 @@ export default function AdminPage() {
     setEditingItem(null)
     setCategoryForm({ name: '', description: '', type: 'movie', is_active: true, display_order: 0 })
     loadCategories()
+    toast.success('Category saved!')
   }
 
   const deleteCategory = async (id: string) => {
     if (confirm('Delete this category?')) {
       await supabase.from('categories').delete().eq('id', id)
       loadCategories()
+      toast.success('Category deleted')
     }
   }
 
@@ -204,9 +244,11 @@ export default function AdminPage() {
     let contentId = editingItem?.id
     if (editingItem) {
       await supabase.from('content').update(dataToSave).eq('id', editingItem.id)
+      toast.success('Content updated!')
     } else {
       const { data } = await supabase.from('content').insert([dataToSave]).select()
       contentId = data?.[0]?.id
+      toast.success('Content added!')
     }
     
     if (contentId && contentForm.category_ids.length) {
@@ -233,12 +275,14 @@ export default function AdminPage() {
     if (confirm('Delete this content?')) {
       await supabase.from('content').delete().eq('id', id)
       loadContent()
+      toast.success('Content deleted')
     }
   }
 
   const updateUserRole = async (userId: string, newRole: string) => {
     await supabase.from('profiles').update({ role: newRole }).eq('id', userId)
     loadUsers()
+    toast.success('User role updated')
   }
 
   const filteredContent = content.filter(item => {
@@ -250,7 +294,7 @@ export default function AdminPage() {
   if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500"></div>
+        <Loader2 className="h-12 w-12 animate-spin text-teal-500" />
       </div>
     )
   }
@@ -461,7 +505,7 @@ export default function AdminPage() {
               <h2 className="text-xl font-semibold">Content Management</h2>
               <div className="flex gap-2">
                 <div className="relative">
-                  <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <SearchIcon size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                   <input type="text" placeholder="Search content..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} 
                     className="pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500" />
                 </div>
@@ -494,7 +538,16 @@ export default function AdminPage() {
                       <div className="flex gap-2">
                         <button onClick={() => { 
                           setEditingItem(item); 
-                          setContentForm(itemToFormData(item)); 
+                          setContentForm({ 
+                            ...item, 
+                            long_description: item.long_description || '',
+                            backdrop_url: item.backdrop_url || '',
+                            director: item.director || '',
+                            artist: item.artist || '',
+                            actors: item.actors?.join(', ') || '', 
+                            platforms: item.platforms?.join(', ') || '', 
+                            category_ids: [] 
+                          }); 
                           setShowContentModal(true); 
                         }} 
                           className="text-gray-400 hover:text-white">
@@ -522,12 +575,12 @@ export default function AdminPage() {
                 <p className="text-sm text-gray-400">The "Order" field in categories determines how they appear on the main page. Lower numbers appear first (higher priority).</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
-                <h3 className="font-semibold mb-2">Recommendation Tiers</h3>
-                <p className="text-sm text-gray-400">🔥 HIGHLY RECOMMENDED - Best content that users love. 👍 RECOMMENDED - Good content worth watching. 👎 NOT RECOMMENDED - Content users suggest to skip.</p>
+                <h3 className="font-semibold mb-2">Deezer API Integration</h3>
+                <p className="text-sm text-gray-400">When adding music, use the "Search on Deezer" button to automatically fetch song details, album art, and preview URLs.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
-                <h3 className="font-semibold mb-2">Admin Access</h3>
-                <p className="text-sm text-gray-400">Only users with admin role can access this panel. Toggle admin status in the Users tab.</p>
+                <h3 className="font-semibold mb-2">Recommendation Tiers</h3>
+                <p className="text-sm text-gray-400">🔥 HIGHLY RECOMMENDED - Best content that users love. 👍 RECOMMENDED - Good content worth watching. 👎 NOT RECOMMENDED - Content users suggest to skip.</p>
               </div>
             </div>
           </div>
@@ -587,44 +640,55 @@ export default function AdminPage() {
                 </>
               ) : (
                 <>
-                  <input type="text" placeholder="Artist" value={contentForm.artist} onChange={e => setContentForm({ ...contentForm, artist: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-                  <input type="text" placeholder="Duration (e.g., 3:45)" value={contentForm.duration} onChange={e => setContentForm({ ...contentForm, duration: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-                </>
-              )}
-              
-              <input type="text" placeholder="Platforms (comma separated)" value={contentForm.platforms} onChange={e => setContentForm({ ...contentForm, platforms: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-              <input type="text" placeholder="Trailer/Video URL" value={contentForm.trailer_url} onChange={e => setContentForm({ ...contentForm, trailer_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-              <input type="text" placeholder="Genre" value={contentForm.genre} onChange={e => setContentForm({ ...contentForm, genre: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-              
-              <div className="grid grid-cols-3 gap-2">
-                <input type="number" placeholder="🔥 Highly" value={contentForm.stats_highly} onChange={e => setContentForm({ ...contentForm, stats_highly: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
-                <input type="number" placeholder="👍 Recommended" value={contentForm.stats_recommended} onChange={e => setContentForm({ ...contentForm, stats_recommended: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
-                <input type="number" placeholder="👎 Not" value={contentForm.stats_not} onChange={e => setContentForm({ ...contentForm, stats_not: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
-              </div>
-              
-              <div>
-                <label className="text-sm text-gray-400 mb-2 block">Assign to Categories</label>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {categories.filter(c => c.type === contentForm.type).map(cat => (
-                    <label key={cat.id} className="flex items-center gap-2">
-                      <input type="checkbox" checked={contentForm.category_ids.includes(cat.id)} 
-                        onChange={e => {
-                          if (e.target.checked) setContentForm({ ...contentForm, category_ids: [...contentForm.category_ids, cat.id] })
-                          else setContentForm({ ...contentForm, category_ids: contentForm.category_ids.filter(id => id !== cat.id) })
-                        }} />
-                      {cat.name} (Order: {cat.display_order})
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2 mt-6">
-              <button onClick={saveContent} className="flex-1 py-2 bg-teal-600 rounded">Save</button>
-              <button onClick={() => setShowContentModal(false)} className="flex-1 py-2 bg-gray-700 rounded">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
+                  {/* Deezer Search for Music */}
+                  <div className="mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowDeezerSearch(!showDeezerSearch)}
+                      className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1"
+                    >
+                      {showDeezerSearch ? '− Hide Deezer Search' : '+ Search on Deezer'}
+                    </button>
+                    
+                    {showDeezerSearch && (
+                      <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Search for a song on Deezer..."
+                            value={deezerSearchQuery}
+                            onChange={(e) => setDeezerSearchQuery(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && searchDeezerForMusic()}
+                            className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm"
+                          />
+                          <button
+                            onClick={searchDeezerForMusic}
+                            disabled={searchingDeezer}
+                            className="px-4 py-2 bg-teal-600 rounded hover:bg-teal-700 transition disabled:opacity-50"
+                          >
+                            {searchingDeezer ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
+                          </button>
+                        </div>
+                        
+                        {deezerSearchResults.length > 0 && (
+                          <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {deezerSearchResults.map((track) => (
+                              <div
+                                key={track.id}
+                                onClick={() => importFromDeezer(track)}
+                                className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                              >
+                                <img src={track.album.cover_small} alt={track.title} className="w-12 h-12 rounded" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-sm truncate">{track.title}</p>
+                                  <p className="text-xs text-gray-400 truncate">{track.artist.name}</p>
+                                </div>
+                                <button className="text-teal-400 text-sm whitespace-nowrap">Import →</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                
