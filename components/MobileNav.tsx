@@ -1,11 +1,7 @@
 'use client'
 
 import { Film, Music, Home, User, Sparkles, Heart } from 'lucide-react'
-
-interface ContentItem {
-  id: string
-  title: string
-}
+import { ContentItem } from '@/types/content'
 
 interface MobileNavProps {
   activeTab: 'movie' | 'music'
