@@ -54,6 +54,30 @@ export default function HomePage() {
       trailer: 'https://www.youtube.com/watch?v=zSWdZVtXT7E',
       stats: { highly: 1567, recommended: 723, not: 67 }
     },
+    { 
+      id: '4', 
+      title: 'Pulp Fiction', 
+      description: 'The lives of two mob hitmen, a boxer, and a gangster intertwine.',
+      image: 'https://image.tmdb.org/t/p/w500/d5iIlFn5s0ImszYzBPb8JPIfbXD.jpg', 
+      type: 'movie' as const, 
+      year: 1994,
+      director: 'Quentin Tarantino',
+      cast: ['John Travolta', 'Uma Thurman', 'Samuel L. Jackson'],
+      trailer: 'https://www.youtube.com/watch?v=s7EdQ4FqbhY',
+      stats: { highly: 2100, recommended: 567, not: 234 }
+    },
+    { 
+      id: '5', 
+      title: 'The Matrix', 
+      description: 'A computer hacker learns about the true nature of reality.',
+      image: 'https://image.tmdb.org/t/p/w500/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg', 
+      type: 'movie' as const, 
+      year: 1999,
+      director: 'Wachowski Brothers',
+      cast: ['Keanu Reeves', 'Laurence Fishburne', 'Carrie-Anne Moss'],
+      trailer: 'https://www.youtube.com/watch?v=vKQi3bBA1y8',
+      stats: { highly: 1987, recommended: 654, not: 98 }
+    },
   ]
 
   const trendingMusic = [
@@ -80,6 +104,18 @@ export default function HomePage() {
       album: 'A Night at the Opera',
       duration: '5:55',
       stats: { highly: 2987, recommended: 876, not: 145 }
+    },
+    { 
+      id: '3', 
+      title: 'Shape of You', 
+      artist: 'Ed Sheeran', 
+      description: 'A catchy pop track about love and attraction.',
+      image: 'https://i.scdn.co/image/ab67616d0000b273d8d8d8d8d8d8d8d8d8d8d8d8', 
+      type: 'music' as const, 
+      year: 2017,
+      album: '÷',
+      duration: '3:53',
+      stats: { highly: 2654, recommended: 987, not: 234 }
     },
   ]
 
@@ -130,7 +166,7 @@ export default function HomePage() {
                 BADMOUTH
               </h1>
               
-              {/* Desktop Navigation - WORKING */}
+              {/* Desktop Navigation */}
               <nav className="hidden md:flex gap-6">
                 <button className="text-white font-medium">Home</button>
                 <button 
@@ -212,17 +248,21 @@ export default function HomePage() {
       <main className="pt-16">
         <HeroCarousel onViewDetails={handleViewDetails} />
         <div className="container mx-auto px-4">
+          {/* FIRST CONTENT ROW - FIXED: type converts 'movies' to 'movie' */}
           <ContentRow 
             title={activeTab === 'movies' ? "Trending Movies" : "Trending Music"}
             items={filteredContent}
-            type={activeTab}
+            type={activeTab === 'movies' ? 'movie' : 'music'}
             onViewDetails={handleViewDetails}
           />
+          
           <SocialRecommendations onViewDetails={handleViewDetails} />
+          
+          {/* SECOND CONTENT ROW - FIXED: type converts 'movies' to 'movie' */}
           <ContentRow 
             title={activeTab === 'movies' ? "Recommended for You" : "New Releases"}
             items={filteredContent.slice(0, 4)}
-            type={activeTab}
+            type={activeTab === 'movies' ? 'movie' : 'music'}
             onViewDetails={handleViewDetails}
           />
         </div>
