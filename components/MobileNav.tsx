@@ -1,6 +1,7 @@
 'use client'
 
-import { Film, Music, Home, User, Sparkles, Heart } from 'lucide-react'
+import { Film, Music, Home, User, Sparkles, Heart, Compass } from 'lucide-react'
+import Link from 'next/link'
 import { ContentItem } from '@/types/content'
 
 interface MobileNavProps {
@@ -43,12 +44,12 @@ export default function MobileNav({
               <span className="text-[10px] mt-1">Movies</span>
             </button>
             
-            <button 
-              onClick={onWatchlistClick}
+            <Link 
+              href="/explore"
               className="flex flex-col items-center justify-center -mt-8 w-14 h-14 bg-gradient-to-r from-teal-600 to-blue-600 rounded-full shadow-lg hover:scale-110 transition-transform"
             >
-              <Heart size={24} className="text-white" />
-            </button>
+              <Compass size={24} className="text-white" />
+            </Link>
             
             <button 
               onClick={() => onTabChange('music')}
