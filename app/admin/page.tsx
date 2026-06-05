@@ -175,14 +175,23 @@ export default function AdminPage() {
     setSearchingDeezer(true)
     try {
       const response = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(deezerSearchQuery)}&limit=15`)
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      
       const data = await response.json()
-      setDeezerSearchResults(data.data || [])
-      if (data.data?.length === 0) {
-        toast.error('No results found on Deezer')
+      
+      if (data.data && data.data.length > 0) {
+        setDeezerSearchResults(data.data)
+        toast.success(`Found ${data.data.length} results`)
+      } else {
+        setDeezerSearchResults([])
+        toast.error('No results found. Try different search terms.')
       }
     } catch (error) {
       console.error('Deezer search error:', error)
-      toast.error('Failed to search Deezer')
+      toast.error('Failed to search Deezer. Check console for details.')
     } finally {
       setSearchingDeezer(false)
     }
@@ -241,6 +250,35 @@ export default function AdminPage() {
     }
   }
 
+  const closeContentModal = () => {
+    setShowContentModal(false)
+    setEditingItem(null)
+    setContentForm({
+      title: '',
+      description: '',
+      long_description: '',
+      image_url: '',
+      backdrop_url: '',
+      type: 'movie',
+      year: new Date().getFullYear(),
+      director: '',
+      artist: '',
+      actors: '',
+      platforms: '',
+      trailer_url: '',
+      runtime: '',
+      duration: '',
+      genre: '',
+      stats_highly: 0,
+      stats_recommended: 0,
+      stats_not: 0,
+      category_ids: []
+    })
+    setShowDeezerSearch(false)
+    setDeezerSearchQuery('')
+    setDeezerSearchResults([])
+  }
+
   const saveContent = async () => {
     const dataToSave: any = {
       title: contentForm.title,
@@ -291,14 +329,7 @@ export default function AdminPage() {
       await supabase.from('content_categories').insert(links)
     }
     
-    setShowContentModal(false)
-    setEditingItem(null)
-    setContentForm({
-      title: '', description: '', long_description: '', image_url: '', backdrop_url: '',
-      type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '',
-      platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', 
-      stats_highly: 0, stats_recommended: 0, stats_not: 0, category_ids: []
-    })
+    closeContentModal()
     loadContent()
   }
 
@@ -420,7 +451,7 @@ export default function AdminPage() {
                       <td className="px-4 py-3"><select value={userItem.role || 'user'} onChange={(e) => updateUserRole(userItem.id, e.target.value)} className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm"><option value="user">User</option><option value="moderator">Moderator</option><option value="admin">Admin</option></select></td>
                       <td className="px-4 py-3 text-sm">{new Date(userItem.created_at).toLocaleDateString()}</td>
                       <td className="px-4 py-3"><button onClick={() => updateUserRole(userItem.id, userItem.role === 'admin' ? 'user' : 'admin')} className="text-teal-500 hover:text-teal-400 text-sm">Toggle Admin</button></td>
-                    </tr>
+                    </table>
                   ))}
                 </tbody>
               </table>
@@ -452,7 +483,12 @@ export default function AdminPage() {
               <div className="flex gap-2">
                 <div className="relative"><SearchIcon size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" /><input type="text" placeholder="Search content..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500" /></div>
                 <select value={contentTypeFilter} onChange={(e) => setContentTypeFilter(e.target.value as any)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg"><option value="all">All Types</option><option value="movie">Movies</option><option value="music">Music</option></select>
-                <button onClick={() => { setShowContentModal(true); setEditingItem(null); setContentForm({ ...contentForm, category_ids: [] }) }} className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"><Plus size={16} /> Add Content</button>
+                <button onClick={() => { setShowContentModal(true); setEditingItem(null); setContentForm({ 
+                  title: '', description: '', long_description: '', image_url: '', backdrop_url: '', 
+                  type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '', 
+                  platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', 
+                  stats_highly: 0, stats_recommended: 0, stats_not: 0, category_ids: [] 
+                }); }} className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"><Plus size={16} /> Add Content</button>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -508,7 +544,7 @@ export default function AdminPage() {
       {showContentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 overflow-y-auto">
           <div className="bg-gray-900 rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Content</h2><button onClick={() => setShowContentModal(false)} className="p-1 hover:bg-gray-800 rounded"><X size={20} /></button></div>
+            <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Content</h2><button onClick={closeContentModal} className="p-1 hover:bg-gray-800 rounded"><X size={20} /></button></div>
             <div className="space-y-3">
               <input type="text" placeholder="Title" value={contentForm.title} onChange={e => setContentForm({ ...contentForm, title: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               <textarea placeholder="Description" value={contentForm.description} onChange={e => setContentForm({ ...contentForm, description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" rows={2} />
@@ -571,7 +607,7 @@ export default function AdminPage() {
                 </div>
               </div>
             </div>
-            <div className="flex gap-2 mt-6"><button onClick={saveContent} className="flex-1 py-2 bg-teal-600 rounded">Save</button><button onClick={() => setShowContentModal(false)} className="flex-1 py-2 bg-gray-700 rounded">Cancel</button></div>
+            <div className="flex gap-2 mt-6"><button onClick={saveContent} className="flex-1 py-2 bg-teal-600 rounded">Save</button><button onClick={closeContentModal} className="flex-1 py-2 bg-gray-700 rounded">Cancel</button></div>
           </div>
         </div>
       )}
