@@ -2,260 +2,171 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { Search, Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Plus, Filter } from 'lucide-react'
+import { supabase } from '@/lib/supabase/client'
+import { Search, Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, ExternalLink } from 'lucide-react'
 import HeroCarousel from '@/components/HeroCarousel'
 import ContentRow from '@/components/ContentRow'
 import SocialRecommendations from '@/components/SocialRecommendations'
 import MobileNav from '@/components/MobileNav'
+
+// Define types for our data
+interface ContentItem {
+  id: string
+  title: string
+  description: string
+  long_description?: string
+  image_url: string
+  backdrop_url?: string
+  type: 'movie' | 'music'
+  year: number
+  director?: string
+  artist?: string
+  actors?: string[]
+  platforms: string[]
+  trailer_url?: string
+  runtime?: string
+  duration?: string
+  genre: string
+  stats_highly: number
+  stats_recommended: number
+  stats_not: number
+}
+
+interface Category {
+  id: string
+  name: string
+  description: string
+  type: 'movie' | 'music'
+  display_order: number
+}
 
 export default function HomePage() {
   const { user, signOut } = useAuth()
   const [activeTab, setActiveTab] = useState<'movie' | 'music'>('movie')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
-  const [selectedContent, setSelectedContent] = useState<any>(null)
+  const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
-  const [selectedMood, setSelectedMood] = useState<string>('all')
-  const [showMoodFilter, setShowMoodFilter] = useState(false)
-  const [watchlist, setWatchlist] = useState<any[]>([])
+  const [selectedGenre, setSelectedGenre] = useState<string>('all')
+  const [showGenreFilter, setShowGenreFilter] = useState(false)
+  const [watchlist, setWatchlist] = useState<ContentItem[]>([])
   const [notifications, setNotifications] = useState<string[]>([])
   const [showWatchlist, setShowWatchlist] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  
+  // Data from Supabase
+  const [categories, setCategories] = useState<Category[]>([])
+  const [allContent, setAllContent] = useState<ContentItem[]>([])
+  const [contentByCategory, setContentByCategory] = useState<Record<string, ContentItem[]>>({})
+  const [loading, setLoading] = useState(true)
 
-  // Mood options
-  const moods = ['all', 'Action', 'Comedy', 'Drama', 'Sci-Fi', 'Romance', 'Horror', 'Thriller', 'Pop', 'Rock', 'Hip Hop', 'Jazz']
+  // Available genres for filtering
+  const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller']
 
   // Load watchlist from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('badmouth_watchlist')
-    if (saved) setWatchlist(JSON.parse(saved))
+    if (saved) {
+      try {
+        setWatchlist(JSON.parse(saved))
+      } catch (e) {
+        console.error('Failed to parse watchlist', e)
+      }
+    }
   }, [])
 
-  const addToWatchlist = (item: any) => {
-    const newWatchlist = [...watchlist, item]
-    setWatchlist(newWatchlist)
-    localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
-    setNotifications([`✨ "${item.title}" added to watchlist!`, ...notifications.slice(0, 4)])
-    setTimeout(() => setNotifications(prev => prev.slice(1)), 3000)
+  // Save watchlist to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('badmouth_watchlist', JSON.stringify(watchlist))
+  }, [watchlist])
+
+  // Load data from Supabase
+  useEffect(() => {
+    loadData()
+  }, [activeTab])
+
+  const loadData = async () => {
+    setLoading(true)
+    
+    try {
+      // Load categories for current tab
+      const { data: categoriesData, error: categoriesError } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('type', activeTab)
+        .eq('is_active', true)
+        .order('display_order')
+      
+      if (categoriesError) throw categoriesError
+      setCategories(categoriesData || [])
+      
+      // Load content for current tab
+      const { data: contentData, error: contentError } = await supabase
+        .from('content')
+        .select('*')
+        .eq('type', activeTab)
+      
+      if (contentError) throw contentError
+      setAllContent(contentData || [])
+      
+      // Load content-category relationships
+      const { data: relations, error: relationsError } = await supabase
+        .from('content_categories')
+        .select('*')
+      
+      if (relationsError) throw relationsError
+      
+      // Organize content by category
+      const byCategory: Record<string, ContentItem[]> = {}
+      for (const category of categoriesData || []) {
+        const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
+        byCategory[category.name] = contentData?.filter(c => contentIds.includes(c.id)) || []
+      }
+      setContentByCategory(byCategory)
+    } catch (error) {
+      console.error('Error loading data:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const removeFromWatchlist = (id: string) => {
-    const newWatchlist = watchlist.filter(i => i.id !== id)
-    setWatchlist(newWatchlist)
-    localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
-    setNotifications([`Removed from watchlist`, ...notifications.slice(0, 4)])
+  const addToWatchlist = (item: ContentItem) => {
+    if (watchlist.some(i => i.id === item.id)) {
+      const newWatchlist = watchlist.filter(i => i.id !== item.id)
+      setWatchlist(newWatchlist)
+      setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
+    } else {
+      const newWatchlist = [...watchlist, item]
+      setWatchlist(newWatchlist)
+      setNotifications([`✨ "${item.title}" added to watchlist!`, ...notifications.slice(0, 4)])
+    }
     setTimeout(() => setNotifications(prev => prev.slice(1)), 3000)
   }
 
   const isInWatchlist = (id: string) => watchlist.some(i => i.id === id)
 
-  // Complete movie database
-  const moviesDB = [
-    { 
-      id: '1', 
-      title: 'The Dark Knight', 
-      description: 'Batman faces the Joker in Gotham City.',
-      longDescription: 'When the menace known as the Joker wreaks havoc on Gotham, Batman must accept one of the greatest psychological tests of his ability to fight injustice.',
-      image: 'https://image.tmdb.org/t/p/w500/qJ2tW6WMUDux911r6m7haRef0WH.jpg',
-      backdrop: 'https://image.tmdb.org/t/p/original/qJ2tW6WMUDux911r6m7haRef0WH.jpg',
-      type: 'movie' as const, 
-      year: 2008,
-      director: 'Christopher Nolan',
-      cast: ['Christian Bale', 'Heath Ledger', 'Aaron Eckhart', 'Michael Caine'],
-      platforms: ['Netflix', 'Max', 'Prime Video'],
-      trailer: 'https://www.youtube.com/embed/EXeTwQWrcwY',
-      runtime: '2h 32min',
-      rating: 'PG-13',
-      genre: 'Action',
-      stats: { highly: 2340, recommended: 890, not: 123 },
-      mood: ['Dark', 'Intense', 'Action']
-    },
-    { 
-      id: '2', 
-      title: 'Inception', 
-      description: 'A thief who steals secrets through dream-sharing.',
-      longDescription: 'A thief who steals corporate secrets through dream-sharing technology is given the inverse task of planting an idea.',
-      image: 'https://image.tmdb.org/t/p/w500/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg',
-      backdrop: 'https://image.tmdb.org/t/p/original/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg',
-      type: 'movie' as const, 
-      year: 2010,
-      director: 'Christopher Nolan',
-      cast: ['Leonardo DiCaprio', 'Joseph Gordon-Levitt', 'Elliot Page', 'Tom Hardy'],
-      platforms: ['Netflix', 'Prime Video'],
-      trailer: 'https://www.youtube.com/embed/YoHD9XEInc0',
-      runtime: '2h 28min',
-      rating: 'PG-13',
-      genre: 'Sci-Fi',
-      stats: { highly: 1890, recommended: 654, not: 89 },
-      mood: ['Mind-bending', 'Thriller', 'Action']
-    },
-    { 
-      id: '3', 
-      title: 'Interstellar', 
-      description: 'A team explores a wormhole in space.',
-      longDescription: 'A team of explorers travel through a wormhole in space in an attempt to ensure humanity survival.',
-      image: 'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg',
-      backdrop: 'https://image.tmdb.org/t/p/original/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg',
-      type: 'movie' as const, 
-      year: 2014,
-      director: 'Christopher Nolan',
-      cast: ['Matthew McConaughey', 'Anne Hathaway', 'Jessica Chastain'],
-      platforms: ['Prime Video', 'Paramount+'],
-      trailer: 'https://www.youtube.com/embed/zSWdZVtXT7E',
-      runtime: '2h 49min',
-      rating: 'PG-13',
-      genre: 'Sci-Fi',
-      stats: { highly: 1567, recommended: 723, not: 67 },
-      mood: ['Emotional', 'Sci-Fi', 'Adventure']
-    },
-    { 
-      id: '4', 
-      title: 'Parasite', 
-      description: 'A dark Korean thriller about class struggle.',
-      longDescription: 'Greed and class discrimination threaten the newly formed symbiotic relationship between the wealthy Park family and the destitute Kim clan.',
-      image: 'https://image.tmdb.org/t/p/w500/7IiTTgloJzvGI1TAYymCfbfl3vT.jpg',
-      backdrop: 'https://image.tmdb.org/t/p/original/7IiTTgloJzvGI1TAYymCfbfl3vT.jpg',
-      type: 'movie' as const, 
-      year: 2019,
-      director: 'Bong Joon-ho',
-      cast: ['Song Kang-ho', 'Lee Sun-kyun', 'Cho Yeo-jeong', 'Choi Woo-shik'],
-      platforms: ['Hulu', 'Prime Video'],
-      trailer: 'https://www.youtube.com/embed/5xH0HfJHsaY',
-      runtime: '2h 12min',
-      rating: 'R',
-      genre: 'Drama',
-      stats: { highly: 2456, recommended: 789, not: 45 },
-      mood: ['Dark', 'Thought-provoking', 'Drama']
-    },
-    { 
-      id: '5', 
-      title: 'Train to Busan', 
-      description: 'Korean zombie action horror on a train.',
-      longDescription: 'While a zombie virus breaks out in South Korea, passengers struggle to survive on the train from Seoul to Busan.',
-      image: 'https://image.tmdb.org/t/p/w500/1pHHp7N49XHkxCEMZwG9pEqN4T5.jpg',
-      backdrop: 'https://image.tmdb.org/t/p/original/1pHHp7N49XHkxCEMZwG9pEqN4T5.jpg',
-      type: 'movie' as const, 
-      year: 2016,
-      director: 'Yeon Sang-ho',
-      cast: ['Gong Yoo', 'Jung Yu-mi', 'Ma Dong-seok'],
-      platforms: ['Netflix', 'Shudder'],
-      trailer: 'https://www.youtube.com/embed/7hmJfVq8w08',
-      runtime: '1h 58min',
-      rating: 'Not Rated',
-      genre: 'Horror',
-      stats: { highly: 1876, recommended: 543, not: 98 },
-      mood: ['Intense', 'Scary', 'Emotional']
-    },
-  ]
-
-  // Custom categories for movies
-  const movieCategories = {
-    'Trending Movies': moviesDB,
-    'Korean Movie Lovers': moviesDB.filter(m => m.title === 'Parasite' || m.title === 'Train to Busan'),
-    'Sci-Fi Adventures': moviesDB.filter(m => m.genre === 'Sci-Fi'),
-    'Action Packed': moviesDB.filter(m => m.genre === 'Action'),
-  }
-
-  // Complete music database
-  const musicDB = [
-    { 
-      id: '1', 
-      title: 'Blinding Lights', 
-      artist: 'The Weeknd', 
-      description: 'A synthwave track that broke records.',
-      longDescription: 'A synthwave track that became one of the best-selling singles of all time.',
-      image: 'https://i.scdn.co/image/ab67616d0000b273c6e6d6c8a2e0e0e9e9e9e9e9',
-      backdrop: 'https://i.scdn.co/image/ab67616d0000b273c6e6d6c8a2e0e0e9e9e9e9e9',
-      type: 'music' as const, 
-      year: 2020,
-      artistInfo: 'The Weeknd is a Canadian singer and songwriter.',
-      producers: ['Max Martin', 'Oscar Holter'],
-      writers: ['Abel Tesfaye', 'Max Martin', 'Oscar Holter'],
-      platforms: ['Spotify', 'Apple Music', 'YouTube Music'],
-      video: 'https://www.youtube.com/embed/4NRXx6U8ABQ',
-      duration: '3:20',
-      genre: 'Pop',
-      stats: { highly: 3420, recommended: 1234, not: 234 },
-      mood: ['Energetic', 'Synthwave', 'Pop']
-    },
-    { 
-      id: '2', 
-      title: 'Bohemian Rhapsody', 
-      artist: 'Queen', 
-      description: 'A revolutionary rock opera.',
-      longDescription: 'A six-minute suite consisting of several sections without a chorus.',
-      image: 'https://i.scdn.co/image/ab67616d0000b273e8e8e8e8e8e8e8e8e8e8e8e8',
-      backdrop: 'https://i.scdn.co/image/ab67616d0000b273e8e8e8e8e8e8e8e8e8e8e8e8',
-      type: 'music' as const, 
-      year: 1975,
-      artistInfo: 'Queen are a British rock band formed in London.',
-      producers: ['Roy Thomas Baker', 'Queen'],
-      writers: ['Freddie Mercury'],
-      platforms: ['Spotify', 'Apple Music', 'YouTube Music'],
-      video: 'https://www.youtube.com/embed/fJ9rUzIMcZQ',
-      duration: '5:55',
-      genre: 'Rock',
-      stats: { highly: 2987, recommended: 876, not: 145 },
-      mood: ['Rock', 'Operatic', 'Classic']
-    },
-    { 
-      id: '3', 
-      title: 'Shape of You', 
-      artist: 'Ed Sheeran', 
-      description: 'A catchy pop track about love.',
-      longDescription: 'A pop and dancehall track that became one of the best-selling digital singles.',
-      image: 'https://i.scdn.co/image/ab67616d0000b273d8d8d8d8d8d8d8d8d8d8d8d8',
-      backdrop: 'https://i.scdn.co/image/ab67616d0000b273d8d8d8d8d8d8d8d8d8d8d8d8',
-      type: 'music' as const, 
-      year: 2017,
-      artistInfo: 'Ed Sheeran is an English singer-songwriter.',
-      producers: ['Ed Sheeran', 'Steve Mac'],
-      writers: ['Ed Sheeran', 'Steve Mac'],
-      platforms: ['Spotify', 'Apple Music', 'YouTube Music'],
-      video: 'https://www.youtube.com/embed/JGwWNGJdvx8',
-      duration: '3:53',
-      genre: 'Pop',
-      stats: { highly: 2654, recommended: 987, not: 234 },
-      mood: ['Pop', 'Dance', 'Romantic']
-    },
-  ]
-
-  // Custom categories for music
-  const musicCategories = {
-    'Trending Music': musicDB,
-    'Pop Hits': musicDB.filter(m => m.genre === 'Pop'),
-    'Rock Classics': musicDB.filter(m => m.genre === 'Rock'),
-  }
-
-  // Get filtered content based on search and mood
-  const getFilteredContent = () => {
-    const content = activeTab === 'movie' ? moviesDB : musicDB
-    let filtered = content
-    
+  // Filter content by search and genre
+  const getFilteredContent = (): ContentItem[] => {
+    let filtered = [...allContent]
     if (searchQuery) {
-      filtered = filtered.filter(item => {
-        const matchesTitle = item.title.toLowerCase().includes(searchQuery.toLowerCase())
-        const matchesArtist = 'artist' in item && item.artist?.toLowerCase().includes(searchQuery.toLowerCase())
-        return matchesTitle || matchesArtist
-      })
+      filtered = filtered.filter(item => 
+        item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (item.artist && item.artist.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
     }
-    
-    if (selectedMood !== 'all') {
-      filtered = filtered.filter(item => item.genre === selectedMood || item.mood.includes(selectedMood))
+    if (selectedGenre !== 'all') {
+      filtered = filtered.filter(item => item.genre === selectedGenre)
     }
-    
     return filtered
   }
 
-  const handleViewDetails = (item: any) => {
+  const handleViewDetails = (item: ContentItem) => {
     setSelectedContent(item)
     setShowDetailsModal(true)
   }
-
-  const categories = activeTab === 'movie' ? movieCategories : musicCategories
 
   useEffect(() => {
     const handleScroll = () => {
@@ -283,6 +194,16 @@ export default function HomePage() {
       </div>
     )
   }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
+      </div>
+    )
+  }
+
+  const filteredContent = getFilteredContent()
 
   return (
     <div className="min-h-screen bg-black">
@@ -322,7 +243,7 @@ export default function HomePage() {
                     <p className="font-medium text-sm">{item.title}</p>
                     <p className="text-xs text-gray-400">{item.type}</p>
                   </div>
-                  <button onClick={() => removeFromWatchlist(item.id)} className="text-red-500 text-xs">Remove</button>
+                  <button onClick={() => addToWatchlist(item)} className="text-red-500 text-xs">Remove</button>
                 </div>
               ))
             )}
@@ -338,7 +259,11 @@ export default function HomePage() {
             <button onClick={() => setShowProfile(false)}><X size={16} /></button>
           </div>
           <div className="p-4 text-center">
-            <img src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} alt="Profile" className="w-20 h-20 rounded-full mx-auto mb-3" />
+            <img 
+              src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} 
+              alt="Profile" 
+              className="w-20 h-20 rounded-full mx-auto mb-3" 
+            />
             <h4 className="font-semibold">{user.user_metadata?.username || user.email?.split('@')[0]}</h4>
             <p className="text-xs text-gray-400 mb-3">{user.email}</p>
             <div className="grid grid-cols-2 gap-3 text-center">
@@ -383,25 +308,40 @@ export default function HomePage() {
               <div className="relative">
                 {showSearch ? (
                   <div className="flex items-center">
-                    <input type="text" placeholder="Search movies or music..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="px-4 py-1 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-green-500 text-sm w-48 md:w-64" autoFocus />
-                    <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} className="ml-2 text-gray-400 hover:text-white"><X size={18} /></button>
+                    <input 
+                      type="text" 
+                      placeholder="Search movies or music..." 
+                      value={searchQuery} 
+                      onChange={(e) => setSearchQuery(e.target.value)} 
+                      className="px-4 py-1 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-green-500 text-sm w-48 md:w-64" 
+                      autoFocus 
+                    />
+                    <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} className="ml-2 text-gray-400 hover:text-white">
+                      <X size={18} />
+                    </button>
                   </div>
                 ) : (
-                  <button onClick={() => setShowSearch(true)} className="text-gray-300 hover:text-white"><Search size={20} /></button>
+                  <button onClick={() => setShowSearch(true)} className="text-gray-300 hover:text-white">
+                    <Search size={20} />
+                  </button>
                 )}
               </div>
 
-              {/* Mood Filter */}
+              {/* Genre Filter */}
               <div className="relative">
-                <button onClick={() => setShowMoodFilter(!showMoodFilter)} className="text-gray-300 hover:text-white flex items-center gap-1">
-                  <Filter size={18} /> <span className="text-xs hidden md:inline">Filter</span>
+                <button onClick={() => setShowGenreFilter(!showGenreFilter)} className="text-gray-300 hover:text-white flex items-center gap-1">
+                  <Filter size={18} /> <span className="text-xs hidden md:inline">Genre</span>
                 </button>
-                {showMoodFilter && (
+                {showGenreFilter && (
                   <div className="absolute top-8 right-0 w-48 bg-gray-900 rounded-xl shadow-xl border border-gray-700 z-50">
                     <div className="p-2">
-                      {moods.map(mood => (
-                        <button key={mood} onClick={() => { setSelectedMood(mood); setShowMoodFilter(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-800 ${selectedMood === mood ? 'text-green-500' : 'text-gray-300'}`}>
-                          {mood === 'all' ? 'All Genres' : mood}
+                      {genres.map(genre => (
+                        <button 
+                          key={genre} 
+                          onClick={() => { setSelectedGenre(genre); setShowGenreFilter(false); }} 
+                          className={`w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-800 ${selectedGenre === genre ? 'text-green-500' : 'text-gray-300'}`}
+                        >
+                          {genre === 'all' ? 'All Genres' : genre}
                         </button>
                       ))}
                     </div>
@@ -420,10 +360,16 @@ export default function HomePage() {
               </button>
               
               <button onClick={() => setShowProfile(true)} className="hidden md:flex items-center gap-2 text-gray-300 hover:text-white">
-                <img src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} alt="Profile" className="w-8 h-8 rounded-full" />
+                <img 
+                  src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} 
+                  alt="Profile" 
+                  className="w-8 h-8 rounded-full" 
+                />
               </button>
               
-              <button onClick={() => setIsSidebarOpen(true)} className="md:hidden text-gray-300 hover:text-white"><Menu size={20} /></button>
+              <button onClick={() => setIsSidebarOpen(true)} className="md:hidden text-gray-300 hover:text-white">
+                <Menu size={20} />
+              </button>
             </div>
           </div>
         </div>
@@ -434,10 +380,20 @@ export default function HomePage() {
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/80" onClick={() => setIsSidebarOpen(false)} />
           <div className="absolute right-0 top-0 bottom-0 w-64 bg-gray-900 shadow-xl p-4">
-            <div className="flex justify-between items-center mb-6"><span className="text-lg font-bold">Menu</span><button onClick={() => setIsSidebarOpen(false)}><X size={20} /></button></div>
+            <div className="flex justify-between items-center mb-6">
+              <span className="text-lg font-bold">Menu</span>
+              <button onClick={() => setIsSidebarOpen(false)}><X size={20} /></button>
+            </div>
             <div className="flex items-center gap-3 mb-6 p-3 bg-gray-800 rounded-lg">
-              <img src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} alt="Profile" className="w-10 h-10 rounded-full" />
-              <div><div className="text-sm font-semibold">{user.user_metadata?.username || user.email?.split('@')[0]}</div><div className="text-xs text-gray-400">{user.email}</div></div>
+              <img 
+                src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} 
+                alt="Profile" 
+                className="w-10 h-10 rounded-full" 
+              />
+              <div>
+                <div className="text-sm font-semibold">{user.user_metadata?.username || user.email?.split('@')[0]}</div>
+                <div className="text-xs text-gray-400">{user.email}</div>
+              </div>
             </div>
             <div className="space-y-2">
               <button onClick={() => { setActiveTab('movie'); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎬 Movies</button>
@@ -445,30 +401,47 @@ export default function HomePage() {
               <button onClick={() => { setShowWatchlist(true); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">❤️ Watchlist ({watchlist.length})</button>
               <button onClick={() => { setShowProfile(true); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">👤 Profile</button>
               <button onClick={() => { setShowNotifications(true); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🔔 Notifications</button>
-              <button onClick={signOut} className="w-full text-left p-3 text-red-500 hover:bg-gray-800 rounded-lg flex items-center gap-2"><LogOut size={16} /> Sign Out</button>
+              <button onClick={signOut} className="w-full text-left p-3 text-red-500 hover:bg-gray-800 rounded-lg flex items-center gap-2">
+                <LogOut size={16} /> Sign Out
+              </button>
             </div>
           </div>
         </div>
       )}
 
       <main className="pt-16">
-        <HeroCarousel items={(activeTab === 'movie' ? moviesDB : musicDB).slice(0, 3)} onViewDetails={handleViewDetails} activeTab={activeTab} />
+        {/* Hero Carousel - first 3 items */}
+        <HeroCarousel items={allContent.slice(0, 3)} onViewDetails={handleViewDetails} activeTab={activeTab} />
         
         <div className="container mx-auto px-4">
-          {/* Dynamic Categories */}
-          {Object.entries(categories).map(([categoryTitle, items]) => (
+          {/* Dynamic Categories from Database */}
+          {categories.map((category) => (
             <ContentRow 
-              key={categoryTitle}
-              title={categoryTitle}
-              items={items as any[]}
+              key={category.id}
+              title={category.name}
+              items={contentByCategory[category.name] || []}
               type={activeTab}
               onViewDetails={handleViewDetails}
               onAddToWatchlist={addToWatchlist}
-              onRemoveFromWatchlist={removeFromWatchlist}
+              onRemoveFromWatchlist={addToWatchlist}
               isInWatchlist={isInWatchlist}
             />
           ))}
           
+          {/* Search Results */}
+          {searchQuery && filteredContent.length > 0 && (
+            <ContentRow 
+              title={`Search Results for "${searchQuery}"`}
+              items={filteredContent}
+              type={activeTab}
+              onViewDetails={handleViewDetails}
+              onAddToWatchlist={addToWatchlist}
+              onRemoveFromWatchlist={addToWatchlist}
+              isInWatchlist={isInWatchlist}
+            />
+          )}
+          
+          {/* Community Recommendations */}
           <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
         </div>
       </main>
@@ -478,22 +451,36 @@ export default function HomePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 overflow-y-auto">
           <div className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="relative">
-              <img src={selectedContent.backdrop || selectedContent.image} alt={selectedContent.title} className="w-full h-48 object-cover" />
-              <button onClick={() => setShowDetailsModal(false)} className="absolute top-4 right-4 p-2 bg-black/50 rounded-full"><X size={20} /></button>
+              <img src={selectedContent.backdrop_url || selectedContent.image_url} alt={selectedContent.title} className="w-full h-48 object-cover" />
+              <button onClick={() => setShowDetailsModal(false)} className="absolute top-4 right-4 p-2 bg-black/50 rounded-full">
+                <X size={20} />
+              </button>
             </div>
             <div className="p-5">
               <h2 className="text-2xl font-bold mb-1">{selectedContent.title}</h2>
-              {'artist' in selectedContent && <p className="text-gray-400 mb-3">{selectedContent.artist}</p>}
-              <p className="text-gray-300 mb-4 text-sm leading-relaxed">{selectedContent.longDescription || selectedContent.description}</p>
+              {selectedContent.artist && <p className="text-gray-400 mb-3">{selectedContent.artist}</p>}
+              <p className="text-gray-300 mb-4 text-sm leading-relaxed">{selectedContent.long_description || selectedContent.description}</p>
               
               {/* Stats with Labels */}
               <div className="flex gap-6 mb-4 p-3 bg-gray-800/50 rounded-lg">
-                <div className="text-center"><div className="text-2xl text-green-500">🔥</div><div className="text-xs text-gray-400 mt-1">HIGHLY RECOMMENDED</div><div className="font-bold">{selectedContent.stats.highly}</div></div>
-                <div className="text-center"><div className="text-2xl text-blue-500">👍</div><div className="text-xs text-gray-400 mt-1">RECOMMENDED</div><div className="font-bold">{selectedContent.stats.recommended}</div></div>
-                <div className="text-center"><div className="text-2xl text-gray-500">👎</div><div className="text-xs text-gray-400 mt-1">NOT RECOMMENDED</div><div className="font-bold">{selectedContent.stats.not}</div></div>
+                <div className="text-center">
+                  <div className="text-2xl text-green-500">🔥</div>
+                  <div className="text-xs text-gray-400 mt-1">HIGHLY RECOMMENDED</div>
+                  <div className="font-bold">{selectedContent.stats_highly || 0}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl text-blue-500">👍</div>
+                  <div className="text-xs text-gray-400 mt-1">RECOMMENDED</div>
+                  <div className="font-bold">{selectedContent.stats_recommended || 0}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl text-gray-500">👎</div>
+                  <div className="text-xs text-gray-400 mt-1">NOT RECOMMENDED</div>
+                  <div className="font-bold">{selectedContent.stats_not || 0}</div>
+                </div>
               </div>
               
-              {/* Where to Watch / Listen - WITH LABEL */}
+              {/* Where to Watch / Listen */}
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
                 <div className="flex flex-wrap gap-2">
@@ -506,31 +493,24 @@ export default function HomePage() {
               </div>
               
               {/* Movie Details */}
-              {selectedContent.type === 'movie' && (
+              {selectedContent.type === 'movie' && selectedContent.director && (
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
                   <div><span className="text-gray-400">🎬 Director:</span> {selectedContent.director}</div>
                   <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
-                  <div><span className="text-gray-400">⏱️ Runtime:</span> {selectedContent.runtime}</div>
-                  <div><span className="text-gray-400">🎭 Rating:</span> {selectedContent.rating}</div>
-                </div>
-              )}
-              
-              {/* Music Details */}
-              {'artist' in selectedContent && (
-                <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
-                  <div><span className="text-gray-400">🎤 Artist:</span> {selectedContent.artist}</div>
-                  <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
-                  <div><span className="text-gray-400">⏱️ Duration:</span> {selectedContent.duration}</div>
-                  <div><span className="text-gray-400">🎵 Producers:</span> {selectedContent.producers?.join(', ')}</div>
+                  <div><span className="text-gray-400">⏱️ Runtime:</span> {selectedContent.runtime || 'N/A'}</div>
+                  <div><span className="text-gray-400">🎭 Genre:</span> {selectedContent.genre}</div>
+                  {selectedContent.actors && selectedContent.actors.length > 0 && (
+                    <div className="col-span-2"><span className="text-gray-400">⭐ Cast:</span> {selectedContent.actors.join(', ')}</div>
+                  )}
                 </div>
               )}
               
               {/* Trailer */}
-              {(selectedContent.trailer || selectedContent.video) && (
+              {selectedContent.trailer_url && (
                 <div className="mb-4">
                   <h3 className="text-md font-semibold mb-2">▶️ Watch Trailer</h3>
                   <div className="aspect-video rounded-lg overflow-hidden">
-                    <iframe src={selectedContent.trailer || selectedContent.video} title={selectedContent.title} className="w-full h-full" allowFullScreen />
+                    <iframe src={selectedContent.trailer_url} title={selectedContent.title} className="w-full h-full" allowFullScreen />
                   </div>
                 </div>
               )}
@@ -539,7 +519,7 @@ export default function HomePage() {
         </div>
       )}
 
-      <MobileNav activeTab={activeTab} onTabChange={setActiveTab} onViewDetails={handleViewDetails} items={getFilteredContent()} />
+      <MobileNav activeTab={activeTab} onTabChange={setActiveTab} onViewDetails={handleViewDetails} items={filteredContent} />
     </div>
   )
 }
