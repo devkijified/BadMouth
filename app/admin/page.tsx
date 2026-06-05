@@ -176,7 +176,7 @@ export default function AdminPage() {
       year: track.release_date ? new Date(track.release_date).getFullYear() : new Date().getFullYear(),
       duration: formatDuration(track.duration),
       genre: track.artist.name.split(' ')[0],
-      platforms: ['Spotify', 'Apple Music', 'Deezer'],
+      platforms: 'Spotify, Apple Music, Deezer',
       trailer_url: track.preview,
       stats_highly: track.rank ? Math.floor(track.rank / 10000) : 0,
       stats_recommended: track.rank ? Math.floor(track.rank / 20000) : 0,
