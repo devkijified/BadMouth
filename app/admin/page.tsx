@@ -20,18 +20,18 @@ interface ContentItem {
   id: string
   title: string
   description: string
-  long_description?: string
+  long_description: string | null
   image_url: string
-  backdrop_url?: string
+  backdrop_url: string | null
   type: 'movie' | 'music'
   year: number
-  director?: string
-  artist?: string
-  actors?: string[]
+  director: string | null
+  artist: string | null
+  actors: string[] | null
   platforms: string[]
-  trailer_url?: string
-  runtime?: string
-  duration?: string
+  trailer_url: string | null
+  runtime: string | null
+  duration: string | null
   genre: string
   stats_highly: number
   stats_recommended: number
@@ -144,24 +144,29 @@ export default function AdminPage() {
     const dataToSave: any = {
       title: contentForm.title,
       description: contentForm.description,
-      long_description: contentForm.long_description,
+      long_description: contentForm.long_description || null,
       image_url: contentForm.image_url,
-      backdrop_url: contentForm.backdrop_url,
+      backdrop_url: contentForm.backdrop_url || null,
       type: contentForm.type,
       year: contentForm.year,
       platforms: contentForm.platforms.split(',').map(p => p.trim()),
-      trailer_url: contentForm.trailer_url,
+      trailer_url: contentForm.trailer_url || null,
       genre: contentForm.genre,
     }
     
     // Add type-specific fields
     if (contentForm.type === 'movie') {
-      dataToSave.director = contentForm.director
-      dataToSave.actors = contentForm.actors.split(',').map(a => a.trim())
-      dataToSave.runtime = contentForm.runtime
+      dataToSave.director = contentForm.director || null
+      dataToSave.actors = contentForm.actors.split(',').map(a => a.trim()).filter(a => a)
+      dataToSave.runtime = contentForm.runtime || null
+      dataToSave.artist = null
+      dataToSave.duration = null
     } else {
-      dataToSave.artist = contentForm.artist
-      dataToSave.duration = contentForm.duration
+      dataToSave.artist = contentForm.artist || null
+      dataToSave.duration = contentForm.duration || null
+      dataToSave.director = null
+      dataToSave.actors = null
+      dataToSave.runtime = null
     }
     
     let contentId = editingItem?.id
@@ -300,12 +305,28 @@ export default function AdminPage() {
                   <p className="text-sm text-gray-300 line-clamp-2">{item.description}</p>
                   <div className="flex gap-2 mt-3">
                     <button 
-                      onClick={() => { setEditingItem(item); setContentForm({ 
-                        ...item, 
-                        actors: item.actors?.join(', ') || '',
-                        platforms: item.platforms?.join(', ') || '',
-                        category_ids: []
-                      }); setShowContentModal(true); }} 
+                      onClick={() => { 
+                        setEditingItem(item)
+                        setContentForm({ 
+                          title: item.title,
+                          description: item.description || '',
+                          long_description: item.long_description || '',
+                          image_url: item.image_url,
+                          backdrop_url: item.backdrop_url || '',
+                          type: item.type,
+                          year: item.year,
+                          director: item.director || '',
+                          artist: item.artist || '',
+                          actors: item.actors?.join(', ') || '',
+                          platforms: item.platforms?.join(', ') || '',
+                          trailer_url: item.trailer_url || '',
+                          runtime: item.runtime || '',
+                          duration: item.duration || '',
+                          genre: item.genre || '',
+                          category_ids: []
+                        })
+                        setShowContentModal(true)
+                      }} 
                       className="flex-1 py-1 bg-gray-700 rounded text-sm hover:bg-gray-600 transition"
                     >
                       <Edit size={14} className="inline mr-1" /> Edit
