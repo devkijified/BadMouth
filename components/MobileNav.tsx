@@ -1,10 +1,10 @@
 'use client'
 
-import { Film, Music, Home, Search, User, Sparkles } from 'lucide-react'
+import { Film, Music, Home, User, Sparkles, Heart } from 'lucide-react'
 
 interface MobileNavProps {
-  activeTab: 'movies' | 'music'
-  onTabChange: (tab: 'movies' | 'music') => void
+  activeTab: 'movie' | 'music'
+  onTabChange: (tab: 'movie' | 'music') => void
   onViewDetails: (item: any) => void
   items: any[]
 }
@@ -21,20 +21,20 @@ export default function MobileNav({ activeTab, onTabChange, onViewDetails, items
             </button>
             
             <button 
-              onClick={() => onTabChange('movies')}
-              className={`flex flex-col items-center py-1 transition ${activeTab === 'movies' ? 'text-teal-500' : 'text-gray-400'}`}
+              onClick={() => onTabChange('movie')}
+              className={`flex flex-col items-center py-1 transition ${activeTab === 'movie' ? 'text-green-500' : 'text-gray-400'}`}
             >
               <Film size={22} />
               <span className="text-[10px] mt-1">Movies</span>
             </button>
             
-            <button className="flex flex-col items-center justify-center -mt-8 w-14 h-14 bg-gradient-to-r from-teal-600 to-blue-600 rounded-full shadow-lg hover:scale-110 transition-transform">
+            <button className="flex flex-col items-center justify-center -mt-8 w-14 h-14 bg-gradient-to-r from-green-600 to-teal-600 rounded-full shadow-lg hover:scale-110 transition-transform">
               <Sparkles size={24} className="text-white" />
             </button>
             
             <button 
               onClick={() => onTabChange('music')}
-              className={`flex flex-col items-center py-1 transition ${activeTab === 'music' ? 'text-teal-500' : 'text-gray-400'}`}
+              className={`flex flex-col items-center py-1 transition ${activeTab === 'music' ? 'text-green-500' : 'text-gray-400'}`}
             >
               <Music size={22} />
               <span className="text-[10px] mt-1">Music</span>
