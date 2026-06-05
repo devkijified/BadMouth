@@ -368,7 +368,7 @@ export default function AdminPage() {
                           <img src={userItem.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userItem.username}`} className="w-8 h-8 rounded-full" />
                           <span className="text-sm">{userItem.id?.slice(0, 8)}...</span>
                         </div>
-                       </td>
+                      </td>
                       <td className="px-4 py-3">{userItem.username || 'No username'}</td>
                       <td className="px-4 py-3">
                         <select
@@ -380,7 +380,7 @@ export default function AdminPage() {
                           <option value="moderator">Moderator</option>
                           <option value="admin">Admin</option>
                         </select>
-                       </td>
+                      </td>
                       <td className="px-4 py-3 text-sm">{new Date(userItem.created_at).toLocaleDateString()}</td>
                       <td className="px-4 py-3">
                         <button onClick={() => updateUserRole(userItem.id, userItem.role === 'admin' ? 'user' : 'admin')} 
@@ -475,6 +475,8 @@ export default function AdminPage() {
                             ...item, 
                             long_description: item.long_description || '',
                             backdrop_url: item.backdrop_url || '',
+                            director: item.director || '',
+                            artist: item.artist || '',
                             actors: item.actors?.join(', ') || '', 
                             platforms: item.platforms?.join(', ') || '', 
                             category_ids: [] 
