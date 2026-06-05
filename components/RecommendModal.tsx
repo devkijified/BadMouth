@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
-import { X, ThumbsUp } from 'lucide-react'
+import { X } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 
 interface RecommendModalProps {
@@ -27,26 +27,35 @@ export default function RecommendModal({ isOpen, onClose, item, userId, onSucces
     }
     
     setLoading(true)
-    const { error } = await supabase
-      .from('recommendations')
-      .insert({
-        user_id: userId,
-        content_id: item.id,
-        content_type: item.type,
-        recommendation_tier: selectedTier,
-        comment: comment,
-        content_title: item.title
-      })
     
-    if (error) {
-      alert('Failed to save recommendation')
-    } else {
-      alert(`Thanks for recommending "${item.title}"!`)
-      onSuccess()
-      onClose()
-      setSelectedTier(null)
-      setComment('')
+    try {
+      // First, check if the recommendations table has the required columns
+      const { error } = await supabase
+        .from('recommendations')
+        .insert({
+          user_id: userId,
+          content_id: item.id,
+          content_type: item.type,
+          recommendation_tier: selectedTier,
+          comment: comment || null,
+          created_at: new Date().toISOString()
+        })
+      
+      if (error) {
+        console.error('Supabase error:', error)
+        alert(`Failed to save: ${error.message}`)
+      } else {
+        alert(`✅ Thanks for recommending "${item.title}"!`)
+        onSuccess()
+        onClose()
+        setSelectedTier(null)
+        setComment('')
+      }
+    } catch (err) {
+      console.error('Error:', err)
+      alert('Failed to save recommendation. Please try again.')
     }
+    
     setLoading(false)
   }
 
