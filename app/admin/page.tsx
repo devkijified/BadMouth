@@ -12,9 +12,6 @@ import {
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 
-// Import the server action we created
-import { searchDeezerServer } from '@/app/actions/deezer'
-
 // Define types locally to avoid import issues
 interface Category {
   id: string
@@ -170,20 +167,25 @@ export default function AdminPage() {
     setRecommendations(data || [])
   }
 
-  // --- UPDATED DEEZER FETCH LOGIC ---
   const searchDeezerForMusic = async () => {
     if (!deezerSearchQuery.trim()) {
       toast.error('Please enter a song or artist name')
       return
     }
-
     setSearchingDeezer(true)
     try {
-      const result = await searchDeezerServer(deezerSearchQuery)
+      // Use our proxy API instead of calling Deezer directly
+      const response = await fetch(`/api/deezer?q=${encodeURIComponent(deezerSearchQuery)}`)
       
-      if (result.success && result.data && result.data.length > 0) {
-        setDeezerSearchResults(result.data)
-        toast.success(`Found ${result.data.length} results`)
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      
+      const data = await response.json()
+      
+      if (data.data && data.data.length > 0) {
+        setDeezerSearchResults(data.data)
+        toast.success(`Found ${data.data.length} results`)
       } else {
         setDeezerSearchResults([])
         toast.error('No results found. Try different search terms.')
@@ -679,7 +681,6 @@ export default function AdminPage() {
                 <option value="music">Music</option>
               </select>
               <input type="number" placeholder="Year" value={contentForm.year} onChange={e => setContentForm({ ...contentForm, year: parseInt(e.target.value) })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-              
               {contentForm.type === 'movie' ? (
                 <>
                   <input type="text" placeholder="Director" value={contentForm.director} onChange={e => setContentForm({ ...contentForm, director: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
@@ -721,17 +722,14 @@ export default function AdminPage() {
                   <input type="text" placeholder="Duration (e.g., 3:45)" value={contentForm.duration} onChange={e => setContentForm({ ...contentForm, duration: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                 </>
               )}
-              
               <input type="text" placeholder="Platforms (comma separated)" value={contentForm.platforms} onChange={e => setContentForm({ ...contentForm, platforms: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               <input type="text" placeholder="Trailer/Video URL" value={contentForm.trailer_url} onChange={e => setContentForm({ ...contentForm, trailer_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               <input type="text" placeholder="Genre" value={contentForm.genre} onChange={e => setContentForm({ ...contentForm, genre: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-              
               <div className="grid grid-cols-3 gap-2">
                 <input type="number" placeholder="🔥 Highly" value={contentForm.stats_highly} onChange={e => setContentForm({ ...contentForm, stats_highly: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
                 <input type="number" placeholder="👍 Recommended" value={contentForm.stats_recommended} onChange={e => setContentForm({ ...contentForm, stats_recommended: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
                 <input type="number" placeholder="👎 Not" value={contentForm.stats_not} onChange={e => setContentForm({ ...contentForm, stats_not: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
               </div>
-              
               <div>
                 <label className="text-sm text-gray-400 mb-2 block">Assign to Categories</label>
                 <div className="space-y-2 max-h-40 overflow-y-auto">
@@ -750,7 +748,6 @@ export default function AdminPage() {
                 </div>
               </div>
             </div>
-            
             <div className="flex gap-2 mt-6">
               <button onClick={saveContent} className="flex-1 py-2 bg-teal-600 rounded">Save</button>
               <button onClick={closeContentModal} className="flex-1 py-2 bg-gray-700 rounded">Cancel</button>
@@ -759,3 +756,5 @@ export default function AdminPage() {
         </div>
       )}
     </div>
+  )
+}
