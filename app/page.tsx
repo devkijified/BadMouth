@@ -167,7 +167,7 @@ export default function HomePage() {
       backdrop: 'https://i.scdn.co/image/ab67616d0000b273e8e8e8e8e8e8e8e8e8e8e8e8',
       type: 'music', 
       year: 1975,
-      artistInfo: 'Queen are a British rock band formed in London in 1970, known for their theatrical style and genre-blending sound.',
+      artistInfo: 'Queen are a British rock band formed in London in 1970.',
       producers: ['Roy Thomas Baker', 'Queen'],
       writers: ['Freddie Mercury'],
       platforms: ['Spotify', 'Apple Music', 'YouTube Music'],
@@ -186,7 +186,7 @@ export default function HomePage() {
       backdrop: 'https://i.scdn.co/image/ab67616d0000b273d8d8d8d8d8d8d8d8d8d8d8d8',
       type: 'music', 
       year: 2017,
-      artistInfo: 'Ed Sheeran is an English singer-songwriter known for his soulful voice and heartfelt lyrics.',
+      artistInfo: 'Ed Sheeran is an English singer-songwriter.',
       producers: ['Ed Sheeran', 'Steve Mac', 'Johnny McDaid'],
       writers: ['Ed Sheeran', 'Steve Mac', 'Johnny McDaid'],
       platforms: ['Spotify', 'Apple Music', 'YouTube Music'],
@@ -197,14 +197,17 @@ export default function HomePage() {
     },
   ]
 
-  // Get filtered content based on search
+  // Get filtered content based on search - FIXED: Type-safe search
   const getFilteredContent = () => {
     const content = activeTab === 'movie' ? moviesDB : musicDB
     if (!searchQuery) return content
-    return content.filter(item => 
-      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.artist?.toLowerCase().includes(searchQuery.toLowerCase()))
-    )
+    
+    return content.filter(item => {
+      const matchesTitle = item.title.toLowerCase().includes(searchQuery.toLowerCase())
+      // Only check artist if it's a music item (has artist property)
+      const matchesArtist = 'artist' in item && item.artist?.toLowerCase().includes(searchQuery.toLowerCase())
+      return matchesTitle || matchesArtist
+    })
   }
 
   const handleViewDetails = (item: any) => {
@@ -396,7 +399,7 @@ export default function HomePage() {
         </div>
       </main>
 
-      {/* Details Modal - Complete with Where to Watch, Cast, etc. */}
+      {/* Details Modal */}
       {showDetailsModal && selectedContent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 overflow-y-auto">
           <div className="bg-gray-900 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -410,7 +413,7 @@ export default function HomePage() {
               <div className="flex justify-between items-start">
                 <div>
                   <h2 className="text-2xl font-bold mb-2">{selectedContent.title}</h2>
-                  {selectedContent.artist && <p className="text-gray-400 mb-2">{selectedContent.artist}</p>}
+                  {'artist' in selectedContent && <p className="text-gray-400 mb-2">{selectedContent.artist}</p>}
                 </div>
                 <button
                   onClick={() => isInWatchlist(selectedContent.id) ? removeFromWatchlist(selectedContent.id) : addToWatchlist(selectedContent.id)}
@@ -441,7 +444,7 @@ export default function HomePage() {
               )}
               
               {/* Music Details */}
-              {selectedContent.type === 'music' && (
+              {'artist' in selectedContent && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 p-4 bg-gray-800 rounded-lg">
                   <div><span className="text-gray-400">🎤 Artist:</span> {selectedContent.artist}</div>
                   <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
