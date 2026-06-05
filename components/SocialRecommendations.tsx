@@ -67,7 +67,7 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-4 px-4">
           <MessageCircle size={20} className="text-teal-500" />
-          <h2 className="text-xl md:text-2xl font-semibold">Community Recommendations</h2>
+          <h2 className="text-xl md:text-2xl font-semibold">BadMouthers Recommendations</h2>
         </div>
         <div className="space-y-4 px-4">
           {[1, 2, 3].map(i => (
@@ -92,7 +92,7 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-4 px-4">
           <MessageCircle size={20} className="text-teal-500" />
-          <h2 className="text-xl md:text-2xl font-semibold">Community Recommendations</h2>
+          <h2 className="text-xl md:text-2xl font-semibold">BadMouthers Recommendations</h2>
         </div>
         <div className="text-center py-8 text-gray-500">
           <p>No recommendations yet. Be the first to recommend something!</p>
@@ -105,7 +105,7 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
     <div className="mb-8">
       <div className="flex items-center gap-2 mb-4 px-4">
         <MessageCircle size={20} className="text-teal-500" />
-        <h2 className="text-xl md:text-2xl font-semibold">Community Recommendations</h2>
+        <h2 className="text-xl md:text-2xl font-semibold">BadMouthers Recommendations</h2>
         <span className="text-sm text-gray-500">({recommendations.length})</span>
       </div>
 
