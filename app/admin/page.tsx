@@ -545,7 +545,10 @@ export default function AdminPage() {
                             director: item.director || '',
                             artist: item.artist || '',
                             actors: item.actors?.join(', ') || '', 
-                            platforms: item.platforms?.join(', ') || '', 
+                            platforms: item.platforms?.join(', ') || '',
+                            trailer_url: item.trailer_url || '',
+                            runtime: item.runtime || '',
+                            duration: item.duration || '',
                             category_ids: [] 
                           }); 
                           setShowContentModal(true); 
