@@ -2,18 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle } from 'lucide-react'
-
-interface ContentItem {
-  id: string
-  title: string
-  description: string
-  image_url: string
-  backdrop_url?: string
-  type: 'movie' | 'music'
-  stats_highly: number
-  stats_recommended: number
-  stats_not: number
-}
+import { ContentItem } from '@/types/content'
 
 interface HeroCarouselProps {
   items: ContentItem[]
