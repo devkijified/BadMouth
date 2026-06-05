@@ -1,100 +1,72 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, MessageCircle, ThumbsUp } from 'lucide-react'
-
-const featuredContent = [
-  {
-    id: 1,
-    title: 'The Dark Knight',
-    description: 'Batman faces the Joker in Gotham City',
-    image: 'https://image.tmdb.org/t/p/original/qJ2tW6WMUDux911r6m7haRef0WH.jpg',
-    type: 'movie',
-    stats: { highly: 2340, recommended: 890, not: 123 },
-    trailer: 'https://www.youtube.com/watch?v=EXeTwQWrcwY'
-  },
-  {
-    id: 2,
-    title: 'Inception',
-    description: 'Dream within a dream - Mind-bending masterpiece',
-    image: 'https://image.tmdb.org/t/p/original/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg',
-    type: 'movie',
-    stats: { highly: 1890, recommended: 654, not: 89 },
-    trailer: 'https://www.youtube.com/watch?v=YoHD9XEInc0'
-  },
-  {
-    id: 3,
-    title: 'Blinding Lights',
-    description: 'The Weeknd - Most streamed track',
-    image: 'https://i.scdn.co/image/ab67616d0000b273c6e6d6c8a2e0e0e9e9e9e9e9',
-    type: 'music',
-    stats: { highly: 3420, recommended: 1234, not: 234 },
-    trailer: 'https://www.youtube.com/watch?v=4NRXx6U8ABQ'
-  }
-]
+import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle, Heart } from 'lucide-react'
 
 interface HeroCarouselProps {
-  onViewDetails?: (item: any) => void
+  items: any[]
+  onViewDetails: (item: any) => void
+  activeTab: string
 }
 
-export default function HeroCarousel({ onViewDetails }: HeroCarouselProps) {
+export default function HeroCarousel({ items, onViewDetails, activeTab }: HeroCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
 
   useEffect(() => {
+    setCurrentIndex(0)
+  }, [activeTab])
+
+  useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % featuredContent.length)
+      setCurrentIndex((prev) => (prev + 1) % items.length)
     }, 5000)
     return () => clearInterval(timer)
-  }, [])
+  }, [items.length])
 
   const goToPrevious = () => {
-    setCurrentIndex((prev) => (prev - 1 + featuredContent.length) % featuredContent.length)
+    setCurrentIndex((prev) => (prev - 1 + items.length) % items.length)
   }
 
   const goToNext = () => {
-    setCurrentIndex((prev) => (prev + 1) % featuredContent.length)
+    setCurrentIndex((prev) => (prev + 1) % items.length)
   }
 
-  const content = featuredContent[currentIndex]
+  if (items.length === 0) return null
 
-  const handleRecommend = () => {
-    alert(`Recommend "${content.title}"\n\nChoose: 🔥 HIGHLY / 👍 RECOMMENDED / 👎 NOT`)
-  }
+  const content = items[currentIndex]
 
   return (
     <div className="relative h-[60vh] md:h-[70vh] w-full overflow-hidden mb-8">
       <div 
         className="absolute inset-0 bg-cover bg-center transition-transform duration-1000"
-        style={{ backgroundImage: `url(${content.image})` }}
+        style={{ backgroundImage: `url(${content.backdrop || content.image})` }}
       >
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent" />
       </div>
       
       <div className="absolute bottom-0 left-0 right-0 p-8 md:p-12">
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-sm px-2 py-1 bg-teal-600 rounded-full">{content.type === 'movie' ? '🎬 Movie' : '🎵 Music'}</span>
+          <span className="text-sm px-2 py-1 bg-green-600 rounded-full">{content.type === 'movie' ? '🎬 Movie' : '🎵 Music'}</span>
+          {content.year && <span className="text-sm text-gray-300">{content.year}</span>}
         </div>
         <h1 className="text-3xl md:text-5xl font-bold mb-2">{content.title}</h1>
         <p className="text-gray-300 text-sm md:text-base mb-4 max-w-lg">{content.description}</p>
         
         <div className="flex gap-4 mb-4">
-          <div className="flex items-center gap-1"><span className="text-lg">🔥</span><span className="text-sm font-semibold">{content.stats.highly}</span></div>
-          <div className="flex items-center gap-1"><span className="text-lg">👍</span><span className="text-sm font-semibold">{content.stats.recommended}</span></div>
-          <div className="flex items-center gap-1"><span className="text-lg">👎</span><span className="text-sm font-semibold">{content.stats.not}</span></div>
+          <div className="flex items-center gap-1"><span className="text-green-500 text-lg">🔥</span><span className="text-sm font-semibold">{content.stats?.highly || 0}</span><span className="text-xs text-gray-400">highly</span></div>
+          <div className="flex items-center gap-1"><span className="text-blue-500 text-lg">👍</span><span className="text-sm font-semibold">{content.stats?.recommended || 0}</span><span className="text-xs text-gray-400">recommended</span></div>
+          <div className="flex items-center gap-1"><span className="text-gray-500 text-lg">👎</span><span className="text-sm font-semibold">{content.stats?.not || 0}</span><span className="text-xs text-gray-400">not</span></div>
         </div>
         
         <div className="flex gap-3">
-          <button 
-            onClick={handleRecommend}
-            className="flex items-center gap-2 px-6 py-2 bg-teal-600 rounded-lg font-semibold hover:bg-teal-700 transition"
-          >
+          <button className="flex items-center gap-2 px-6 py-2 bg-green-600 rounded-lg font-semibold hover:bg-green-700 transition">
             <ThumbsUp size={18} /> Recommend
           </button>
           <button 
-            onClick={() => onViewDetails && onViewDetails(content)}
+            onClick={() => onViewDetails(content)}
             className="flex items-center gap-2 px-6 py-2 bg-gray-600/70 rounded-lg font-semibold hover:bg-gray-600 transition"
           >
-            <MessageCircle size={18} /> View Details
+            <MessageCircle size={18} /> Details
           </button>
         </div>
       </div>
@@ -107,8 +79,8 @@ export default function HeroCarousel({ onViewDetails }: HeroCarouselProps) {
       </button>
 
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-        {featuredContent.map((_, idx) => (
-          <button key={idx} onClick={() => setCurrentIndex(idx)} className={`w-2 h-2 rounded-full transition-all ${idx === currentIndex ? 'w-8 bg-teal-600' : 'bg-gray-500'}`} />
+        {items.map((_, idx) => (
+          <button key={idx} onClick={() => setCurrentIndex(idx)} className={`w-2 h-2 rounded-full transition-all ${idx === currentIndex ? 'w-8 bg-green-600' : 'bg-gray-500'}`} />
         ))}
       </div>
     </div>
