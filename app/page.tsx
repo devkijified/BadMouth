@@ -14,6 +14,7 @@ import RecommendModal from '@/components/RecommendModal'
 import HomeFeed from '@/components/HomeFeed'
 import TrendingBar from '@/components/TrendingBar'
 import QuickStats from '@/components/QuickStats'
+import WatchlistBasedRecommendations from '@/components/WatchlistBasedRecommendations'
 import { ContentItem, Category } from '@/types/content'
 
 export default function HomePage() {
@@ -79,20 +80,99 @@ export default function HomePage() {
     }
   }
 
+  // Load watchlist from Supabase
   useEffect(() => {
-    const saved = localStorage.getItem('badmouth_watchlist')
-    if (saved) {
-      try {
-        setWatchlist(JSON.parse(saved))
-      } catch (e) {
-        console.error('Failed to parse watchlist', e)
+    if (user) {
+      loadWatchlistFromSupabase()
+    } else {
+      const saved = localStorage.getItem('badmouth_watchlist')
+      if (saved) {
+        try {
+          setWatchlist(JSON.parse(saved))
+        } catch (e) {
+          console.error('Failed to parse watchlist', e)
+        }
       }
     }
-  }, [])
+  }, [user])
 
-  useEffect(() => {
-    localStorage.setItem('badmouth_watchlist', JSON.stringify(watchlist))
-  }, [watchlist])
+  const loadWatchlistFromSupabase = async () => {
+    const { data } = await supabase
+      .from('watchlist')
+      .select('*')
+      .eq('user_id', user?.id)
+    
+    if (data && data.length > 0) {
+      // Fetch full content details for each watchlist item
+      const contentIds = data.map(item => item.content_id)
+      const { data: contentData } = await supabase
+        .from('content')
+        .select('*')
+        .in('id', contentIds)
+      setWatchlist(contentData || [])
+    }
+  }
+
+  const addToWatchlist = async (item: ContentItem) => {
+    if (watchlist.some(i => i.id === item.id)) {
+      // Remove from watchlist
+      const newWatchlist = watchlist.filter(i => i.id !== item.id)
+      setWatchlist(newWatchlist)
+      setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
+      
+      // Remove from Supabase if logged in
+      if (user) {
+        await supabase
+          .from('watchlist')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('content_id', item.id)
+      } else {
+        localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
+      }
+    } else {
+      // Add to watchlist
+      const newWatchlist = [...watchlist, item]
+      setWatchlist(newWatchlist)
+      setNotifications([`✨ "${item.title}" added to watchlist!`, ...notifications.slice(0, 4)])
+      
+      // Add to Supabase if logged in
+      if (user) {
+        await supabase
+          .from('watchlist')
+          .insert({
+            user_id: user.id,
+            content_id: item.id,
+            content_type: item.type
+          })
+      } else {
+        localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
+      }
+    }
+    setTimeout(() => setNotifications(prev => prev.slice(1)), 3000)
+  }
+
+  const removeFromWatchlist = async (id: string) => {
+    const item = watchlist.find(i => i.id === id)
+    if (item) {
+      const newWatchlist = watchlist.filter(i => i.id !== id)
+      setWatchlist(newWatchlist)
+      setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
+      
+      if (user) {
+        await supabase
+          .from('watchlist')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('content_id', id)
+      } else {
+        localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
+      }
+      setTimeout(() => setNotifications(prev => prev.slice(1)), 3000)
+    }
+  }
+
+  const isInWatchlist = (id: string) => watchlist.some(i => i.id === id)
 
   useEffect(() => {
     if (user && !authLoading && currentPage !== 'home') {
@@ -137,31 +217,6 @@ export default function HomePage() {
     }
   }
 
-  const addToWatchlist = (item: ContentItem) => {
-    if (watchlist.some(i => i.id === item.id)) {
-      const newWatchlist = watchlist.filter(i => i.id !== item.id)
-      setWatchlist(newWatchlist)
-      setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
-    } else {
-      const newWatchlist = [...watchlist, item]
-      setWatchlist(newWatchlist)
-      setNotifications([`✨ "${item.title}" added to watchlist!`, ...notifications.slice(0, 4)])
-    }
-    setTimeout(() => setNotifications(prev => prev.slice(1)), 3000)
-  }
-
-  const removeFromWatchlist = (id: string) => {
-    const item = watchlist.find(i => i.id === id)
-    if (item) {
-      const newWatchlist = watchlist.filter(i => i.id !== id)
-      setWatchlist(newWatchlist)
-      setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
-      setTimeout(() => setNotifications(prev => prev.slice(1)), 3000)
-    }
-  }
-
-  const isInWatchlist = (id: string) => watchlist.some(i => i.id === id)
-
   const handleRecommend = (item: ContentItem) => {
     setRecommendItem(item)
     setShowRecommendModal(true)
@@ -169,7 +224,7 @@ export default function HomePage() {
 
   const handleRecommendSuccess = () => {
     if (currentPage === 'home') {
-      // Refresh home feed would happen automatically on next visit
+      // Refresh would happen on next visit
     } else {
       loadData()
     }
@@ -522,6 +577,16 @@ export default function HomePage() {
             <QuickStats userId={user.id} />
             <div className="container mx-auto px-4">
               <HomeFeed 
+                onViewDetails={handleViewDetails}
+                onRecommend={handleRecommend}
+                onAddToWatchlist={addToWatchlist}
+                onRemoveFromWatchlist={removeFromWatchlist}
+                isInWatchlist={isInWatchlist}
+              />
+              {/* Based on Your Watchlist - Only shows if watchlist has items */}
+              <WatchlistBasedRecommendations 
+                userId={user.id}
+                watchlist={watchlist}
                 onViewDetails={handleViewDetails}
                 onRecommend={handleRecommend}
                 onAddToWatchlist={addToWatchlist}
