@@ -1,29 +1,7 @@
 'use client'
 
 import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle, Heart } from 'lucide-react'
-
-// Match the Supabase data structure
-interface ContentItem {
-  id: string
-  title: string
-  description: string
-  long_description?: string
-  image_url: string
-  backdrop_url?: string
-  type: 'movie' | 'music'
-  year: number
-  director?: string
-  artist?: string
-  actors?: string[]
-  platforms: string[]
-  trailer_url?: string
-  runtime?: string
-  duration?: string
-  genre: string
-  stats_highly: number
-  stats_recommended: number
-  stats_not: number
-}
+import { ContentItem } from '@/types/content'
 
 interface ContentRowProps {
   title: string
