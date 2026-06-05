@@ -128,29 +128,19 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
               } as ContentItem)}
             >
               <div className="flex gap-3">
-                <img 
-                  src={avatarUrl} 
-                  alt={username} 
-                  className="w-10 h-10 rounded-full" 
-                />
+                <img src={avatarUrl} alt={username} className="w-10 h-10 rounded-full" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="font-semibold text-sm">{username}</span>
                     <span className="text-xs text-gray-500">• {new Date(rec.created_at).toLocaleDateString()}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${tier.color}`}>
-                      {tier.emoji} {tier.label}
-                    </span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${tier.color}`}>{tier.emoji} {tier.label}</span>
                   </div>
                   <h3 className="font-bold mb-1 truncate">{contentTitle}</h3>
                   {rec.content?.artist && <p className="text-xs text-gray-400 mb-2">{rec.content.artist}</p>}
                   {rec.comment && <p className="text-sm text-gray-400 mb-3 line-clamp-2">{rec.comment}</p>}
                   <div className="flex gap-4">
-                    <button className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition">
-                      <ThumbsUp size={14} /> Like
-                    </button>
-                    <button className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition">
-                      <Share2 size={14} /> Share
-                    </button>
+                    <button className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"><ThumbsUp size={14} /> Like</button>
+                    <button className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"><Share2 size={14} /> Share</button>
                   </div>
                 </div>
               </div>
