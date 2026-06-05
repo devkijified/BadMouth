@@ -691,4 +691,45 @@ export default function AdminPage() {
                       </div>
                     )}
                   </div>
-                
+                  
+                  <input type="text" placeholder="Artist" value={contentForm.artist} onChange={e => setContentForm({ ...contentForm, artist: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                  <input type="text" placeholder="Duration (e.g., 3:45)" value={contentForm.duration} onChange={e => setContentForm({ ...contentForm, duration: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                </>
+              )}
+              
+              <input type="text" placeholder="Platforms (comma separated)" value={contentForm.platforms} onChange={e => setContentForm({ ...contentForm, platforms: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              <input type="text" placeholder="Trailer/Video URL" value={contentForm.trailer_url} onChange={e => setContentForm({ ...contentForm, trailer_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              <input type="text" placeholder="Genre" value={contentForm.genre} onChange={e => setContentForm({ ...contentForm, genre: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              
+              <div className="grid grid-cols-3 gap-2">
+                <input type="number" placeholder="🔥 Highly" value={contentForm.stats_highly} onChange={e => setContentForm({ ...contentForm, stats_highly: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
+                <input type="number" placeholder="👍 Recommended" value={contentForm.stats_recommended} onChange={e => setContentForm({ ...contentForm, stats_recommended: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
+                <input type="number" placeholder="👎 Not" value={contentForm.stats_not} onChange={e => setContentForm({ ...contentForm, stats_not: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
+              </div>
+              
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Assign to Categories</label>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {categories.filter(c => c.type === contentForm.type).map(cat => (
+                    <label key={cat.id} className="flex items-center gap-2">
+                      <input type="checkbox" checked={contentForm.category_ids.includes(cat.id)} 
+                        onChange={e => {
+                          if (e.target.checked) setContentForm({ ...contentForm, category_ids: [...contentForm.category_ids, cat.id] })
+                          else setContentForm({ ...contentForm, category_ids: contentForm.category_ids.filter(id => id !== cat.id) })
+                        }} />
+                      {cat.name} (Order: {cat.display_order})
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button onClick={saveContent} className="flex-1 py-2 bg-teal-600 rounded">Save</button>
+              <button onClick={() => setShowContentModal(false)} className="flex-1 py-2 bg-gray-700 rounded">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
