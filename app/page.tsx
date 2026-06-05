@@ -3,23 +3,23 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
-import { Search, Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, ExternalLink, Shield } from 'lucide-react'
+import { Bell, User, Menu, Film, Music, Heart, Sparkles, X, LogOut, Filter, Shield } from 'lucide-react'
 import Link from 'next/link'
 import HeroCarousel from '@/components/HeroCarousel'
 import ContentRow from '@/components/ContentRow'
 import SocialRecommendations from '@/components/SocialRecommendations'
 import MobileNav from '@/components/MobileNav'
+import SearchModal from '@/components/SearchModal'
+import RecommendModal from '@/components/RecommendModal'
 import { ContentItem, Category } from '@/types/content'
 
 export default function HomePage() {
-  const { user, signOut, loading: authLoading } = useAuth()  // ← Make sure signOut is here
+  const { user, signOut, loading: authLoading } = useAuth()
   const [activeTab, setActiveTab] = useState<'movie' | 'music'>('movie')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [showSearch, setShowSearch] = useState(false)
   const [selectedGenre, setSelectedGenre] = useState<string>('all')
   const [showGenreFilter, setShowGenreFilter] = useState(false)
   const [watchlist, setWatchlist] = useState<ContentItem[]>([])
@@ -27,6 +27,9 @@ export default function HomePage() {
   const [showWatchlist, setShowWatchlist] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [showSearchModal, setShowSearchModal] = useState(false)
+  const [showRecommendModal, setShowRecommendModal] = useState(false)
+  const [recommendItem, setRecommendItem] = useState<ContentItem | null>(null)
   
   // Data from Supabase
   const [categories, setCategories] = useState<Category[]>([])
@@ -89,7 +92,7 @@ export default function HomePage() {
     localStorage.setItem('badmouth_watchlist', JSON.stringify(watchlist))
   }, [watchlist])
 
-  // Load data when user is authenticated and tab changes
+  // Load data from Supabase
   useEffect(() => {
     if (user && !authLoading) {
       loadData()
@@ -100,7 +103,6 @@ export default function HomePage() {
     setLoading(true)
     
     try {
-      // Load categories
       const { data: categoriesData } = await supabase
         .from('categories')
         .select('*')
@@ -110,7 +112,6 @@ export default function HomePage() {
       
       setCategories(categoriesData || [])
       
-      // Load content
       const { data: contentData } = await supabase
         .from('content')
         .select('*')
@@ -118,12 +119,10 @@ export default function HomePage() {
       
       setAllContent(contentData || [])
       
-      // Load relations
       const { data: relations } = await supabase
         .from('content_categories')
         .select('*')
       
-      // Organize by category
       const byCategory: Record<string, ContentItem[]> = {}
       for (const category of categoriesData || []) {
         const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
@@ -162,14 +161,17 @@ export default function HomePage() {
 
   const isInWatchlist = (id: string) => watchlist.some(i => i.id === id)
 
+  const handleRecommend = (item: ContentItem) => {
+    setRecommendItem(item)
+    setShowRecommendModal(true)
+  }
+
+  const handleRecommendSuccess = () => {
+    loadData()
+  }
+
   const getFilteredContent = (): ContentItem[] => {
     let filtered = [...allContent]
-    if (searchQuery) {
-      filtered = filtered.filter(item => 
-        item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (item.artist && item.artist.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
-    }
     if (selectedGenre !== 'all') {
       filtered = filtered.filter(item => item.genre === selectedGenre)
     }
@@ -181,6 +183,15 @@ export default function HomePage() {
     setShowDetailsModal(true)
   }
 
+  const handleHomeClick = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    closeAllPanels()
+  }
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50)
@@ -189,7 +200,6 @@ export default function HomePage() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  // Auth loading
   if (authLoading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -235,6 +245,22 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-black">
+      {/* Search Modal */}
+      <SearchModal 
+        isOpen={showSearchModal} 
+        onClose={() => setShowSearchModal(false)} 
+        onSelect={handleViewDetails}
+      />
+
+      {/* Recommend Modal */}
+      <RecommendModal 
+        isOpen={showRecommendModal} 
+        onClose={() => setShowRecommendModal(false)} 
+        item={recommendItem}
+        userId={user.id}
+        onSuccess={handleRecommendSuccess}
+      />
+
       {/* Notifications Panel */}
       {showNotifications && (
         <div className="fixed top-16 right-4 z-50 w-80 bg-gray-900 rounded-xl shadow-xl border border-gray-700">
@@ -331,12 +357,12 @@ export default function HomePage() {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-8">
-              <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="text-xl font-bold bg-gradient-to-r from-teal-500 to-blue-500 bg-clip-text text-transparent">
+              <button onClick={scrollToTop} className="text-xl font-bold bg-gradient-to-r from-teal-500 to-blue-500 bg-clip-text text-transparent">
                 BADMOUTH
               </button>
               
               <nav className="hidden md:flex gap-6">
-                <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="text-white font-medium">Home</button>
+                <button onClick={scrollToTop} className="text-white font-medium">Home</button>
                 <button onClick={() => setActiveTab('movie')} className={`flex items-center gap-1 transition ${activeTab === 'movie' ? 'text-teal-500 border-b-2 border-teal-500 pb-1' : 'text-gray-300 hover:text-white'}`}>
                   <Film size={16} /> Movies
                 </button>
@@ -347,28 +373,10 @@ export default function HomePage() {
             </div>
 
             <div className="flex items-center gap-4">
-              {/* Search */}
-              <div className="relative">
-                {showSearch ? (
-                  <div className="flex items-center">
-                    <input 
-                      type="text" 
-                      placeholder="Search movies or music..." 
-                      value={searchQuery} 
-                      onChange={(e) => setSearchQuery(e.target.value)} 
-                      className="px-4 py-1 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500 text-sm w-48 md:w-64" 
-                      autoFocus 
-                    />
-                    <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} className="ml-2 text-gray-400 hover:text-white">
-                      <X size={18} />
-                    </button>
-                  </div>
-                ) : (
-                  <button onClick={() => setShowSearch(true)} className="text-gray-300 hover:text-white">
-                    <Search size={20} />
-                  </button>
-                )}
-              </div>
+              {/* Search Button */}
+              <button onClick={() => setShowSearchModal(true)} className="text-gray-300 hover:text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              </button>
 
               {/* Genre Filter */}
               <div className="relative">
@@ -381,7 +389,7 @@ export default function HomePage() {
                       {genres.map(genre => (
                         <button 
                           key={genre} 
-                          onClick={() => { setSelectedGenre(genre); setShowGenreFilter(false); }} 
+                          onClick={() => { setSelectedGenre(genre); setShowGenreFilter(false); loadData(); }} 
                           className={`w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-800 ${selectedGenre === genre ? 'text-teal-500' : 'text-gray-300'}`}
                         >
                           {genre === 'all' ? 'All Genres' : genre}
@@ -402,7 +410,7 @@ export default function HomePage() {
                 {watchlist.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-teal-500 rounded-full text-[10px] flex items-center justify-center text-white">{watchlist.length}</span>}
               </button>
 
-              {/* Admin Button */}
+              {/* Admin Button - Only visible to admin */}
               {user?.email === 'kijified@gmail.com' && (
                 <Link href="/admin" className="text-gray-300 hover:text-teal-500 transition">
                   <Shield size={20} />
@@ -446,6 +454,7 @@ export default function HomePage() {
               </div>
             </div>
             <div className="space-y-2">
+              <button onClick={() => { handleHomeClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🏠 Home</button>
               <button onClick={() => { setActiveTab('movie'); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎬 Movies</button>
               <button onClick={() => { setActiveTab('music'); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎵 Music</button>
               <button onClick={() => { toggleWatchlist(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">❤️ Watchlist ({watchlist.length})</button>
@@ -465,7 +474,12 @@ export default function HomePage() {
       )}
 
       <main className="pt-16">
-        <HeroCarousel items={allContent.slice(0, 3)} onViewDetails={handleViewDetails} activeTab={activeTab} />
+        <HeroCarousel 
+          items={allContent.slice(0, 3)} 
+          onViewDetails={handleViewDetails} 
+          onRecommend={handleRecommend}
+          activeTab={activeTab} 
+        />
         
         <div className="container mx-auto px-4">
           {categories.map((category) => (
@@ -475,23 +489,12 @@ export default function HomePage() {
               items={contentByCategory[category.name] || []}
               type={activeTab}
               onViewDetails={handleViewDetails}
+              onRecommend={handleRecommend}
               onAddToWatchlist={addToWatchlist}
               onRemoveFromWatchlist={removeFromWatchlist}
               isInWatchlist={isInWatchlist}
             />
           ))}
-          
-          {searchQuery && (
-            <ContentRow 
-              title={`Search Results for "${searchQuery}"`}
-              items={filteredContent}
-              type={activeTab}
-              onViewDetails={handleViewDetails}
-              onAddToWatchlist={addToWatchlist}
-              onRemoveFromWatchlist={removeFromWatchlist}
-              isInWatchlist={isInWatchlist}
-            />
-          )}
           
           <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
         </div>
@@ -534,8 +537,8 @@ export default function HomePage() {
                 <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
                 <div className="flex flex-wrap gap-2">
                   {selectedContent.platforms?.map((platform: string, idx: number) => (
-                    <button key={idx} className="px-4 py-2 bg-teal-600 rounded-lg text-sm font-medium hover:bg-teal-700 transition flex items-center gap-2">
-                      {platform} <ExternalLink size={12} />
+                    <button key={idx} className="px-4 py-2 bg-teal-600 rounded-lg text-sm font-medium hover:bg-teal-700 transition">
+                      {platform}
                     </button>
                   ))}
                 </div>
@@ -547,9 +550,6 @@ export default function HomePage() {
                   <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
                   <div><span className="text-gray-400">⏱️ Runtime:</span> {selectedContent.runtime || 'N/A'}</div>
                   <div><span className="text-gray-400">🎭 Genre:</span> {selectedContent.genre}</div>
-                  {selectedContent.actors && selectedContent.actors.length > 0 && (
-                    <div className="col-span-2"><span className="text-gray-400">⭐ Cast:</span> {selectedContent.actors.join(', ')}</div>
-                  )}
                 </div>
               )}
               
@@ -566,7 +566,15 @@ export default function HomePage() {
         </div>
       )}
 
-      <MobileNav activeTab={activeTab} onTabChange={setActiveTab} onViewDetails={handleViewDetails} items={filteredContent} />
+      <MobileNav 
+        activeTab={activeTab} 
+        onTabChange={setActiveTab} 
+        onViewDetails={handleViewDetails}
+        onHomeClick={handleHomeClick}
+        onProfileClick={toggleProfile}
+        onWatchlistClick={toggleWatchlist}
+        items={filteredContent} 
+      />
     </div>
   )
 }
