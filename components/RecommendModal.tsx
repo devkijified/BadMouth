@@ -29,7 +29,6 @@ export default function RecommendModal({ isOpen, onClose, item, userId, onSucces
     setLoading(true)
     
     try {
-      // First, check if the recommendations table has the required columns
       const { error } = await supabase
         .from('recommendations')
         .insert({
