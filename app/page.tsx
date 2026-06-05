@@ -116,6 +116,16 @@ export default function HomePage() {
     setTimeout(() => setNotifications(prev => prev.slice(1)), 3000)
   }
 
+  const removeFromWatchlist = (id: string) => {
+    const item = watchlist.find(i => i.id === id)
+    if (item) {
+      const newWatchlist = watchlist.filter(i => i.id !== id)
+      setWatchlist(newWatchlist)
+      setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
+      setTimeout(() => setNotifications(prev => prev.slice(1)), 3000)
+    }
+  }
+
   const isInWatchlist = (id: string) => watchlist.some(i => i.id === id)
 
   // Filter content by search and genre
@@ -213,7 +223,7 @@ export default function HomePage() {
                     <p className="font-medium text-sm">{item.title}</p>
                     <p className="text-xs text-gray-400">{item.type}</p>
                   </div>
-                  <button onClick={() => addToWatchlist(item)} className="text-red-500 text-xs">Remove</button>
+                  <button onClick={() => removeFromWatchlist(item.id)} className="text-red-500 text-xs">Remove</button>
                 </div>
               ))
             )}
@@ -393,7 +403,7 @@ export default function HomePage() {
               type={activeTab}
               onViewDetails={handleViewDetails}
               onAddToWatchlist={addToWatchlist}
-              onRemoveFromWatchlist={addToWatchlist}
+              onRemoveFromWatchlist={removeFromWatchlist}
               isInWatchlist={isInWatchlist}
             />
           ))}
@@ -406,7 +416,7 @@ export default function HomePage() {
               type={activeTab}
               onViewDetails={handleViewDetails}
               onAddToWatchlist={addToWatchlist}
-              onRemoveFromWatchlist={addToWatchlist}
+              onRemoveFromWatchlist={removeFromWatchlist}
               isInWatchlist={isInWatchlist}
             />
           )}
