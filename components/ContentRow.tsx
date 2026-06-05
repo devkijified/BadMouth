@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle, Heart } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 
@@ -8,12 +9,22 @@ interface ContentRowProps {
   items: ContentItem[]
   type: 'movie' | 'music'
   onViewDetails: (item: ContentItem) => void
-  onAddToWatchlist?: (item: ContentItem) => void
-  onRemoveFromWatchlist?: (id: string) => void
-  isInWatchlist?: (id: string) => boolean
+  onRecommend: (item: ContentItem) => void
+  onAddToWatchlist: (item: ContentItem) => void
+  onRemoveFromWatchlist: (id: string) => void
+  isInWatchlist: (id: string) => boolean
 }
 
-export default function ContentRow({ title, items, type, onViewDetails, onAddToWatchlist, onRemoveFromWatchlist, isInWatchlist }: ContentRowProps) {
+export default function ContentRow({ 
+  title, 
+  items, 
+  type, 
+  onViewDetails, 
+  onRecommend,
+  onAddToWatchlist, 
+  onRemoveFromWatchlist, 
+  isInWatchlist 
+}: ContentRowProps) {
   const scroll = (direction: 'left' | 'right') => {
     const container = document.getElementById(`scroll-${title.replace(/\s/g, '')}`)
     if (container) {
@@ -22,15 +33,13 @@ export default function ContentRow({ title, items, type, onViewDetails, onAddToW
     }
   }
 
-  if (!items || items.length === 0) {
-    return null
-  }
+  if (!items || items.length === 0) return null
 
   return (
     <div className="mb-8">
       <div className="flex justify-between items-center mb-3 px-4">
         <h2 className="text-xl md:text-2xl font-semibold">{title}</h2>
-        <button className="text-sm text-green-400 hover:text-green-300 transition">View All →</button>
+        <button className="text-sm text-teal-400 hover:text-teal-300 transition">View All →</button>
       </div>
 
       <div className="relative group">
@@ -56,8 +65,8 @@ export default function ContentRow({ title, items, type, onViewDetails, onAddToW
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/item:opacity-100 transition flex flex-col justify-end p-3 gap-2">
                   <button 
-                    className="flex items-center justify-center gap-2 p-2 bg-green-600 rounded-lg text-sm font-semibold hover:bg-green-700 transition"
-                    onClick={(e) => { e.stopPropagation(); /* Handle recommend */ }}
+                    onClick={(e) => { e.stopPropagation(); onRecommend(item); }} 
+                    className="flex items-center justify-center gap-2 p-2 bg-teal-600 rounded-lg text-sm font-semibold hover:bg-teal-700 transition"
                   >
                     <ThumbsUp size={14} /> Recommend
                   </button>
@@ -67,29 +76,27 @@ export default function ContentRow({ title, items, type, onViewDetails, onAddToW
                   >
                     <MessageCircle size={14} /> Details
                   </button>
-                  {onAddToWatchlist && isInWatchlist && (
-                    <button 
-                      onClick={(e) => { 
-                        e.stopPropagation(); 
-                        if (isInWatchlist(item.id)) {
-                          onRemoveFromWatchlist?.(item.id)
-                        } else {
-                          onAddToWatchlist?.(item)
-                        }
-                      }} 
-                      className={`flex items-center justify-center gap-2 p-2 rounded-lg text-sm font-semibold transition ${isInWatchlist(item.id) ? 'bg-green-600' : 'bg-gray-700 hover:bg-gray-600'}`}
-                    >
-                      <Heart size={14} className={isInWatchlist(item.id) ? 'fill-white' : ''} /> 
-                      {isInWatchlist(item.id) ? 'In Watchlist' : 'Watchlist'}
-                    </button>
-                  )}
+                  <button 
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      if (isInWatchlist(item.id)) {
+                        onRemoveFromWatchlist(item.id)
+                      } else {
+                        onAddToWatchlist(item)
+                      }
+                    }} 
+                    className={`flex items-center justify-center gap-2 p-2 rounded-lg text-sm font-semibold transition ${isInWatchlist(item.id) ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+                  >
+                    <Heart size={14} className={isInWatchlist(item.id) ? 'fill-white' : ''} /> 
+                    {isInWatchlist(item.id) ? 'In Watchlist' : 'Watchlist'}
+                  </button>
                 </div>
               </div>
               <div className="p-2">
                 <h3 className="font-semibold text-sm truncate">{item.title}</h3>
                 {item.artist && <p className="text-xs text-gray-400">{item.artist}</p>}
                 <div className="flex justify-between mt-1 text-[11px]">
-                  <span className="flex items-center gap-0.5"><span className="text-green-500">🔥</span> {item.stats_highly || 0}</span>
+                  <span className="flex items-center gap-0.5"><span className="text-teal-500">🔥</span> {item.stats_highly || 0}</span>
                   <span className="flex items-center gap-0.5"><span className="text-blue-500">👍</span> {item.stats_recommended || 0}</span>
                   <span className="flex items-center gap-0.5"><span className="text-gray-500">👎</span> {item.stats_not || 0}</span>
                 </div>
