@@ -1,11 +1,23 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle, Heart } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle } from 'lucide-react'
+
+interface ContentItem {
+  id: string
+  title: string
+  description: string
+  image_url: string
+  backdrop_url?: string
+  type: 'movie' | 'music'
+  stats_highly: number
+  stats_recommended: number
+  stats_not: number
+}
 
 interface HeroCarouselProps {
-  items: any[]
-  onViewDetails: (item: any) => void
+  items: ContentItem[]
+  onViewDetails: (item: ContentItem) => void
   activeTab: string
 }
 
@@ -14,9 +26,10 @@ export default function HeroCarousel({ items, onViewDetails, activeTab }: HeroCa
 
   useEffect(() => {
     setCurrentIndex(0)
-  }, [activeTab])
+  }, [activeTab, items])
 
   useEffect(() => {
+    if (items.length === 0) return
     const timer = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % items.length)
     }, 5000)
@@ -39,7 +52,7 @@ export default function HeroCarousel({ items, onViewDetails, activeTab }: HeroCa
     <div className="relative h-[60vh] md:h-[70vh] w-full overflow-hidden mb-8">
       <div 
         className="absolute inset-0 bg-cover bg-center transition-transform duration-1000"
-        style={{ backgroundImage: `url(${content.backdrop || content.image})` }}
+        style={{ backgroundImage: `url(${content.backdrop_url || content.image_url})` }}
       >
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent" />
       </div>
@@ -47,15 +60,14 @@ export default function HeroCarousel({ items, onViewDetails, activeTab }: HeroCa
       <div className="absolute bottom-0 left-0 right-0 p-8 md:p-12">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-sm px-2 py-1 bg-green-600 rounded-full">{content.type === 'movie' ? '🎬 Movie' : '🎵 Music'}</span>
-          {content.year && <span className="text-sm text-gray-300">{content.year}</span>}
         </div>
         <h1 className="text-3xl md:text-5xl font-bold mb-2">{content.title}</h1>
         <p className="text-gray-300 text-sm md:text-base mb-4 max-w-lg">{content.description}</p>
         
         <div className="flex gap-4 mb-4">
-          <div className="flex items-center gap-1"><span className="text-green-500 text-lg">🔥</span><span className="text-sm font-semibold">{content.stats?.highly || 0}</span><span className="text-xs text-gray-400">highly</span></div>
-          <div className="flex items-center gap-1"><span className="text-blue-500 text-lg">👍</span><span className="text-sm font-semibold">{content.stats?.recommended || 0}</span><span className="text-xs text-gray-400">recommended</span></div>
-          <div className="flex items-center gap-1"><span className="text-gray-500 text-lg">👎</span><span className="text-sm font-semibold">{content.stats?.not || 0}</span><span className="text-xs text-gray-400">not</span></div>
+          <div className="flex items-center gap-1"><span className="text-green-500 text-lg">🔥</span><span className="text-sm font-semibold">{content.stats_highly || 0}</span></div>
+          <div className="flex items-center gap-1"><span className="text-blue-500 text-lg">👍</span><span className="text-sm font-semibold">{content.stats_recommended || 0}</span></div>
+          <div className="flex items-center gap-1"><span className="text-gray-500 text-lg">👎</span><span className="text-sm font-semibold">{content.stats_not || 0}</span></div>
         </div>
         
         <div className="flex gap-3">
