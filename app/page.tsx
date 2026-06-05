@@ -15,6 +15,7 @@ import HomeFeed from '@/components/HomeFeed'
 import TrendingBar from '@/components/TrendingBar'
 import QuickStats from '@/components/QuickStats'
 import WatchlistBasedRecommendations from '@/components/WatchlistBasedRecommendations'
+import MusicSearch from '@/components/MusicSearch'
 import { ContentItem, Category } from '@/types/content'
 
 export default function HomePage() {
@@ -42,7 +43,7 @@ export default function HomePage() {
   const [contentByCategory, setContentByCategory] = useState<Record<string, ContentItem[]>>({})
   const [loading, setLoading] = useState(true)
 
-  const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller']
+  const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller', 'Hip Hop', 'R&B']
 
   const closeAllPanels = () => {
     setShowWatchlist(false)
@@ -103,7 +104,6 @@ export default function HomePage() {
       .eq('user_id', user?.id)
     
     if (data && data.length > 0) {
-      // Fetch full content details for each watchlist item
       const contentIds = data.map(item => item.content_id)
       const { data: contentData } = await supabase
         .from('content')
@@ -115,12 +115,10 @@ export default function HomePage() {
 
   const addToWatchlist = async (item: ContentItem) => {
     if (watchlist.some(i => i.id === item.id)) {
-      // Remove from watchlist
       const newWatchlist = watchlist.filter(i => i.id !== item.id)
       setWatchlist(newWatchlist)
       setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
       
-      // Remove from Supabase if logged in
       if (user) {
         await supabase
           .from('watchlist')
@@ -131,12 +129,10 @@ export default function HomePage() {
         localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
       }
     } else {
-      // Add to watchlist
       const newWatchlist = [...watchlist, item]
       setWatchlist(newWatchlist)
       setNotifications([`✨ "${item.title}" added to watchlist!`, ...notifications.slice(0, 4)])
       
-      // Add to Supabase if logged in
       if (user) {
         await supabase
           .from('watchlist')
@@ -198,7 +194,13 @@ export default function HomePage() {
         .select('*')
         .eq('type', activeTab)
       
-      setAllContent(contentData || [])
+      // Ensure all content has an image_url
+      const contentWithImages = (contentData || []).map(item => ({
+        ...item,
+        image_url: item.image_url || `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(item.title)}`
+      }))
+      
+      setAllContent(contentWithImages)
       
       const { data: relations } = await supabase
         .from('content_categories')
@@ -207,7 +209,7 @@ export default function HomePage() {
       const byCategory: Record<string, ContentItem[]> = {}
       for (const category of categoriesData || []) {
         const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
-        byCategory[category.name] = contentData?.filter(c => contentIds.includes(c.id)) || []
+        byCategory[category.name] = contentWithImages.filter(c => contentIds.includes(c.id))
       }
       setContentByCategory(byCategory)
     } catch (error) {
@@ -583,7 +585,6 @@ export default function HomePage() {
                 onRemoveFromWatchlist={removeFromWatchlist}
                 isInWatchlist={isInWatchlist}
               />
-              {/* Based on Your Watchlist - Only shows if watchlist has items */}
               <WatchlistBasedRecommendations 
                 userId={user.id}
                 watchlist={watchlist}
@@ -593,6 +594,41 @@ export default function HomePage() {
                 onRemoveFromWatchlist={removeFromWatchlist}
                 isInWatchlist={isInWatchlist}
               />
+              
+              {/* Deezer Music Search Section */}
+              <div className="my-8">
+                <div className="flex items-center gap-2 mb-4">
+                  <Music className="w-6 h-6 text-teal-500" />
+                  <h2 className="text-xl md:text-2xl font-semibold">Search Music from Deezer</h2>
+                </div>
+                <MusicSearch />
+              </div>
+              
+              <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
+            </div>
+          </>
+        ) : currentPage === 'movies' ? (
+          <>
+            <HeroCarousel 
+              items={allContent.slice(0, 3)} 
+              onViewDetails={handleViewDetails} 
+              onRecommend={handleRecommend}
+              activeTab={activeTab} 
+            />
+            <div className="container mx-auto px-4">
+              {categories.map((category) => (
+                <ContentRow 
+                  key={category.id}
+                  title={category.name}
+                  items={contentByCategory[category.name] || []}
+                  type={activeTab}
+                  onViewDetails={handleViewDetails}
+                  onRecommend={handleRecommend}
+                  onAddToWatchlist={addToWatchlist}
+                  onRemoveFromWatchlist={removeFromWatchlist}
+                  isInWatchlist={isInWatchlist}
+                />
+              ))}
               <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
             </div>
           </>
@@ -618,6 +654,16 @@ export default function HomePage() {
                   isInWatchlist={isInWatchlist}
                 />
               ))}
+              
+              {/* Deezer Music Search Section for Music Page */}
+              <div className="my-8">
+                <div className="flex items-center gap-2 mb-4">
+                  <Music className="w-6 h-6 text-teal-500" />
+                  <h2 className="text-xl md:text-2xl font-semibold">Discover New Music</h2>
+                </div>
+                <MusicSearch />
+              </div>
+              
               <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
             </div>
           </>
