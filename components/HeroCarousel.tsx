@@ -7,10 +7,11 @@ import { ContentItem } from '@/types/content'
 interface HeroCarouselProps {
   items: ContentItem[]
   onViewDetails: (item: ContentItem) => void
+  onRecommend: (item: ContentItem) => void
   activeTab: string
 }
 
-export default function HeroCarousel({ items, onViewDetails, activeTab }: HeroCarouselProps) {
+export default function HeroCarousel({ items, onViewDetails, onRecommend, activeTab }: HeroCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
 
   useEffect(() => {
@@ -48,19 +49,22 @@ export default function HeroCarousel({ items, onViewDetails, activeTab }: HeroCa
       
       <div className="absolute bottom-0 left-0 right-0 p-8 md:p-12">
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-sm px-2 py-1 bg-green-600 rounded-full">{content.type === 'movie' ? '🎬 Movie' : '🎵 Music'}</span>
+          <span className="text-sm px-2 py-1 bg-teal-600 rounded-full">{content.type === 'movie' ? '🎬 Movie' : '🎵 Music'}</span>
         </div>
         <h1 className="text-3xl md:text-5xl font-bold mb-2">{content.title}</h1>
         <p className="text-gray-300 text-sm md:text-base mb-4 max-w-lg">{content.description}</p>
         
         <div className="flex gap-4 mb-4">
-          <div className="flex items-center gap-1"><span className="text-green-500 text-lg">🔥</span><span className="text-sm font-semibold">{content.stats_highly || 0}</span></div>
+          <div className="flex items-center gap-1"><span className="text-teal-500 text-lg">🔥</span><span className="text-sm font-semibold">{content.stats_highly || 0}</span></div>
           <div className="flex items-center gap-1"><span className="text-blue-500 text-lg">👍</span><span className="text-sm font-semibold">{content.stats_recommended || 0}</span></div>
           <div className="flex items-center gap-1"><span className="text-gray-500 text-lg">👎</span><span className="text-sm font-semibold">{content.stats_not || 0}</span></div>
         </div>
         
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-6 py-2 bg-green-600 rounded-lg font-semibold hover:bg-green-700 transition">
+          <button 
+            onClick={() => onRecommend(content)}
+            className="flex items-center gap-2 px-6 py-2 bg-teal-600 rounded-lg font-semibold hover:bg-teal-700 transition"
+          >
             <ThumbsUp size={18} /> Recommend
           </button>
           <button 
@@ -81,7 +85,7 @@ export default function HeroCarousel({ items, onViewDetails, activeTab }: HeroCa
 
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
         {items.map((_, idx) => (
-          <button key={idx} onClick={() => setCurrentIndex(idx)} className={`w-2 h-2 rounded-full transition-all ${idx === currentIndex ? 'w-8 bg-green-600' : 'bg-gray-500'}`} />
+          <button key={idx} onClick={() => setCurrentIndex(idx)} className={`w-2 h-2 rounded-full transition-all ${idx === currentIndex ? 'w-8 bg-teal-600' : 'bg-gray-500'}`} />
         ))}
       </div>
     </div>
