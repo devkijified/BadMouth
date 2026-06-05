@@ -4,6 +4,66 @@
 
 @layer base {
   body {
-    @apply bg-gray-900 text-white;
+    @apply bg-black text-white;
   }
+}
+
+@layer components {
+  .nav-link {
+    @apply text-gray-300 hover:text-white transition-colors duration-200;
+  }
+  
+  .movie-card {
+    @apply relative rounded-lg overflow-hidden transition-all duration-300 hover:scale-105 cursor-pointer;
+  }
+  
+  .rating-star {
+    @apply text-yellow-400;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-red-600 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-red-700;
+}
+
+/* Horizontal scroll containers */
+.scroll-container {
+  scrollbar-width: thin;
+  scrollbar-color: #ef4444 #1f2937;
+}
+
+.scroll-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.scroll-container::-webkit-scrollbar-track {
+  @apply bg-gray-800 rounded-full;
+}
+
+.scroll-container::-webkit-scrollbar-thumb {
+  @apply bg-red-600 rounded-full;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out;
 }
