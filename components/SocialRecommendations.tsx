@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase/client'
-import { ThumbsUp, MessageCircle, Share2, User, Star } from 'lucide-react'
+import { ThumbsUp, MessageCircle, Share2, Loader2 } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 
 interface SocialRecommendationsProps {
@@ -19,13 +18,16 @@ interface Recommendation {
   comment: string
   created_at: string
   profiles: {
+    id: string
     username: string
     avatar_url: string
   }
   content: {
+    id: string
     title: string
     image_url: string
     type: string
+    artist: string
   }
 }
 
@@ -45,21 +47,16 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
 
   const loadRecommendations = async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('recommendations')
-      .select(`
-        *,
-        profiles(username, avatar_url),
-        content(title, image_url, type)
-      `)
-      .eq('content_type', activeTab)
-      .order('created_at', { ascending: false })
-      .limit(20)
-
-    if (!error && data) {
-      setRecommendations(data)
+    try {
+      const response = await fetch(`/api/recommendations?type=${activeTab}`)
+      const data = await response.json()
+      setRecommendations(data.recommendations || [])
+    } catch (error) {
+      console.error('Error loading recommendations:', error)
+      setRecommendations([])
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   if (loading) {
@@ -94,8 +91,10 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
           <MessageCircle size={20} className="text-teal-500" />
           <h2 className="text-xl md:text-2xl font-semibold">BadMouthers Recommendations</h2>
         </div>
-        <div className="text-center py-8 text-gray-500">
-          <p>No recommendations yet. Be the first to recommend something!</p>
+        <div className="text-center py-8 text-gray-500 bg-gray-800/30 rounded-xl mx-4">
+          <MessageCircle size={48} className="mx-auto mb-3 opacity-50" />
+          <p className="text-sm">No recommendations yet.</p>
+          <p className="text-xs text-gray-600 mt-1">Be the first to recommend something!</p>
         </div>
       </div>
     )
@@ -112,27 +111,38 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
       <div className="space-y-4 px-4">
         {recommendations.map((rec) => {
           const tier = tierConfig[rec.recommendation_tier as keyof typeof tierConfig] || tierConfig.recommended
+          const contentTitle = rec.content?.title || 'Unknown Content'
+          const username = rec.profiles?.username || 'Anonymous'
+          const avatarUrl = rec.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`
+          
           return (
             <div 
               key={rec.id} 
               className={`bg-gray-800/50 rounded-xl p-4 border-l-4 ${tier.color.replace('border-', 'border-l-')} hover:bg-gray-800 transition cursor-pointer`}
-              onClick={() => onViewDetails({ id: rec.content_id, title: rec.content?.title, type: rec.content_type, image_url: rec.content?.image_url } as ContentItem)}
+              onClick={() => onViewDetails({ 
+                id: rec.content_id, 
+                title: contentTitle, 
+                type: rec.content_type,
+                image_url: rec.content?.image_url,
+                artist: rec.content?.artist
+              } as ContentItem)}
             >
               <div className="flex gap-3">
                 <img 
-                  src={rec.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${rec.profiles?.username}`} 
-                  alt={rec.profiles?.username} 
+                  src={avatarUrl} 
+                  alt={username} 
                   className="w-10 h-10 rounded-full" 
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="font-semibold text-sm">{rec.profiles?.username || 'Anonymous'}</span>
+                    <span className="font-semibold text-sm">{username}</span>
                     <span className="text-xs text-gray-500">• {new Date(rec.created_at).toLocaleDateString()}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full ${tier.color}`}>
                       {tier.emoji} {tier.label}
                     </span>
                   </div>
-                  <h3 className="font-bold mb-1 truncate">{rec.content?.title || 'Unknown Content'}</h3>
+                  <h3 className="font-bold mb-1 truncate">{contentTitle}</h3>
+                  {rec.content?.artist && <p className="text-xs text-gray-400 mb-2">{rec.content.artist}</p>}
                   {rec.comment && <p className="text-sm text-gray-400 mb-3 line-clamp-2">{rec.comment}</p>}
                   <div className="flex gap-4">
                     <button className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition">
