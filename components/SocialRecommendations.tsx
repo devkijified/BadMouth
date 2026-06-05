@@ -2,23 +2,25 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
-import { ThumbsUp, MessageCircle, Share2, Star, Heart } from 'lucide-react'
+import { ThumbsUp, MessageCircle, Share2 } from 'lucide-react'
+import { ContentItem } from '@/types/content'
+
+interface SocialRecommendationsProps {
+  onViewDetails: (item: ContentItem) => void
+  activeTab: 'movie' | 'music'
+}
 
 interface Recommendation {
   id: string
-  username: string
-  avatar_url: string
+  user_id: string
   content_id: string
-  content_type: 'movie' | 'music'
-  recommendation_tier: 'highly' | 'recommended' | 'not'
+  recommendation_tier: string
   comment: string
   created_at: string
-  profiles: { username: string; avatar_url: string }
-}
-
-interface SocialRecommendationsProps {
-  onViewDetails?: (item: any) => void
-  activeTab?: 'movie' | 'music'
+  profiles: {
+    username: string
+    avatar_url: string
+  }
 }
 
 const tierConfig = {
@@ -27,8 +29,8 @@ const tierConfig = {
   not: { emoji: '👎', label: 'NOT RECOMMENDED', color: 'bg-gray-600/20 text-gray-400 border-gray-600' }
 }
 
-export default function SocialRecommendations({ onViewDetails, activeTab = 'movie' }: SocialRecommendationsProps) {
-  const [recommendations, setRecommendations] = useState<any[]>([])
+export default function SocialRecommendations({ onViewDetails, activeTab }: SocialRecommendationsProps) {
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([])
   const [loading, setLoading] = useState(true)
   const [liked, setLiked] = useState<Record<string, boolean>>({})
 
@@ -41,7 +43,6 @@ export default function SocialRecommendations({ onViewDetails, activeTab = 'movi
     const { data, error } = await supabase
       .from('recommendations')
       .select('*, profiles(username, avatar_url)')
-      .eq('content_type', activeTab)
       .order('created_at', { ascending: false })
       .limit(20)
 
@@ -53,7 +54,6 @@ export default function SocialRecommendations({ onViewDetails, activeTab = 'movi
 
   const handleLike = async (id: string) => {
     setLiked(prev => ({ ...prev, [id]: !prev[id] }))
-    // Here you would increment likes in the database
   }
 
   if (loading) {
@@ -89,8 +89,7 @@ export default function SocialRecommendations({ onViewDetails, activeTab = 'movi
           <h2 className="text-xl md:text-2xl font-semibold">Community Recommendations</h2>
         </div>
         <div className="text-center py-8 text-gray-500">
-          <Heart size={48} className="mx-auto mb-2 opacity-50" />
-          <p>Be the first to recommend something!</p>
+          <p>No recommendations yet. Be the first to recommend something!</p>
         </div>
       </div>
     )
@@ -106,12 +105,12 @@ export default function SocialRecommendations({ onViewDetails, activeTab = 'movi
 
       <div className="space-y-4 px-4">
         {recommendations.map((rec) => {
-          const tier = tierConfig[rec.recommendation_tier as keyof typeof tierConfig]
+          const tier = tierConfig[rec.recommendation_tier as keyof typeof tierConfig] || tierConfig.recommended
           return (
             <div 
               key={rec.id} 
               className={`bg-gray-800/50 rounded-xl p-4 border-l-4 ${tier.color.replace('border-', 'border-l-')} hover:bg-gray-800 transition cursor-pointer`}
-              onClick={() => onViewDetails && onViewDetails({ id: rec.content_id, type: rec.content_type })}
+              onClick={() => onViewDetails({ id: rec.content_id } as ContentItem)}
             >
               <div className="flex gap-3">
                 <img 
@@ -123,18 +122,17 @@ export default function SocialRecommendations({ onViewDetails, activeTab = 'movi
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="font-semibold text-sm">{rec.profiles?.username || 'Anonymous'}</span>
                     <span className="text-xs text-gray-500">• {new Date(rec.created_at).toLocaleDateString()}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${tier.color.replace('border-', 'bg-').replace('border-', '')}/20 text-${tier.color.split('-')[1]}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${tier.color}`}>
                       {tier.emoji} {tier.label}
                     </span>
                   </div>
-                  <h3 className="font-bold mb-1">{rec.content_title || 'Content'}</h3>
-                  {rec.comment && <p className="text-sm text-gray-400 mb-3">{rec.comment}</p>}
+                  <p className="text-sm text-gray-400 mb-3">{rec.comment || 'No comment provided.'}</p>
                   <div className="flex gap-4">
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleLike(rec.id); }} 
                       className={`flex items-center gap-1 text-xs transition ${liked[rec.id] ? 'text-green-500' : 'text-gray-400 hover:text-white'}`}
                     >
-                      <ThumbsUp size={14} /> {liked[rec.id] ? rec.likes + 1 : rec.likes || 0}
+                      <ThumbsUp size={14} /> {liked[rec.id] ? 1 : 0}
                     </button>
                     <button className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition">
                       <Share2 size={14} /> Share
