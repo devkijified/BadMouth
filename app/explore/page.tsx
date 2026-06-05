@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
-import { ArrowLeft, Film, Music, Heart, Star, Filter, X, Sparkles } from 'lucide-react'
+import { ArrowLeft, Film, Music, Heart, Star, Filter, X, Sparkles, Flame } from 'lucide-react'
 import Link from 'next/link'
 import { ContentItem } from '@/types/content'
 import RecommendModal from '@/components/RecommendModal'
@@ -14,7 +14,7 @@ export default function ExplorePage() {
   const [filteredItems, setFilteredItems] = useState<ContentItem[]>([])
   const [loading, setLoading] = useState(true)
   const [typeFilter, setTypeFilter] = useState<'all' | 'movie' | 'music'>('all')
-  const [sortBy, setSortBy] = useState<'highly' | 'recommended' | 'recent'>('highly')
+  const [sortBy, setSortBy] = useState<'highly' | 'recommended'>('highly')
   const [showFilters, setShowFilters] = useState(false)
   const [selectedItem, setSelectedItem] = useState<ContentItem | null>(null)
   const [showRecommendModal, setShowRecommendModal] = useState(false)
@@ -40,7 +40,7 @@ export default function ExplorePage() {
     const { data } = await supabase
       .from('content')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('stats_highly', { ascending: false })
     
     if (data) {
       setItems(data)
@@ -70,8 +70,6 @@ export default function ExplorePage() {
       filtered.sort((a, b) => (b.stats_highly || 0) - (a.stats_highly || 0))
     } else if (sort === 'recommended') {
       filtered.sort((a, b) => (b.stats_recommended || 0) - (a.stats_recommended || 0))
-    } else if (sort === 'recent') {
-      filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     }
     
     setFilteredItems(filtered)
@@ -82,7 +80,7 @@ export default function ExplorePage() {
     applyFilters(items, type, sortBy, genreFilter)
   }
 
-  const handleSortChange = (sort: 'highly' | 'recommended' | 'recent') => {
+  const handleSortChange = (sort: 'highly' | 'recommended') => {
     setSortBy(sort)
     applyFilters(items, typeFilter, sort, genreFilter)
   }
@@ -186,7 +184,6 @@ export default function ExplorePage() {
                 >
                   <option value="highly">🔥 Most Highly Recommended</option>
                   <option value="recommended">👍 Most Recommended</option>
-                  <option value="recent">🕐 Recently Added</option>
                 </select>
 
                 <select 
@@ -217,49 +214,56 @@ export default function ExplorePage() {
             <p className="text-gray-500">No content found</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {filteredItems.map((item) => (
-              <div key={item.id} className="group cursor-pointer">
-                <div className="relative rounded-xl overflow-hidden bg-gray-800">
-                  <img 
-                    src={item.image_url} 
-                    alt={item.title} 
-                    className="w-full aspect-[2/3] object-cover group-hover:scale-105 transition duration-300"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition flex flex-col justify-end p-3">
-                    <button 
-                      onClick={() => {
-                        setSelectedItem(item)
-                        setShowRecommendModal(true)
-                      }}
-                      className="w-full py-2 bg-teal-600 rounded-lg text-sm font-semibold mb-2"
-                    >
-                      Recommend
-                    </button>
-                    <button 
-                      onClick={() => addToWatchlist(item)}
-                      className={`w-full py-2 rounded-lg text-sm font-semibold transition ${isInWatchlist(item.id) ? 'bg-teal-600' : 'bg-gray-700'}`}
-                    >
-                      {isInWatchlist(item.id) ? 'In Watchlist' : 'Add to Watchlist'}
-                    </button>
-                  </div>
-                  {isInWatchlist(item.id) && (
-                    <div className="absolute top-2 right-2 bg-teal-600 rounded-full p-1">
-                      <Heart size={12} className="fill-white" />
+          <>
+            {/* Results count */}
+            <div className="mb-4 text-sm text-gray-400">
+              Found {filteredItems.length} {filteredItems.length === 1 ? 'item' : 'items'}
+            </div>
+            
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+              {filteredItems.map((item) => (
+                <div key={item.id} className="group cursor-pointer">
+                  <div className="relative rounded-xl overflow-hidden bg-gray-800">
+                    <img 
+                      src={item.image_url} 
+                      alt={item.title} 
+                      className="w-full aspect-[2/3] object-cover group-hover:scale-105 transition duration-300"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition flex flex-col justify-end p-3">
+                      <button 
+                        onClick={() => {
+                          setSelectedItem(item)
+                          setShowRecommendModal(true)
+                        }}
+                        className="w-full py-2 bg-teal-600 rounded-lg text-sm font-semibold mb-2"
+                      >
+                        Recommend
+                      </button>
+                      <button 
+                        onClick={() => addToWatchlist(item)}
+                        className={`w-full py-2 rounded-lg text-sm font-semibold transition ${isInWatchlist(item.id) ? 'bg-teal-600' : 'bg-gray-700'}`}
+                      >
+                        {isInWatchlist(item.id) ? 'In Watchlist' : 'Add to Watchlist'}
+                      </button>
                     </div>
-                  )}
-                </div>
-                <div className="mt-2">
-                  <h3 className="font-semibold text-sm truncate">{item.title}</h3>
-                  <p className="text-xs text-gray-400">{item.type === 'movie' ? '🎬 Movie' : '🎵 Music'}</p>
-                  <div className="flex items-center gap-2 mt-1 text-xs">
-                    <span className="flex items-center gap-0.5"><span className="text-teal-500">🔥</span> {item.stats_highly || 0}</span>
-                    <span className="flex items-center gap-0.5"><span className="text-blue-500">👍</span> {item.stats_recommended || 0}</span>
+                    {isInWatchlist(item.id) && (
+                      <div className="absolute top-2 right-2 bg-teal-600 rounded-full p-1">
+                        <Heart size={12} className="fill-white" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-2">
+                    <h3 className="font-semibold text-sm truncate">{item.title}</h3>
+                    <p className="text-xs text-gray-400">{item.type === 'movie' ? '🎬 Movie' : '🎵 Music'}</p>
+                    <div className="flex items-center gap-2 mt-1 text-xs">
+                      <span className="flex items-center gap-0.5"><span className="text-teal-500">🔥</span> {item.stats_highly || 0}</span>
+                      <span className="flex items-center gap-0.5"><span className="text-blue-500">👍</span> {item.stats_recommended || 0}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </>
         )}
       </main>
     </div>
