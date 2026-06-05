@@ -118,12 +118,7 @@ export default function AdminPage() {
 
   const loadUsers = async () => {
     const { data: profiles } = await supabase.from('profiles').select('*')
-    const { data: authUsers } = await supabase.auth.admin.listUsers()
-    const combined = (profiles || []).map(profile => ({
-      ...profile,
-      email: authUsers?.users?.find(u => u.id === profile.id)?.email || 'Unknown'
-    }))
-    setUsers(combined)
+    setUsers(profiles || [])
   }
 
   const loadRecommendations = async () => {
@@ -148,7 +143,7 @@ export default function AdminPage() {
   }
 
   const deleteCategory = async (id: string) => {
-    if (confirm('Delete this category? This will also remove content from this category.')) {
+    if (confirm('Delete this category?')) {
       await supabase.from('categories').delete().eq('id', id)
       loadCategories()
     }
@@ -225,13 +220,6 @@ export default function AdminPage() {
     loadUsers()
   }
 
-  const deleteUser = async (userId: string) => {
-    if (confirm('Delete this user? This action cannot be undone.')) {
-      await supabase.auth.admin.deleteUser(userId)
-      loadUsers()
-    }
-  }
-
   const filteredContent = content.filter(item => {
     const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesType = contentTypeFilter === 'all' || item.type === contentTypeFilter
@@ -266,7 +254,6 @@ export default function AdminPage() {
   const totalMusic = content.filter(c => c.type === 'music').length
   const totalRecommendations = recommendations.length
   const totalCategories = categories.length
-  const activeUsers = users.filter(u => u.is_active !== false).length
 
   return (
     <div className="min-h-screen bg-black">
@@ -311,8 +298,8 @@ export default function AdminPage() {
             <p className="text-2xl font-bold">{totalRecommendations}</p>
           </div>
           <div className="bg-gray-800 rounded-xl p-4">
-            <div className="flex items-center gap-2 text-teal-500 mb-2"><TrendingUp size={20} /> Active</div>
-            <p className="text-2xl font-bold">{activeUsers}</p>
+            <div className="flex items-center gap-2 text-teal-500 mb-2"><Star size={20} /> Content</div>
+            <p className="text-2xl font-bold">{totalContent}</p>
           </div>
         </div>
 
@@ -369,9 +356,8 @@ export default function AdminPage() {
                 <thead className="bg-gray-700">
                   <tr>
                     <th className="px-4 py-3 text-left">User</th>
-                    <th className="px-4 py-3 text-left">Email</th>
+                    <th className="px-4 py-3 text-left">Username</th>
                     <th className="px-4 py-3 text-left">Role</th>
-                    <th className="px-4 py-3 text-left">Status</th>
                     <th className="px-4 py-3 text-left">Joined</th>
                     <th className="px-4 py-3 text-left">Actions</th>
                   </tr>
@@ -382,10 +368,10 @@ export default function AdminPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <img src={userItem.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userItem.username}`} className="w-8 h-8 rounded-full" />
-                          <span>{userItem.username || 'No username'}</span>
+                          <span className="text-sm">{userItem.id?.slice(0, 8)}...</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3">{userItem.email}</td>
+                      <td className="px-4 py-3">{userItem.username || 'No username'}</td>
                       <td className="px-4 py-3">
                         <select
                           value={userItem.role || 'user'}
@@ -396,16 +382,12 @@ export default function AdminPage() {
                           <option value="moderator">Moderator</option>
                           <option value="admin">Admin</option>
                         </select>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs ${userItem.is_active !== false ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}`}>
-                          {userItem.is_active !== false ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
+                       </td>
                       <td className="px-4 py-3 text-sm">{new Date(userItem.created_at).toLocaleDateString()}</td>
                       <td className="px-4 py-3">
-                        <button onClick={() => deleteUser(userItem.id)} className="text-red-500 hover:text-red-400">
-                          <Trash2 size={16} />
+                        <button onClick={() => updateUserRole(userItem.id, userItem.role === 'admin' ? 'user' : 'admin')} 
+                          className="text-teal-500 hover:text-teal-400 mr-2 text-sm">
+                          Toggle Admin
                         </button>
                       </td>
                     </tr>
@@ -489,9 +471,23 @@ export default function AdminPage() {
                         <span className="text-gray-400">👎 {item.stats_not}</span>
                       </span>
                       <div className="flex gap-2">
-                        <button onClick={() => { setEditingItem(item); setContentForm({ ...item, actors: item.actors?.join(', ') || '', platforms: item.platforms?.join(', ') || '', category_ids: [] }); setShowContentModal(true); }} 
-                          className="text-gray-400 hover:text-white"><Edit size={16} /></button>
-                        <button onClick={() => deleteContent(item.id)} className="text-red-500 hover:text-red-400"><Trash2 size={16} /></button>
+                        <button onClick={() => { 
+                          setEditingItem(item); 
+                          setContentForm({ 
+                            ...item, 
+                            long_description: item.long_description || '',
+                            actors: item.actors?.join(', ') || '', 
+                            platforms: item.platforms?.join(', ') || '', 
+                            category_ids: [] 
+                          }); 
+                          setShowContentModal(true); 
+                        }} 
+                          className="text-gray-400 hover:text-white">
+                          <Edit size={16} />
+                        </button>
+                        <button onClick={() => deleteContent(item.id)} className="text-red-500 hover:text-red-400">
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -508,15 +504,15 @@ export default function AdminPage() {
             <div className="space-y-4">
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">About Display Order</h3>
-                <p className="text-sm text-gray-400">The "Order" field in categories determines how they appear on the main page. Lower numbers appear first.</p>
+                <p className="text-sm text-gray-400">The "Order" field in categories determines how they appear on the main page. Lower numbers appear first (higher priority).</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Recommendation Tiers</h3>
-                <p className="text-sm text-gray-400">🔥 HIGHLY RECOMMENDED - Best content, 👍 RECOMMENDED - Good content, 👎 NOT RECOMMENDED - Content to avoid</p>
+                <p className="text-sm text-gray-400">🔥 HIGHLY RECOMMENDED - Best content that users love. 👍 RECOMMENDED - Good content worth watching. 👎 NOT RECOMMENDED - Content users suggest to skip.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Admin Access</h3>
-                <p className="text-sm text-gray-400">Only users with admin role can access this panel. Set user roles in the Users tab.</p>
+                <p className="text-sm text-gray-400">Only users with admin role can access this panel. Toggle admin status in the Users tab.</p>
               </div>
             </div>
           </div>
