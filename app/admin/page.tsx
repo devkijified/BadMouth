@@ -65,6 +65,29 @@ export default function AdminPage() {
     category_ids: [] as string[]
   })
 
+  // Helper function to convert database item to form data
+  const itemToFormData = (item: any) => ({
+    title: item.title || '',
+    description: item.description || '',
+    long_description: item.long_description || '',
+    image_url: item.image_url || '',
+    backdrop_url: item.backdrop_url || '',
+    type: item.type || 'movie',
+    year: item.year || new Date().getFullYear(),
+    director: item.director || '',
+    artist: item.artist || '',
+    actors: item.actors?.join(', ') || '',
+    platforms: item.platforms?.join(', ') || '',
+    trailer_url: item.trailer_url || '',
+    runtime: item.runtime || '',
+    duration: item.duration || '',
+    genre: item.genre || '',
+    stats_highly: item.stats_highly || 0,
+    stats_recommended: item.stats_recommended || 0,
+    stats_not: item.stats_not || 0,
+    category_ids: []
+  })
+
   useEffect(() => {
     if (!authLoading) {
       checkAdminAndLoadData()
@@ -471,16 +494,7 @@ export default function AdminPage() {
                       <div className="flex gap-2">
                         <button onClick={() => { 
                           setEditingItem(item); 
-                          setContentForm({ 
-                            ...item, 
-                            long_description: item.long_description || '',
-                            backdrop_url: item.backdrop_url || '',
-                            director: item.director || '',
-                            artist: item.artist || '',
-                            actors: item.actors?.join(', ') || '', 
-                            platforms: item.platforms?.join(', ') || '', 
-                            category_ids: [] 
-                          }); 
+                          setContentForm(itemToFormData(item)); 
                           setShowContentModal(true); 
                         }} 
                           className="text-gray-400 hover:text-white">
