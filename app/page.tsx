@@ -14,19 +14,78 @@ export default function HomePage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
 
-  // Sample data - replace with actual API calls
+  // Sample data with the new stats structure
   const trendingMovies = [
-    { id: '1', title: 'The Dark Knight', image: 'https://image.tmdb.org/t/p/w500/qJ2tW6WMUDux911r6m7haRef0WH.jpg', rating: 4.8, type: 'movie' as const, year: 2008 },
-    { id: '2', title: 'Inception', image: 'https://image.tmdb.org/t/p/w500/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg', rating: 4.7, type: 'movie' as const, year: 2010 },
-    { id: '3', title: 'Interstellar', image: 'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg', rating: 4.6, type: 'movie' as const, year: 2014 },
-    { id: '4', title: 'Pulp Fiction', image: 'https://image.tmdb.org/t/p/w500/d5iIlFn5s0ImszYzBPb8JPIfbXD.jpg', rating: 4.5, type: 'movie' as const, year: 1994 },
-    { id: '5', title: 'The Matrix', image: 'https://image.tmdb.org/t/p/w500/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg', rating: 4.7, type: 'movie' as const, year: 1999 },
+    { 
+      id: '1', 
+      title: 'The Dark Knight', 
+      image: 'https://image.tmdb.org/t/p/w500/qJ2tW6WMUDux911r6m7haRef0WH.jpg', 
+      type: 'movie' as const, 
+      year: 2008,
+      stats: { highly: 2340, recommended: 890, not: 123 }
+    },
+    { 
+      id: '2', 
+      title: 'Inception', 
+      image: 'https://image.tmdb.org/t/p/w500/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg', 
+      type: 'movie' as const, 
+      year: 2010,
+      stats: { highly: 1890, recommended: 654, not: 89 }
+    },
+    { 
+      id: '3', 
+      title: 'Interstellar', 
+      image: 'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg', 
+      type: 'movie' as const, 
+      year: 2014,
+      stats: { highly: 1567, recommended: 723, not: 67 }
+    },
+    { 
+      id: '4', 
+      title: 'Pulp Fiction', 
+      image: 'https://image.tmdb.org/t/p/w500/d5iIlFn5s0ImszYzBPb8JPIfbXD.jpg', 
+      type: 'movie' as const, 
+      year: 1994,
+      stats: { highly: 2100, recommended: 567, not: 234 }
+    },
+    { 
+      id: '5', 
+      title: 'The Matrix', 
+      image: 'https://image.tmdb.org/t/p/w500/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg', 
+      type: 'movie' as const, 
+      year: 1999,
+      stats: { highly: 1987, recommended: 654, not: 98 }
+    },
   ]
 
   const trendingMusic = [
-    { id: '1', title: 'Blinding Lights', artist: 'The Weeknd', image: 'https://i.scdn.co/image/ab67616d0000b273c6e6d6c8a2e0e0e9e9e9e9e9', rating: 4.9, type: 'music' as const, year: 2020 },
-    { id: '2', title: 'Bohemian Rhapsody', artist: 'Queen', image: 'https://i.scdn.co/image/ab67616d0000b273e8e8e8e8e8e8e8e8e8e8e8e8', rating: 4.8, type: 'music' as const, year: 1975 },
-    { id: '3', title: 'Shape of You', artist: 'Ed Sheeran', image: 'https://i.scdn.co/image/ab67616d0000b273d8d8d8d8d8d8d8d8d8d8d8d8', rating: 4.6, type: 'music' as const, year: 2017 },
+    { 
+      id: '1', 
+      title: 'Blinding Lights', 
+      artist: 'The Weeknd', 
+      image: 'https://i.scdn.co/image/ab67616d0000b273c6e6d6c8a2e0e0e9e9e9e9e9', 
+      type: 'music' as const, 
+      year: 2020,
+      stats: { highly: 3420, recommended: 1234, not: 234 }
+    },
+    { 
+      id: '2', 
+      title: 'Bohemian Rhapsody', 
+      artist: 'Queen', 
+      image: 'https://i.scdn.co/image/ab67616d0000b273e8e8e8e8e8e8e8e8e8e8e8e8', 
+      type: 'music' as const, 
+      year: 1975,
+      stats: { highly: 2987, recommended: 876, not: 145 }
+    },
+    { 
+      id: '3', 
+      title: 'Shape of You', 
+      artist: 'Ed Sheeran', 
+      image: 'https://i.scdn.co/image/ab67616d0000b273d8d8d8d8d8d8d8d8d8d8d8d8', 
+      type: 'music' as const, 
+      year: 2017,
+      stats: { highly: 2654, recommended: 987, not: 234 }
+    },
   ]
 
   useEffect(() => {
@@ -41,14 +100,14 @@ export default function HomePage() {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-4">
         <div className="text-center">
-          <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-r from-red-600 to-purple-600 rounded-full flex items-center justify-center">
+          <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-r from-teal-600 to-blue-600 rounded-full flex items-center justify-center">
             <Sparkles className="text-white" size={32} />
           </div>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-red-600 to-purple-600 bg-clip-text text-transparent mb-2">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-teal-600 to-blue-600 bg-clip-text text-transparent mb-2">
             BADMOUTH
           </h1>
           <p className="text-gray-400 mb-6">Your AI-powered movie & music recommendation engine</p>
-          <a href="/auth" className="inline-block px-8 py-3 bg-gradient-to-r from-red-600 to-purple-600 rounded-lg font-semibold">
+          <a href="/auth" className="inline-block px-8 py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-lg font-semibold">
             Get Started
           </a>
         </div>
@@ -66,7 +125,7 @@ export default function HomePage() {
           <div className="flex items-center justify-between h-16">
             {/* Logo and Desktop Nav */}
             <div className="flex items-center gap-8">
-              <h1 className="text-xl font-bold bg-gradient-to-r from-red-600 to-purple-600 bg-clip-text text-transparent">
+              <h1 className="text-xl font-bold bg-gradient-to-r from-teal-500 to-blue-500 bg-clip-text text-transparent">
                 BADMOUTH
               </h1>
               
@@ -99,6 +158,9 @@ export default function HomePage() {
                   alt="Profile"
                   className="w-8 h-8 rounded-full"
                 />
+              </button>
+              <button onClick={signOut} className="px-3 py-1 text-sm bg-gray-800 rounded-lg hover:bg-gray-700">
+                Sign Out
               </button>
               <button className="md:hidden text-gray-300 hover:text-white" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
                 <Menu size={20} />
