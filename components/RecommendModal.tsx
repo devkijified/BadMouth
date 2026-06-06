@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Loader2 } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 import toast from 'react-hot-toast'
@@ -17,8 +17,31 @@ export default function RecommendModal({ isOpen, onClose, item, onSuccess }: Rec
   const [selectedTier, setSelectedTier] = useState<string | null>(null)
   const [comment, setComment] = useState('')
   const [loading, setLoading] = useState(false)
+  const [hasExisting, setHasExisting] = useState(false)
+  const [existingTier, setExistingTier] = useState<string | null>(null)
 
-  if (!isOpen || !item) return null
+  // Check if user already recommended this content
+  useEffect(() => {
+    if (isOpen && item) {
+      checkExistingRecommendation()
+    }
+  }, [isOpen, item])
+
+  const checkExistingRecommendation = async () => {
+    try {
+      const response = await fetch(`/api/recommendations/check?content_id=${item?.id}`)
+      const data = await response.json()
+      if (data.exists) {
+        setHasExisting(true)
+        setExistingTier(data.recommendation_tier)
+      } else {
+        setHasExisting(false)
+        setExistingTier(null)
+      }
+    } catch (error) {
+      console.error('Error checking existing:', error)
+    }
+  }
 
   const submitRecommendation = async () => {
     if (!selectedTier) {
@@ -33,29 +56,59 @@ export default function RecommendModal({ isOpen, onClose, item, onSuccess }: Rec
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content_id: item.id,
-          content_type: item.type,
+          content_id: item?.id,
+          content_type: item?.type,
           recommendation_tier: selectedTier,
           comment: comment || null
         })
       })
       
+      const data = await response.json()
+      
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to save')
+        if (response.status === 409) {
+          toast.error('You have already recommended this content!')
+          onClose()
+          return
+        }
+        throw new Error(data.error || 'Failed to save')
       }
       
-      toast.success(`✅ Thanks for recommending "${item.title}"!`)
+      toast.success(`✅ Thanks for recommending "${item?.title}"!`)
       onSuccess()
       onClose()
       setSelectedTier(null)
       setComment('')
+      setHasExisting(false)
+      setExistingTier(null)
     } catch (error: any) {
       console.error('Error:', error)
       toast.error(error.message || 'Failed to save recommendation')
     }
     
     setLoading(false)
+  }
+
+  if (!isOpen || !item) return null
+
+  if (hasExisting) {
+    const tierNames: Record<string, string> = {
+      highly: '🔥 HIGHLY RECOMMENDED',
+      recommended: '👍 RECOMMENDED',
+      not: '👎 NOT RECOMMENDED'
+    }
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+        <div className="bg-gray-900 rounded-xl max-w-md w-full p-6 text-center">
+          <div className="mb-4 text-yellow-500 text-5xl">⚠️</div>
+          <h3 className="text-xl font-bold mb-2">Already Recommended!</h3>
+          <p className="text-gray-400 mb-2">You have already marked this as:</p>
+          <p className="text-lg font-semibold text-teal-400 mb-4">{existingTier ? tierNames[existingTier] : 'Recommended'}</p>
+          <p className="text-sm text-gray-500 mb-4">You can only recommend a content once.</p>
+          <button onClick={onClose} className="px-6 py-2 bg-teal-600 rounded-lg">Close</button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -84,6 +137,7 @@ export default function RecommendModal({ isOpen, onClose, item, onSuccess }: Rec
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
             {loading ? 'Saving...' : 'Submit Recommendation'}
           </button>
+          <p className="text-center text-xs text-gray-500 mt-3">⚠️ You can only recommend a content once</p>
         </div>
       </div>
     </div>
