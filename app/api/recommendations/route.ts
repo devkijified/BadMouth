@@ -42,58 +42,99 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const supabase = createServerSupabaseClient()
-    const { content_id, content_type, recommendation_tier, comment } = await req.json()
+    const { content_id, content_type, recommendation_tier, comment, existing_id } = await req.json()
     
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    // CHECK FOR EXISTING RECOMMENDATION FIRST
-    const { data: existing } = await supabase
-      .from('recommendations')
-      .select('id, recommendation_tier')
-      .eq('user_id', session.user.id)
-      .eq('content_id', content_id)
-      .maybeSingle()
+    let oldTier: string | null = null
+    let contentData: any = null
     
-    if (existing) {
-      // User already recommended this - return conflict
-      return NextResponse.json({ 
-        error: 'You have already recommended this content',
-        existing_tier: existing.recommendation_tier
-      }, { status: 409 })
+    // If updating existing recommendation
+    if (existing_id) {
+      // Get old recommendation tier to adjust stats
+      const { data: oldRec } = await supabase
+        .from('recommendations')
+        .select('recommendation_tier')
+        .eq('id', existing_id)
+        .single()
+      
+      oldTier = oldRec?.recommendation_tier || null
+      
+      // Update the recommendation
+      const { error: updateError } = await supabase
+        .from('recommendations')
+        .update({
+          recommendation_tier,
+          comment: comment || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing_id)
+      
+      if (updateError) throw updateError
+    } else {
+      // Check if already exists (prevent duplicate)
+      const { data: existing } = await supabase
+        .from('recommendations')
+        .select('id, recommendation_tier')
+        .eq('user_id', session.user.id)
+        .eq('content_id', content_id)
+        .maybeSingle()
+      
+      if (existing) {
+        // Update instead of creating new
+        const { error: updateError } = await supabase
+          .from('recommendations')
+          .update({
+            recommendation_tier,
+            comment: comment || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existing.id)
+        
+        if (updateError) throw updateError
+        oldTier = existing.recommendation_tier
+      } else {
+        // Insert new recommendation
+        const { error: insertError } = await supabase
+          .from('recommendations')
+          .insert({
+            user_id: session.user.id,
+            content_id,
+            content_type,
+            recommendation_tier,
+            comment: comment || null
+          })
+        
+        if (insertError) throw insertError
+      }
     }
     
-    // Insert new recommendation
-    const { error: insertError } = await supabase
-      .from('recommendations')
-      .insert({
-        user_id: session.user.id,
-        content_id,
-        content_type,
-        recommendation_tier,
-        comment: comment || null
-      })
-    
-    if (insertError) throw insertError
-    
-    // Update content stats
-    const { data: contentData } = await supabase
+    // Get current content stats
+    const { data: currentStats } = await supabase
       .from('content')
       .select('stats_highly, stats_recommended, stats_not')
       .eq('id', content_id)
       .single()
     
-    let newStats = { ...contentData }
-    if (recommendation_tier === 'highly') {
-      newStats.stats_highly = (contentData?.stats_highly || 0) + 1
-    } else if (recommendation_tier === 'recommended') {
-      newStats.stats_recommended = (contentData?.stats_recommended || 0) + 1
-    } else if (recommendation_tier === 'not') {
-      newStats.stats_not = (contentData?.stats_not || 0) + 1
+    // Calculate new stats
+    let newStats = { ...currentStats }
+    
+    // Remove old tier if it exists
+    if (oldTier) {
+      if (oldTier === 'highly') newStats.stats_highly = Math.max(0, (newStats.stats_highly || 0) - 1)
+      else if (oldTier === 'recommended') newStats.stats_recommended = Math.max(0, (newStats.stats_recommended || 0) - 1)
+      else if (oldTier === 'not') newStats.stats_not = Math.max(0, (newStats.stats_not || 0) - 1)
     }
     
+    // Add new tier
+    if (recommendation_tier === 'highly') newStats.stats_highly = (newStats.stats_highly || 0) + 1
+    else if (recommendation_tier === 'recommended') newStats.stats_recommended = (newStats.stats_recommended || 0) + 1
+    else if (recommendation_tier === 'not') newStats.stats_not = (newStats.stats_not || 0) + 1
+    
+    // Update content stats
     await supabase
       .from('content')
       .update({
