@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useAuth } from '@/hooks/useAuth'
+import { supabase } from '@/lib/supabase/client'
 import { ThumbsUp, MessageCircle, Share2, Loader2 } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 
@@ -17,6 +19,7 @@ interface Recommendation {
   recommendation_tier: string
   comment: string
   created_at: string
+  updated_at?: string
   profiles: {
     id: string
     username: string
@@ -38,6 +41,7 @@ const tierConfig = {
 }
 
 export default function SocialRecommendations({ onViewDetails, activeTab }: SocialRecommendationsProps) {
+  const { user } = useAuth()
   const [recommendations, setRecommendations] = useState<Recommendation[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -91,7 +95,7 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
           <MessageCircle size={20} className="text-teal-500" />
           <h2 className="text-xl md:text-2xl font-semibold">BadMouthers Recommendations</h2>
         </div>
-        <div className="text-center py-8 text-gray-500 bg-gray-800/30 rounded-xl mx-4">
+        <div className="text-center py-12 text-gray-500 bg-gray-800/30 rounded-xl mx-4">
           <MessageCircle size={48} className="mx-auto mb-3 opacity-50" />
           <p className="text-sm">No recommendations yet.</p>
           <p className="text-xs text-gray-600 mt-1">Be the first to recommend something!</p>
@@ -114,11 +118,13 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
           const contentTitle = rec.content?.title || 'Unknown Content'
           const username = rec.profiles?.username || 'Anonymous'
           const avatarUrl = rec.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`
+          const isCurrentUser = user?.id === rec.user_id
+          const isUpdated = rec.updated_at && rec.updated_at !== rec.created_at
           
           return (
             <div 
               key={rec.id} 
-              className={`bg-gray-800/50 rounded-xl p-4 border-l-4 ${tier.color.replace('border-', 'border-l-')} hover:bg-gray-800 transition cursor-pointer`}
+              className={`bg-gray-800/50 rounded-xl p-4 border-l-4 ${tier.color.replace('border-', 'border-l-')} hover:bg-gray-800 transition cursor-pointer ${isCurrentUser ? 'ring-1 ring-teal-500/50' : ''}`}
               onClick={() => onViewDetails({ 
                 id: rec.content_id, 
                 title: contentTitle, 
@@ -132,15 +138,39 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="font-semibold text-sm">{username}</span>
+                    {isCurrentUser && (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-teal-600/30 text-teal-400 rounded-full ml-1">You</span>
+                    )}
                     <span className="text-xs text-gray-500">• {new Date(rec.created_at).toLocaleDateString()}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${tier.color}`}>{tier.emoji} {tier.label}</span>
+                    {isUpdated && (
+                      <span className="text-[10px] text-gray-500">(updated)</span>
+                    )}
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${tier.color}`}>
+                      {tier.emoji} {tier.label}
+                    </span>
                   </div>
                   <h3 className="font-bold mb-1 truncate">{contentTitle}</h3>
                   {rec.content?.artist && <p className="text-xs text-gray-400 mb-2">{rec.content.artist}</p>}
                   {rec.comment && <p className="text-sm text-gray-400 mb-3 line-clamp-2">{rec.comment}</p>}
                   <div className="flex gap-4">
-                    <button className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"><ThumbsUp size={14} /> Like</button>
-                    <button className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"><Share2 size={14} /> Share</button>
+                    <button 
+                      onClick={(e) => { 
+                        e.stopPropagation()
+                        // Like functionality would go here
+                      }} 
+                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"
+                    >
+                      <ThumbsUp size={14} /> Like
+                    </button>
+                    <button 
+                      onClick={(e) => { 
+                        e.stopPropagation()
+                        // Share functionality would go here
+                      }} 
+                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"
+                    >
+                      <Share2 size={14} /> Share
+                    </button>
                   </div>
                 </div>
               </div>
