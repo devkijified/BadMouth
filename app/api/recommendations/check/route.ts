@@ -14,13 +14,18 @@ export async function GET(req: NextRequest) {
     
     const { data } = await supabase
       .from('recommendations')
-      .select('recommendation_tier')
+      .select('id, recommendation_tier, comment')
       .eq('user_id', session.user.id)
       .eq('content_id', contentId)
       .maybeSingle()
     
     if (data) {
-      return NextResponse.json({ exists: true, recommendation_tier: data.recommendation_tier })
+      return NextResponse.json({ 
+        exists: true, 
+        recommendation_tier: data.recommendation_tier,
+        comment: data.comment,
+        id: data.id
+      })
     }
     
     return NextResponse.json({ exists: false })
