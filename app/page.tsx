@@ -43,7 +43,7 @@ export default function HomePage() {
   const [contentByCategory, setContentByCategory] = useState<Record<string, ContentItem[]>>({})
   const [loading, setLoading] = useState(true)
 
-  const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller', 'Hip Hop', 'R&B']
+  const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller', 'Hip Hop', 'R&B', 'Electronic', 'Jazz']
 
   const closeAllPanels = () => {
     setShowWatchlist(false)
@@ -594,16 +594,6 @@ export default function HomePage() {
                 onRemoveFromWatchlist={removeFromWatchlist}
                 isInWatchlist={isInWatchlist}
               />
-              
-              {/* Deezer Music Search Section */}
-              <div className="my-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <Music className="w-6 h-6 text-teal-500" />
-                  <h2 className="text-xl md:text-2xl font-semibold">Search Music from Deezer</h2>
-                </div>
-                <MusicSearch />
-              </div>
-              
               <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
             </div>
           </>
@@ -633,6 +623,7 @@ export default function HomePage() {
             </div>
           </>
         ) : (
+          // MUSIC TAB - Now with full categories
           <>
             <HeroCarousel 
               items={allContent.slice(0, 3)} 
@@ -641,21 +632,68 @@ export default function HomePage() {
               activeTab={activeTab} 
             />
             <div className="container mx-auto px-4">
-              {categories.map((category) => (
-                <ContentRow 
-                  key={category.id}
-                  title={category.name}
-                  items={contentByCategory[category.name] || []}
-                  type={activeTab}
-                  onViewDetails={handleViewDetails}
-                  onRecommend={handleRecommend}
-                  onAddToWatchlist={addToWatchlist}
-                  onRemoveFromWatchlist={removeFromWatchlist}
-                  isInWatchlist={isInWatchlist}
-                />
-              ))}
+              {/* Music Categories from Database */}
+              {categories.length > 0 ? (
+                categories.map((category) => (
+                  <ContentRow 
+                    key={category.id}
+                    title={category.name}
+                    items={contentByCategory[category.name] || []}
+                    type={activeTab}
+                    onViewDetails={handleViewDetails}
+                    onRecommend={handleRecommend}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                  />
+                ))
+              ) : (
+                // Fallback default music categories if none in database
+                <>
+                  <ContentRow 
+                    title="🔥 Trending Music"
+                    items={allContent.filter(c => c.stats_highly > 100).slice(0, 10)}
+                    type="music"
+                    onViewDetails={handleViewDetails}
+                    onRecommend={handleRecommend}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                  />
+                  <ContentRow 
+                    title="🎤 Top Artists"
+                    items={allContent.slice(0, 8)}
+                    type="music"
+                    onViewDetails={handleViewDetails}
+                    onRecommend={handleRecommend}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                  />
+                  <ContentRow 
+                    title="✨ New Releases"
+                    items={allContent.slice(0, 8)}
+                    type="music"
+                    onViewDetails={handleViewDetails}
+                    onRecommend={handleRecommend}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                  />
+                  <ContentRow 
+                    title="🎵 Pop Hits"
+                    items={allContent.filter(c => c.genre === 'Pop').slice(0, 8)}
+                    type="music"
+                    onViewDetails={handleViewDetails}
+                    onRecommend={handleRecommend}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                  />
+                </>
+              )}
               
-              {/* Deezer Music Search Section for Music Page */}
+              {/* Deezer Music Search Section */}
               <div className="my-8">
                 <div className="flex items-center gap-2 mb-4">
                   <Music className="w-6 h-6 text-teal-500" />
