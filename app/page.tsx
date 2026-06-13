@@ -45,6 +45,11 @@ export default function HomePage() {
   const [contentByCategory, setContentByCategory] = useState<Record<string, ContentItem[]>>({})
   const [loading, setLoading] = useState(true)
 
+  // Data for Home page (movies + music combined)
+  const [homeMovies, setHomeMovies] = useState<ContentItem[]>([])
+  const [homeMusic, setHomeMusic] = useState<ContentItem[]>([])
+  const [homeLoading, setHomeLoading] = useState(true)
+
   const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller', 'Hip Hop', 'R&B', 'Electronic', 'Jazz']
 
   const closeAllPanels = () => {
@@ -172,28 +177,24 @@ export default function HomePage() {
 
   const isInWatchlist = (id: string) => watchlist.some(i => i.id === id)
 
-  // Load data function that respects current tab and genre
-  const loadData = async () => {
+  // Load data for Movies tab
+  const loadMoviesData = async () => {
     setLoading(true)
     
     try {
-      // Determine which content type to load based on currentPage
-      const contentType = currentPage === 'movies' ? 'movie' : (currentPage === 'music' ? 'music' : activeTab)
-      
       const { data: categoriesData } = await supabase
         .from('categories')
         .select('*')
-        .eq('type', contentType)
+        .eq('type', 'movie')
         .eq('is_active', true)
         .order('display_order')
       
       setCategories(categoriesData || [])
       
-      // Build content query with genre filter
       let contentQuery = supabase
         .from('content')
         .select('*')
-        .eq('type', contentType)
+        .eq('type', 'movie')
       
       if (selectedGenre !== 'all') {
         contentQuery = contentQuery.eq('genre', selectedGenre)
@@ -201,7 +202,6 @@ export default function HomePage() {
       
       const { data: contentData } = await contentQuery
       
-      // Ensure all content has an image_url
       const contentWithImages = (contentData || []).map(item => ({
         ...item,
         image_url: item.image_url || `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(item.title)}`
@@ -220,18 +220,113 @@ export default function HomePage() {
       }
       setContentByCategory(byCategory)
     } catch (error) {
-      console.error('Error loading data:', error)
+      console.error('Error loading movies data:', error)
     } finally {
       setLoading(false)
     }
   }
 
-  // Load data when currentPage changes, genre changes, or user logs in
-  useEffect(() => {
-    if (user && !authLoading && currentPage !== 'home') {
-      loadData()
+  // Load data for Music tab
+  const loadMusicData = async () => {
+    setLoading(true)
+    
+    try {
+      const { data: categoriesData } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('type', 'music')
+        .eq('is_active', true)
+        .order('display_order')
+      
+      setCategories(categoriesData || [])
+      
+      let contentQuery = supabase
+        .from('content')
+        .select('*')
+        .eq('type', 'music')
+      
+      if (selectedGenre !== 'all') {
+        contentQuery = contentQuery.eq('genre', selectedGenre)
+      }
+      
+      const { data: contentData } = await contentQuery
+      
+      const contentWithImages = (contentData || []).map(item => ({
+        ...item,
+        image_url: item.image_url || `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(item.title)}`
+      }))
+      
+      setAllContent(contentWithImages)
+      
+      const { data: relations } = await supabase
+        .from('content_categories')
+        .select('*')
+      
+      const byCategory: Record<string, ContentItem[]> = {}
+      for (const category of categoriesData || []) {
+        const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
+        byCategory[category.name] = contentWithImages.filter(c => contentIds.includes(c.id))
+      }
+      setContentByCategory(byCategory)
+    } catch (error) {
+      console.error('Error loading music data:', error)
+    } finally {
+      setLoading(false)
     }
-  }, [currentPage, selectedGenre, user, authLoading])
+  }
+
+  // Load data for Home page (combined movies and music)
+  const loadHomeData = async () => {
+    setHomeLoading(true)
+    
+    try {
+      // Load trending movies
+      const { data: moviesData } = await supabase
+        .from('content')
+        .select('*')
+        .eq('type', 'movie')
+        .order('stats_highly', { ascending: false })
+        .limit(10)
+      
+      // Load trending music
+      const { data: musicData } = await supabase
+        .from('content')
+        .select('*')
+        .eq('type', 'music')
+        .order('stats_highly', { ascending: false })
+        .limit(10)
+      
+      const moviesWithImages = (moviesData || []).map(item => ({
+        ...item,
+        image_url: item.image_url || `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(item.title)}`
+      }))
+      
+      const musicWithImages = (musicData || []).map(item => ({
+        ...item,
+        image_url: item.image_url || `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(item.title)}`
+      }))
+      
+      setHomeMovies(moviesWithImages)
+      setHomeMusic(musicWithImages)
+    } catch (error) {
+      console.error('Error loading home data:', error)
+    } finally {
+      setHomeLoading(false)
+    }
+  }
+
+  // Trigger data loading when page changes
+  useEffect(() => {
+    if (user && !authLoading) {
+      if (currentPage === 'home') {
+        loadHomeData()
+      } else if (currentPage === 'movies') {
+        loadMoviesData()
+      } else if (currentPage === 'music') {
+        loadMusicData()
+      }
+    }
+  }, [currentPage, user, authLoading, selectedGenre])
 
   const handleRecommend = (item: ContentItem) => {
     setRecommendItem(item)
@@ -239,8 +334,12 @@ export default function HomePage() {
   }
 
   const handleRecommendSuccess = () => {
-    if (currentPage !== 'home') {
-      loadData()
+    if (currentPage === 'home') {
+      loadHomeData()
+    } else if (currentPage === 'movies') {
+      loadMoviesData()
+    } else if (currentPage === 'music') {
+      loadMusicData()
     }
   }
 
@@ -319,12 +418,25 @@ export default function HomePage() {
     )
   }
 
-  if (loading && currentPage !== 'home') {
+  // Show loading for non-home pages
+  if ((currentPage === 'movies' || currentPage === 'music') && loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-teal-500 mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading your recommendations...</p>
+          <p className="text-gray-400">Loading {currentPage === 'movies' ? 'movies' : 'music'}...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show loading for home page
+  if (currentPage === 'home' && homeLoading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-teal-500 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading your personalized feed...</p>
         </div>
       </div>
     )
@@ -504,7 +616,7 @@ export default function HomePage() {
                         {genres.map(genre => (
                           <button 
                             key={genre} 
-                            onClick={() => { setSelectedGenre(genre); setShowGenreFilter(false); }} 
+                            onClick={() => { setSelectedGenre(genre); setShowGenreFilter(false); if (currentPage === 'movies') loadMoviesData(); else if (currentPage === 'music') loadMusicData(); }} 
                             className={`w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-800 ${selectedGenre === genre ? 'text-teal-500' : 'text-gray-300'}`}
                           >
                             {genre === 'all' ? 'All Genres' : genre}
@@ -592,7 +704,7 @@ export default function HomePage() {
         {currentPage === 'home' ? (
           <>
             <HeroCarousel 
-              items={allContent.slice(0, 3)} 
+              items={[...homeMovies.slice(0, 2), ...homeMusic.slice(0, 1)]} 
               onViewDetails={handleViewDetails} 
               onRecommend={handleRecommend}
               activeTab={activeTab} 
