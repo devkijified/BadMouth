@@ -12,7 +12,7 @@ import {
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 
-// Define types locally to avoid import issues
+// Define types
 interface Category {
   id: string
   name: string
@@ -81,6 +81,37 @@ export default function AdminPage() {
   
   // YOUR TMDB API CREDENTIALS
   const TMDB_API_KEY = 'e40a2dd7da8c15d302e6790211dd958f'
+
+  // Platform logos mapping for accurate display
+  const platformLogos: Record<string, { name: string, logo: string }> = {
+    'Netflix': { name: 'Netflix', logo: '📺' },
+    'Prime Video': { name: 'Prime Video', logo: '📦' },
+    'Apple TV+': { name: 'Apple TV+', logo: '🍎' },
+    'Disney+': { name: 'Disney+', logo: '✨' },
+    'Max': { name: 'Max', logo: '🔷' },
+    'Hulu': { name: 'Hulu', logo: '🟢' },
+    'Paramount+': { name: 'Paramount+', logo: '⭐' },
+    'Peacock': { name: 'Peacock', logo: '🦚' },
+  }
+
+  // Platform provider mapping based on TMDB provider IDs
+  const getPlatformsFromProviderIds = (providerIds: number[]): string[] => {
+    const providerMap: Record<number, string> = {
+      8: 'Netflix',
+      9: 'Prime Video',
+      10: 'Amazon Prime',
+      15: 'Hulu',
+      337: 'Disney+',
+      384: 'Max',
+      2: 'Apple TV+',
+      3: 'Google Play',
+      7: 'Vudu',
+      20: 'Paramount+',
+    }
+    
+    const platforms = providerIds.map(id => providerMap[id]).filter(Boolean)
+    return platforms.length > 0 ? platforms : ['Prime Video', 'Netflix', 'Apple TV+']
+  }
 
   // Category form state
   const [categoryForm, setCategoryForm] = useState({
@@ -238,7 +269,7 @@ export default function AdminPage() {
   }
 
   // ============================================
-  // TMDB API (for Movies & TV Shows)
+  // TMDB API (for Movies & TV Shows with Trailers)
   // ============================================
   const searchTmdb = async () => {
     if (!tmdbSearchQuery.trim()) {
@@ -273,29 +304,76 @@ export default function AdminPage() {
     }
   }
 
-  const fetchDetailsFromTmdb = async (id: number, type: 'movie' | 'tv') => {
+  const fetchTrailerFromTmdb = async (id: number, type: 'movie' | 'tv'): Promise<string | null> => {
     try {
-      const url = `https://api.themoviedb.org/3/${type}/${id}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits`
+      const url = `https://api.themoviedb.org/3/${type}/${id}/videos?api_key=${TMDB_API_KEY}&language=en-US`
       const response = await fetch(url)
       const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Error fetching details:', error)
+      
+      // Find the first YouTube trailer
+      const trailer = data.results?.find(
+        (video: any) => video.type === 'Trailer' && video.site === 'YouTube'
+      )
+      
+      if (trailer) {
+        return `https://www.youtube.com/embed/${trailer.key}`
+      }
       return null
+    } catch (error) {
+      console.error('Error fetching trailer:', error)
+      return null
+    }
+  }
+
+  const fetchWatchProviders = async (id: number, type: 'movie' | 'tv'): Promise<string[]> => {
+    try {
+      const url = `https://api.themoviedb.org/3/${type}/${id}/watch/providers?api_key=${TMDB_API_KEY}`
+      const response = await fetch(url)
+      const data = await response.json()
+      
+      // Get US providers (you can make this dynamic based on user's region)
+      const usProviders = data.results?.US?.flatrate || []
+      const providerNames = usProviders.map((provider: any) => {
+        const providerMap: Record<number, string> = {
+          8: 'Netflix',
+          9: 'Prime Video',
+          337: 'Disney+',
+          384: 'Max',
+          15: 'Hulu',
+          2: 'Apple TV+',
+          20: 'Paramount+',
+        }
+        return providerMap[provider.provider_id]
+      }).filter(Boolean)
+      
+      return providerNames.length > 0 ? providerNames : ['Prime Video', 'Netflix', 'Apple TV+']
+    } catch (error) {
+      console.error('Error fetching providers:', error)
+      return ['Prime Video', 'Netflix', 'Apple TV+']
     }
   }
 
   const importFromTmdb = async (item: any, type: 'movie' | 'tv') => {
     setSearchingTmdb(true)
     try {
-      const details = await fetchDetailsFromTmdb(item.id, type)
+      // Fetch trailer
+      const trailerUrl = await fetchTrailerFromTmdb(item.id, type)
       
-      // Extract director (for movies) or creators (for TV)
+      // Fetch watch providers
+      const platforms = await fetchWatchProviders(item.id, type)
+      
+      // Fetch full details for cast/crew
+      const detailsUrl = `https://api.themoviedb.org/3/${type}/${item.id}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits`
+      const detailsResponse = await fetch(detailsUrl)
+      const details = await detailsResponse.json()
+      
+      // Extract director/creator
       let director = ''
       let cast: string[] = []
-      let runtime = ''
       let title = ''
       let year = new Date().getFullYear()
+      let genre = type === 'movie' ? 'Movie' : 'TV Show'
+      let runtime = ''
       
       if (type === 'movie') {
         title = item.title
@@ -303,12 +381,14 @@ export default function AdminPage() {
         director = details?.credits?.crew?.find((person: any) => person.job === 'Director')?.name || ''
         cast = details?.credits?.cast?.slice(0, 5).map((actor: any) => actor.name) || []
         runtime = details?.runtime ? `${Math.floor(details.runtime / 60)}h ${details.runtime % 60}min` : ''
+        genre = details?.genres?.[0]?.name || 'Movie'
       } else {
         title = item.name
         year = new Date(item.first_air_date).getFullYear() || new Date().getFullYear()
         director = details?.created_by?.map((creator: any) => creator.name).join(', ') || ''
         cast = details?.credits?.cast?.slice(0, 5).map((actor: any) => actor.name) || []
         runtime = details?.episode_run_time?.[0] ? `${details.episode_run_time[0]} min per episode` : ''
+        genre = details?.genres?.[0]?.name || 'TV Series'
       }
       
       const posterUrl = item.poster_path 
@@ -326,13 +406,14 @@ export default function AdminPage() {
         long_description: item.overview || `"${title}" is a ${type === 'movie' ? 'cinematic masterpiece' : 'must-watch series'}.`,
         image_url: posterUrl,
         backdrop_url: backdropUrl,
-        type: 'movie', // Both movies and TV shows go into movie type for now
+        type: 'movie',
         year: year,
         director: director,
         actors: cast.join(', '),
-        platforms: 'Netflix, Prime Video, Max, Apple TV+, Disney+',
+        platforms: platforms.join(', '),
+        trailer_url: trailerUrl,
         runtime: runtime,
-        genre: type === 'movie' ? 'Movie' : 'TV Series',
+        genre: genre,
         stats_highly: Math.floor(Math.random() * 1000) + 500,
         stats_recommended: Math.floor(Math.random() * 500) + 200,
         stats_not: 0,
@@ -341,7 +422,7 @@ export default function AdminPage() {
       setShowTmdbSearch(false)
       setTmdbSearchQuery('')
       setTmdbSearchResults([])
-      toast.success(`Imported "${title}" from TMDB!`)
+      toast.success(`Imported "${title}" with ${trailerUrl ? 'trailer' : 'no trailer'}!`)
     } catch (error) {
       console.error('Import error:', error)
       toast.error('Failed to import details')
@@ -630,7 +711,7 @@ export default function AdminPage() {
             <div className="space-y-4">
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">About Display Order</h3><p className="text-sm text-gray-400">The "Order" field in categories determines how they appear on the main page. Lower numbers appear first (higher priority).</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Deezer API Integration</h3><p className="text-sm text-gray-400">Search and import music from Deezer.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TMDB API Integration</h3><p className="text-sm text-gray-400">Search and import both Movies AND TV Shows from TMDB.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TMDB API Integration</h3><p className="text-sm text-gray-400">Search and import both Movies AND TV Shows. Automatically fetches trailers and streaming platforms.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Recommendation Tiers</h3><p className="text-sm text-gray-400">🔥 HIGHLY RECOMMENDED - Best content that users love. 👍 RECOMMENDED - Good content worth watching. 👎 NOT RECOMMENDED - Content users suggest to skip.</p></div>
             </div>
           </div>
@@ -667,7 +748,7 @@ export default function AdminPage() {
               <input type="text" placeholder="Backdrop URL" value={contentForm.backdrop_url} onChange={e => setContentForm({ ...contentForm, backdrop_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               
               <select value={contentForm.type} onChange={e => setContentForm({ ...contentForm, type: e.target.value as 'movie' | 'music' })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded">
-                <option value="movie">Movie</option>
+                <option value="movie">Movie / TV Show</option>
                 <option value="music">Music</option>
               </select>
               
@@ -729,6 +810,9 @@ export default function AdminPage() {
                   <input type="text" placeholder="Director / Creator" value={contentForm.director} onChange={e => setContentForm({ ...contentForm, director: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                   <input type="text" placeholder="Cast (comma separated)" value={contentForm.actors} onChange={e => setContentForm({ ...contentForm, actors: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                   <input type="text" placeholder="Runtime" value={contentForm.runtime} onChange={e => setContentForm({ ...contentForm, runtime: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                  {contentForm.trailer_url && (
+                    <div className="text-xs text-teal-400">✅ Trailer URL fetched: {contentForm.trailer_url.substring(0, 50)}...</div>
+                  )}
                 </>
               ) : (
                 <>
