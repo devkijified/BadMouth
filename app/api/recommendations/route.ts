@@ -50,8 +50,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    let oldTier: string | null = null
     let recId = existing_id
+    let oldTier: string | null = null
     
     // If no existing_id provided, check if user already has a recommendation
     if (!recId) {
@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
       oldTier = oldRec?.recommendation_tier || null
     }
     
+    // UPSERT: Update if exists, Insert if not
     if (recId) {
       // UPDATE existing recommendation
       const { error: updateError } = await supabase
@@ -122,9 +123,6 @@ export async function POST(req: NextRequest) {
       if (oldTier === 'highly') newStats.stats_highly = Math.max(0, newStats.stats_highly - 1)
       else if (oldTier === 'recommended') newStats.stats_recommended = Math.max(0, newStats.stats_recommended - 1)
       else if (oldTier === 'not') newStats.stats_not = Math.max(0, newStats.stats_not - 1)
-    } else if (recId) {
-      // This handles the case where we found existing but didn't have oldTier
-      // We need to fetch the current stats to properly adjust
     }
     
     // Add new tier
