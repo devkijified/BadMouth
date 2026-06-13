@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     
     const { data } = await supabase
       .from('recommendations')
-      .select('id, recommendation_tier, comment')
+      .select('id, recommendation_tier, comment, created_at, updated_at')
       .eq('user_id', session.user.id)
       .eq('content_id', contentId)
       .maybeSingle()
@@ -24,7 +24,9 @@ export async function GET(req: NextRequest) {
         exists: true, 
         recommendation_tier: data.recommendation_tier,
         comment: data.comment,
-        id: data.id
+        id: data.id,
+        created_at: data.created_at,
+        updated_at: data.updated_at
       })
     }
     
