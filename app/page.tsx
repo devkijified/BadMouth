@@ -102,41 +102,42 @@ export default function HomePage() {
     }
   }
 
-  // Load user's own recommendations for profile modal
-  const loadMyRecommendations = async () => {
-    if (!user) return
-    setLoadingRecs(true)
-    try {
-      const { data: recsData, error } = await supabase
-        .from('recommendations')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(10)
+// Load user's own recommendations for profile modal
+const loadMyRecommendations = async () => {
+  if (!user) return
+  setLoadingRecs(true)
+  try {
+    const { data: recsData, error } = await supabase
+      .from('recommendations')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+    
+    if (error) throw error
+    
+    if (recsData && recsData.length > 0) {
+      const contentIds = recsData.map(rec => rec.content_id)
+      // Fetch ALL content fields, not just basic ones
+      const { data: contentData } = await supabase
+        .from('content')
+        .select('*')  // Get all fields
+        .in('id', contentIds)
       
-      if (error) throw error
-      
-      if (recsData && recsData.length > 0) {
-        const contentIds = recsData.map(rec => rec.content_id)
-        const { data: contentData } = await supabase
-          .from('content')
-          .select('id, title, image_url, artist, type, year')
-          .in('id', contentIds)
-        
-        const merged = recsData.map(rec => ({
-          ...rec,
-          content: contentData?.find(c => c.id === rec.content_id)
-        }))
-        setMyRecommendations(merged)
-      } else {
-        setMyRecommendations([])
-      }
-    } catch (error) {
-      console.error('Error loading recommendations:', error)
-    } finally {
-      setLoadingRecs(false)
+      const merged = recsData.map(rec => ({
+        ...rec,
+        content: contentData?.find(c => c.id === rec.content_id)
+      }))
+      setMyRecommendations(merged)
+    } else {
+      setMyRecommendations([])
     }
+  } catch (error) {
+    console.error('Error loading recommendations:', error)
+  } finally {
+    setLoadingRecs(false)
   }
+}
 
   // Delete a recommendation
   const deleteRecommendation = async (recId: string, contentTitle: string) => {
@@ -632,93 +633,117 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Profile Panel - Shows User's Recommendations */}
-      {showProfile && (
-        <div className="fixed top-16 right-4 z-50 w-80 bg-gray-900 rounded-xl shadow-xl border border-gray-700">
-          <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-            <h3 className="font-semibold">Profile</h3>
-            <button onClick={toggleProfile} className="p-1 hover:bg-gray-800 rounded"><X size={16} /></button>
-          </div>
-          
-          {/* User Info */}
-          <div className="p-4 text-center border-b border-gray-700">
-            <img 
-              src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} 
-              alt="Profile" 
-              className="w-16 h-16 rounded-full mx-auto mb-2 border-2 border-teal-500" 
-            />
-            <h4 className="font-semibold">{user.user_metadata?.username || user.email?.split('@')[0]}</h4>
-            <p className="text-xs text-gray-400">{user.email}</p>
-          </div>
-          
-          {/* Stats */}
-          <div className="grid grid-cols-2 gap-3 p-4 border-b border-gray-700">
-            <div className="bg-gray-800 rounded-lg p-2 text-center">
-              <Heart size={16} className="text-red-500 mx-auto mb-1" />
-              <p className="text-xl font-bold">{watchlistCount}</p>
-              <p className="text-xs text-gray-400">Watchlist</p>
-            </div>
-            <div className="bg-gray-800 rounded-lg p-2 text-center">
-              <ThumbsUp size={16} className="text-teal-500 mx-auto mb-1" />
-              <p className="text-xl font-bold">{myRecommendations.length}</p>
-              <p className="text-xs text-gray-400">Recommendations</p>
-            </div>
-          </div>
-          
-          {/* My Recommendations List */}
-          <div className="max-h-60 overflow-y-auto">
-            <div className="p-3 border-b border-gray-700">
-              <p className="text-sm font-semibold mb-2">My Recommendations</p>
-              {loadingRecs ? (
-                <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-teal-500" /></div>
-              ) : myRecommendations.length === 0 ? (
-                <p className="text-xs text-gray-500 text-center py-4">No recommendations yet</p>
-              ) : (
-                <div className="space-y-2">
-                  {myRecommendations.map((rec) => {
-                    const tier = tierConfig[rec.recommendation_tier as keyof typeof tierConfig]
-                    return (
-                      <div key={rec.id} className="bg-gray-800 rounded-lg p-2 text-sm">
-                        <div className="flex justify-between items-start">
-                          <div 
-                            className="flex-1 cursor-pointer" 
-                            onClick={() => handleViewDetails({ 
-                              id: rec.content_id, 
-                              title: rec.content?.title || 'Unknown', 
-                              type: rec.content_type,
-                              image_url: rec.content?.image_url,
-                              artist: rec.content?.artist
-                            } as ContentItem)}
-                          >
-                            <p className="font-medium text-xs truncate">{rec.content?.title || 'Unknown'}</p>
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <span className="text-xs">{tier?.emoji || '👍'}</span>
-                              <span className="text-xs text-gray-400">{rec.content?.artist || (rec.content_type === 'movie' ? 'Movie' : 'Music')}</span>
-                            </div>
-                          </div>
-                          <button 
-                            onClick={() => deleteRecommendation(rec.id, rec.content?.title || 'this content')}
-                            className="text-gray-500 hover:text-red-500 transition ml-2"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
+     {/* Profile Panel - Shows User's Recommendations */}
+{showProfile && (
+  <div className="fixed top-16 right-4 z-50 w-80 bg-gray-900 rounded-xl shadow-xl border border-gray-700">
+    <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+      <h3 className="font-semibold">Profile</h3>
+      <button onClick={toggleProfile} className="p-1 hover:bg-gray-800 rounded"><X size={16} /></button>
+    </div>
+    
+    {/* User Info */}
+    <div className="p-4 text-center border-b border-gray-700">
+      <img 
+        src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} 
+        alt="Profile" 
+        className="w-16 h-16 rounded-full mx-auto mb-2 border-2 border-teal-500" 
+      />
+      <h4 className="font-semibold">{user.user_metadata?.username || user.email?.split('@')[0]}</h4>
+      <p className="text-xs text-gray-400">{user.email}</p>
+    </div>
+    
+    {/* Stats */}
+    <div className="grid grid-cols-2 gap-3 p-4 border-b border-gray-700">
+      <div className="bg-gray-800 rounded-lg p-2 text-center">
+        <Heart size={16} className="text-red-500 mx-auto mb-1" />
+        <p className="text-xl font-bold">{watchlistCount}</p>
+        <p className="text-xs text-gray-400">Watchlist</p>
+      </div>
+      <div className="bg-gray-800 rounded-lg p-2 text-center">
+        <ThumbsUp size={16} className="text-teal-500 mx-auto mb-1" />
+        <p className="text-xl font-bold">{myRecommendations.length}</p>
+        <p className="text-xs text-gray-400">Recommendations</p>
+      </div>
+    </div>
+    
+    {/* My Recommendations List */}
+    <div className="max-h-60 overflow-y-auto">
+      <div className="p-3 border-b border-gray-700">
+        <p className="text-sm font-semibold mb-2">My Recommendations</p>
+        {loadingRecs ? (
+          <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-teal-500" /></div>
+        ) : myRecommendations.length === 0 ? (
+          <p className="text-xs text-gray-500 text-center py-4">No recommendations yet</p>
+        ) : (
+          <div className="space-y-2">
+            {myRecommendations.map((rec) => {
+              const tier = tierConfig[rec.recommendation_tier as keyof typeof tierConfig]
+              // Get content details from the recommendation
+              const contentItem = rec.content
+              return (
+                <div key={rec.id} className="bg-gray-800 rounded-lg p-2 text-sm">
+                  <div className="flex justify-between items-start">
+                    <div 
+                      className="flex-1 cursor-pointer" 
+                      onClick={() => {
+                        // Create a full ContentItem object from the recommendation data
+                        const fullContent: ContentItem = {
+                          id: contentItem?.id || rec.content_id,
+                          title: contentItem?.title || 'Unknown',
+                          description: contentItem?.description || '',
+                          long_description: contentItem?.long_description || '',
+                          image_url: contentItem?.image_url || '',
+                          backdrop_url: contentItem?.backdrop_url || contentItem?.image_url || '',
+                          type: rec.content_type,
+                          year: contentItem?.year || 0,
+                          director: contentItem?.director || null,
+                          artist: contentItem?.artist || '',
+                          actors: contentItem?.actors || null,
+                          platforms: contentItem?.platforms || [],
+                          trailer_url: contentItem?.trailer_url || null,
+                          runtime: contentItem?.runtime || null,
+                          duration: contentItem?.duration || null,
+                          genre: contentItem?.genre || '',
+                          stats_highly: contentItem?.stats_highly || 0,
+                          stats_recommended: contentItem?.stats_recommended || 0,
+                          stats_not: contentItem?.stats_not || 0,
+                          rating_scale: contentItem?.rating_scale || 0
+                        }
+                        handleViewDetails(fullContent)
+                        setShowProfile(false) // Close profile modal
+                      }}
+                    >
+                      <p className="font-medium text-xs truncate">{contentItem?.title || 'Unknown'}</p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="text-xs">{tier?.emoji || '👍'}</span>
+                        <span className="text-xs text-gray-400">
+                          {contentItem?.artist || (rec.content_type === 'movie' ? 'Movie' : 'Music')}
+                        </span>
                       </div>
-                    )
-                  })}
+                    </div>
+                    <button 
+                      onClick={() => deleteRecommendation(rec.id, contentItem?.title || 'this content')}
+                      className="text-gray-500 hover:text-red-500 transition ml-2 flex-shrink-0"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
+              )
+            })}
           </div>
-          
-          {/* Sign Out Button */}
-          <div className="p-4">
-            <button onClick={signOut} className="w-full py-2 bg-red-600 rounded-lg text-sm hover:bg-red-700 transition">
-              Sign Out
-            </button>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
+    </div>
+    
+    {/* Sign Out Button */}
+    <div className="p-4">
+      <button onClick={signOut} className="w-full py-2 bg-red-600 rounded-lg text-sm hover:bg-red-700 transition">
+        Sign Out
+      </button>
+    </div>
+  </div>
+)}
 
       {/* Header */}
       <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
