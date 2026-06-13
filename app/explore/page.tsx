@@ -231,12 +231,17 @@ export default function ExplorePage() {
       {/* Details Modal */}
       {showDetailsModal && selectedItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 overflow-y-auto">
-          <div className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="relative">
-              <img src={selectedItem.backdrop_url || selectedItem.image_url} alt={selectedItem.title} className="w-full h-48 object-cover" />
-              <button onClick={() => setShowDetailsModal(false)} className="absolute top-4 right-4 p-2 bg-black/50 rounded-full">
-                <X size={20} />
-              </button>
+          <div className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto mt-16">
+            <div className="sticky top-0 z-10 bg-gray-900 rounded-t-xl">
+              <div className="relative">
+                <img src={selectedItem.backdrop_url || selectedItem.image_url} alt={selectedItem.title} className="w-full h-48 object-cover" />
+                <button 
+                  onClick={() => setShowDetailsModal(false)} 
+                  className="absolute top-4 right-4 p-2 bg-black/70 hover:bg-black/90 rounded-full transition z-20"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
             <div className="p-5">
               <h2 className="text-2xl font-bold mb-1">{selectedItem.title}</h2>
@@ -313,7 +318,15 @@ export default function ExplorePage() {
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
                   <div className="col-span-2">
                     <span className="text-gray-400">🎤 Artist:</span>{' '}
-                    <span className="text-teal-400">{selectedItem.artist}</span>
+                    <button
+                      onClick={() => {
+                        setShowDetailsModal(false)
+                        router.push(`/actor/${encodeURIComponent(selectedItem.artist!)}`)
+                      }}
+                      className="text-teal-400 hover:text-teal-300 hover:underline transition"
+                    >
+                      {selectedItem.artist}
+                    </button>
                   </div>
                   <div><span className="text-gray-400">📅 Year:</span> {selectedItem.year}</div>
                   <div><span className="text-gray-400">⏱️ Duration:</span> {selectedItem.duration || 'N/A'}</div>
