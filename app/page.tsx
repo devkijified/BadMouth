@@ -89,10 +89,6 @@ export default function HomePage() {
     }
   }
 
-  // ============================================
-  // FIXED WATCHLIST FUNCTIONS - Using TEXT for content_id
-  // ============================================
-
   // Load watchlist from Supabase
   const loadWatchlistFromSupabase = async () => {
     if (!user) return
@@ -195,7 +191,6 @@ export default function HomePage() {
 
   const isInWatchlist = (id: string) => watchlistIds.has(id)
 
-  // Load watchlist when user is logged in
   useEffect(() => {
     if (user) {
       loadWatchlistFromSupabase()
@@ -483,14 +478,30 @@ export default function HomePage() {
     'Deezer': { icon: '🎧', color: 'bg-purple-600', url: 'https://deezer.com' },
   }
 
-  // Calculate rating
+  // ============================================
+  // FIXED getRating FUNCTION - No more NaN
+  // ============================================
   const getRating = (item: ContentItem) => {
+    // If rating_scale is already set and valid, use it
     if (item.rating_scale && item.rating_scale > 0) {
       return item.rating_scale
     }
-    const total = (item.stats_highly || 0) + (item.stats_recommended || 0) + (item.stats_not || 0)
+    
+    // Get stats with defaults to avoid NaN
+    const highly = item.stats_highly || 0
+    const recommended = item.stats_recommended || 0
+    const not = item.stats_not || 0
+    const total = highly + recommended + not
+    
+    // Avoid division by zero
     if (total === 0) return 0
-    return Number((((item.stats_highly || 0) * 10 + (item.stats_recommended || 0) * 7) / total).toFixed(1))
+    
+    // Calculate weighted rating (🔥=10, 👍=7, 👎=2)
+    const rating = (highly * 10 + recommended * 7) / total
+    
+    // Round to 1 decimal place and ensure it's a number
+    const rounded = Number(rating.toFixed(1))
+    return isNaN(rounded) ? 0 : rounded
   }
 
   return (
@@ -837,11 +848,14 @@ export default function HomePage() {
               {selectedContent.artist && <p className="text-gray-400 mb-3">{selectedContent.artist}</p>}
               <p className="text-gray-300 mb-4 text-sm leading-relaxed">{selectedContent.long_description || selectedContent.description}</p>
               
+              {/* Rating Display - Now safe from NaN */}
               <div className="flex items-center gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg">
                 <Star size={20} className="text-yellow-400 fill-yellow-400" />
                 <span className="text-2xl font-bold">{getRating(selectedContent)}</span>
                 <span className="text-gray-400">/10</span>
-                <span className="text-xs text-gray-500 ml-2">based on {selectedContent.stats_highly + selectedContent.stats_recommended + selectedContent.stats_not} votes</span>
+                <span className="text-xs text-gray-500 ml-2">
+                  based on {(selectedContent.stats_highly || 0) + (selectedContent.stats_recommended || 0) + (selectedContent.stats_not || 0)} votes
+                </span>
               </div>
               
               <div className="flex gap-6 mb-4 p-3 bg-gray-800/50 rounded-lg">
