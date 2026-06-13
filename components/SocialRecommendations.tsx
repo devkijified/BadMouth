@@ -31,6 +31,13 @@ interface Recommendation {
     image_url: string
     type: string
     artist: string
+    description: string
+    year: number
+    genre: string
+    stats_highly: number
+    stats_recommended: number
+    stats_not: number
+    rating_scale: number
   }
 }
 
@@ -52,10 +59,38 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
   const loadRecommendations = async () => {
     setLoading(true)
     try {
-      // Fetch recommendations
+      // Fetch recommendations with the content data directly joined
       const { data, error } = await supabase
         .from('recommendations')
-        .select('*')
+        .select(`
+          id,
+          user_id,
+          content_id,
+          content_type,
+          recommendation_tier,
+          comment,
+          created_at,
+          updated_at,
+          profiles!user_id (
+            id,
+            username,
+            avatar_url
+          ),
+          content!content_id (
+            id,
+            title,
+            image_url,
+            type,
+            artist,
+            description,
+            year,
+            genre,
+            stats_highly,
+            stats_recommended,
+            stats_not,
+            rating_scale
+          )
+        `)
         .eq('content_type', activeTab)
         .order('created_at', { ascending: false })
         .limit(20)
@@ -73,76 +108,38 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
         return
       }
       
-      // Get unique user IDs (fixing the Set iteration issue)
-      const userIdsMap = new Map()
-      data.forEach(rec => {
-        if (!userIdsMap.has(rec.user_id)) {
-          userIdsMap.set(rec.user_id, true)
+      // Transform the data
+      const transformed: Recommendation[] = data.map((rec: any) => ({
+        id: rec.id,
+        user_id: rec.user_id,
+        content_id: rec.content_id,
+        content_type: rec.content_type,
+        recommendation_tier: rec.recommendation_tier,
+        comment: rec.comment || '',
+        created_at: rec.created_at,
+        updated_at: rec.updated_at,
+        profiles: {
+          id: rec.profiles?.id || '',
+          username: rec.profiles?.username || 'Anonymous',
+          avatar_url: rec.profiles?.avatar_url || null
+        },
+        content: {
+          id: rec.content?.id || '',
+          title: rec.content?.title || 'Unknown Content',
+          image_url: rec.content?.image_url || '',
+          type: rec.content?.type || rec.content_type,
+          artist: rec.content?.artist || '',
+          description: rec.content?.description || '',
+          year: rec.content?.year || 0,
+          genre: rec.content?.genre || '',
+          stats_highly: rec.content?.stats_highly || 0,
+          stats_recommended: rec.content?.stats_recommended || 0,
+          stats_not: rec.content?.stats_not || 0,
+          rating_scale: rec.content?.rating_scale || 0
         }
-      })
-      const userIds = Array.from(userIdsMap.keys())
+      }))
       
-      // Get user profiles
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url')
-        .in('id', userIds)
-      
-      // Get unique content IDs
-      const contentIdsMap = new Map()
-      data.forEach(rec => {
-        if (!contentIdsMap.has(rec.content_id)) {
-          contentIdsMap.set(rec.content_id, true)
-        }
-      })
-      const contentIds = Array.from(contentIdsMap.keys())
-      
-      // Get content details
-      const { data: contents } = await supabase
-        .from('content')
-        .select('id, title, image_url, type, artist')
-        .in('id', contentIds)
-      
-      // Create lookup maps
-      const profileMap = new Map()
-      profiles?.forEach(profile => {
-        profileMap.set(profile.id, profile)
-      })
-      
-      const contentMap = new Map()
-      contents?.forEach(content => {
-        contentMap.set(content.id, content)
-      })
-      
-      // Merge all data
-      const merged: Recommendation[] = data.map(rec => {
-        const profile = profileMap.get(rec.user_id)
-        const content = contentMap.get(rec.content_id)
-        return {
-          id: rec.id,
-          user_id: rec.user_id,
-          content_id: rec.content_id,
-          content_type: rec.content_type,
-          recommendation_tier: rec.recommendation_tier,
-          comment: rec.comment || '',
-          created_at: rec.created_at,
-          updated_at: rec.updated_at,
-          profiles: {
-            id: profile?.id || '',
-            username: profile?.username || 'Anonymous',
-            avatar_url: profile?.avatar_url || null
-          },
-          content: {
-            id: content?.id || '',
-            title: content?.title || 'Unknown Content',
-            image_url: content?.image_url || '',
-            type: content?.type || rec.content_type,
-            artist: content?.artist || ''
-          }
-        }
-      })
-      
-      setRecommendations(merged)
+      setRecommendations(transformed)
     } catch (error) {
       console.error('Error loading recommendations:', error)
       setRecommendations([])
@@ -203,22 +200,39 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
       <div className="space-y-4 px-4">
         {recommendations.map((rec) => {
           const tier = tierConfig[rec.recommendation_tier as keyof typeof tierConfig] || tierConfig.recommended
-          const contentTitle = rec.content?.title || 'Unknown Content'
           const username = rec.profiles?.username || 'Anonymous'
           const avatarUrl = rec.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`
           const isCurrentUser = user?.id === rec.user_id
+          
+          // Pass the FULL content object to onViewDetails
+          const fullContent: ContentItem = {
+            id: rec.content.id,
+            title: rec.content.title,
+            description: rec.content.description,
+            long_description: rec.content.description,
+            image_url: rec.content.image_url,
+            backdrop_url: rec.content.image_url,
+            type: rec.content.type as 'movie' | 'music',
+            year: rec.content.year,
+            director: null,
+            artist: rec.content.artist,
+            actors: null,
+            platforms: [],
+            trailer_url: null,
+            runtime: null,
+            duration: null,
+            genre: rec.content.genre,
+            stats_highly: rec.content.stats_highly,
+            stats_recommended: rec.content.stats_recommended,
+            stats_not: rec.content.stats_not,
+            rating_scale: rec.content.rating_scale
+          }
           
           return (
             <div 
               key={rec.id} 
               className={`bg-gray-800/50 rounded-xl p-4 border-l-4 ${tier.color.replace('border-', 'border-l-')} hover:bg-gray-800 transition cursor-pointer ${isCurrentUser ? 'ring-1 ring-teal-500/50' : ''}`}
-              onClick={() => onViewDetails({ 
-                id: rec.content_id, 
-                title: contentTitle, 
-                type: rec.content_type,
-                image_url: rec.content?.image_url,
-                artist: rec.content?.artist
-              } as ContentItem)}
+              onClick={() => onViewDetails(fullContent)}
             >
               <div className="flex gap-3">
                 <img src={avatarUrl} alt={username} className="w-10 h-10 rounded-full" />
@@ -233,8 +247,8 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
                       {tier.emoji} {tier.label}
                     </span>
                   </div>
-                  <h3 className="font-bold mb-1 truncate">{contentTitle}</h3>
-                  {rec.content?.artist && <p className="text-xs text-gray-400 mb-2">{rec.content.artist}</p>}
+                  <h3 className="font-bold mb-1 truncate">{rec.content.title}</h3>
+                  {rec.content.artist && <p className="text-xs text-gray-400 mb-2">{rec.content.artist}</p>}
                   {rec.comment && <p className="text-sm text-gray-400 mb-3 line-clamp-2">{rec.comment}</p>}
                   <div className="flex gap-4">
                     <button 
