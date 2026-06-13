@@ -233,7 +233,7 @@ export default function HomePage() {
     setLoading(true)
     
     try {
-      // First, check if music categories exist
+      // Load music categories (excluding duplicates)
       const { data: categoriesData, error: categoriesError } = await supabase
         .from('categories')
         .select('*')
@@ -241,13 +241,16 @@ export default function HomePage() {
         .eq('is_active', true)
         .order('display_order')
       
-      console.log('Music categories loaded:', categoriesData?.length || 0)
-      
       if (categoriesError) {
         console.error('Error loading music categories:', categoriesError)
       }
       
-      setCategories(categoriesData || [])
+      // Filter out duplicate categories (if any have same name pattern)
+      const uniqueCategories = categoriesData?.filter((cat, index, self) => 
+        index === self.findIndex((c) => c.name.includes(cat.name.split(' ').pop() || cat.name))
+      ) || []
+      
+      setCategories(uniqueCategories)
       
       // Load music content
       let contentQuery = supabase
@@ -260,8 +263,6 @@ export default function HomePage() {
       }
       
       const { data: contentData, error: contentError } = await contentQuery
-      
-      console.log('Music content loaded:', contentData?.length || 0)
       
       if (contentError) {
         console.error('Error loading music content:', contentError)
@@ -285,7 +286,7 @@ export default function HomePage() {
       
       // Organize content by category
       const byCategory: Record<string, ContentItem[]> = {}
-      for (const category of categoriesData || []) {
+      for (const category of uniqueCategories) {
         const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
         byCategory[category.name] = contentWithImages.filter(c => contentIds.includes(c.id))
       }
@@ -779,7 +780,7 @@ export default function HomePage() {
             </div>
           </>
         ) : (
-          // MUSIC TAB - This will show all music categories
+          // MUSIC TAB - Show all music categories
           <>
             <HeroCarousel 
               items={allContent.slice(0, 3)} 
@@ -789,28 +790,30 @@ export default function HomePage() {
             />
             <div className="container mx-auto px-4">
               {/* Show categories if they exist */}
-              {categories.length > 0 && (
-                <>
-                  {categories.map((category) => (
-                    <ContentRow 
-                      key={category.id}
-                      title={category.name}
-                      items={contentByCategory[category.name] || []}
-                      type={activeTab}
-                      onViewDetails={handleViewDetails}
-                      onRecommend={handleRecommend}
-                      onAddToWatchlist={addToWatchlist}
-                      onRemoveFromWatchlist={removeFromWatchlist}
-                      isInWatchlist={isInWatchlist}
-                    />
-                  ))}
-                </>
-              )}
-              
-              {/* Fallback if no music content */}
-              {allContent.length === 0 && (
+              {categories.length > 0 ? (
+                categories.map((category) => (
+                  <ContentRow 
+                    key={category.id}
+                    title={category.name}
+                    items={contentByCategory[category.name] || []}
+                    type={activeTab}
+                    onViewDetails={handleViewDetails}
+                    onRecommend={handleRecommend}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                  />
+                ))
+              ) : (
                 <div className="text-center py-12 text-gray-500">
                   <Music size={48} className="mx-auto mb-4 opacity-50" />
+                  <p>No music categories found. Please run the SQL to add categories.</p>
+                </div>
+              )}
+              
+              {/* Show message if no music content */}
+              {allContent.length === 0 && categories.length > 0 && (
+                <div className="text-center py-12 text-gray-500">
                   <p>No music content yet. Check back later!</p>
                 </div>
               )}
