@@ -1,4 +1,3 @@
-// types/content.ts
 export interface ContentItem {
   id: string
   title: string
@@ -19,6 +18,7 @@ export interface ContentItem {
   stats_highly: number
   stats_recommended: number
   stats_not: number
+  rating_scale?: number  // New field for 0-10 rating
 }
 
 export interface Category {
