@@ -52,7 +52,7 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
   const loadRecommendations = async () => {
     setLoading(true)
     try {
-      // Simple query first to test
+      // Fetch recommendations
       const { data, error } = await supabase
         .from('recommendations')
         .select('*')
@@ -73,24 +73,51 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
         return
       }
       
+      // Get unique user IDs (fixing the Set iteration issue)
+      const userIdsMap = new Map()
+      data.forEach(rec => {
+        if (!userIdsMap.has(rec.user_id)) {
+          userIdsMap.set(rec.user_id, true)
+        }
+      })
+      const userIds = Array.from(userIdsMap.keys())
+      
       // Get user profiles
-      const userIds = [...new Set(data.map(rec => rec.user_id))]
       const { data: profiles } = await supabase
         .from('profiles')
         .select('id, username, avatar_url')
         .in('id', userIds)
       
+      // Get unique content IDs
+      const contentIdsMap = new Map()
+      data.forEach(rec => {
+        if (!contentIdsMap.has(rec.content_id)) {
+          contentIdsMap.set(rec.content_id, true)
+        }
+      })
+      const contentIds = Array.from(contentIdsMap.keys())
+      
       // Get content details
-      const contentIds = [...new Set(data.map(rec => rec.content_id))]
       const { data: contents } = await supabase
         .from('content')
         .select('id, title, image_url, type, artist')
         .in('id', contentIds)
       
+      // Create lookup maps
+      const profileMap = new Map()
+      profiles?.forEach(profile => {
+        profileMap.set(profile.id, profile)
+      })
+      
+      const contentMap = new Map()
+      contents?.forEach(content => {
+        contentMap.set(content.id, content)
+      })
+      
       // Merge all data
       const merged: Recommendation[] = data.map(rec => {
-        const profile = profiles?.find(p => p.id === rec.user_id)
-        const content = contents?.find(c => c.id === rec.content_id)
+        const profile = profileMap.get(rec.user_id)
+        const content = contentMap.get(rec.content_id)
         return {
           id: rec.id,
           user_id: rec.user_id,
@@ -160,15 +187,6 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
           <MessageCircle size={48} className="mx-auto mb-3 opacity-50" />
           <p className="text-sm">No recommendations yet.</p>
           <p className="text-xs text-gray-600 mt-1">Be the first to recommend something!</p>
-          <button 
-            onClick={() => {
-              // Scroll to first content item
-              document.querySelector('.group\\/item')?.scrollIntoView({ behavior: 'smooth' })
-            }}
-            className="mt-4 px-4 py-2 bg-teal-600 rounded-lg text-sm hover:bg-teal-700 transition"
-          >
-            Browse Content to Recommend
-          </button>
         </div>
       </div>
     )
