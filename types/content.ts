@@ -18,7 +18,10 @@ export interface ContentItem {
   stats_highly: number
   stats_recommended: number
   stats_not: number
-  rating_scale?: number  // New field for 0-10 rating
+  rating_scale?: number
+  is_tv_show?: boolean
+  created_at?: string
+  updated_at?: string
 }
 
 export interface Category {
@@ -28,4 +31,29 @@ export interface Category {
   type: 'movie' | 'music'
   is_active: boolean
   display_order: number
+  created_at?: string
+}
+
+export interface Recommendation {
+  id: string
+  user_id: string
+  content_id: string
+  content_type: 'movie' | 'music'
+  recommendation_tier: 'highly' | 'recommended' | 'not'
+  comment?: string
+  created_at?: string
+  profiles?: {
+    username: string
+    avatar_url: string
+  }
+  content?: ContentItem
+}
+
+export interface WatchlistItem {
+  id: string
+  user_id: string
+  content_id: string
+  content_type: 'movie' | 'music'
+  created_at?: string
+  content?: ContentItem
 }
