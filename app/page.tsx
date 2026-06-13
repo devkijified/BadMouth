@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
-import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield } from 'lucide-react'
+import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield, Star } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import HeroCarousel from '@/components/HeroCarousel'
 import ContentRow from '@/components/ContentRow'
 import SocialRecommendations from '@/components/SocialRecommendations'
@@ -19,6 +20,7 @@ import MusicSearch from '@/components/MusicSearch'
 import { ContentItem, Category } from '@/types/content'
 
 export default function HomePage() {
+  const router = useRouter()
   const { user, signOut, loading: authLoading } = useAuth()
   const [currentPage, setCurrentPage] = useState<'home' | 'movies' | 'music'>('home')
   const [activeTab, setActiveTab] = useState<'movie' | 'music'>('movie')
@@ -339,6 +341,16 @@ export default function HomePage() {
     'Deezer': 'https://deezer.com',
   }
 
+  // Calculate rating
+  const getRating = (item: ContentItem) => {
+    if (item.rating_scale && item.rating_scale > 0) {
+      return item.rating_scale
+    }
+    const total = (item.stats_highly || 0) + (item.stats_recommended || 0) + (item.stats_not || 0)
+    if (total === 0) return 0
+    return Number((((item.stats_highly || 0) * 10 + (item.stats_recommended || 0) * 7) / total).toFixed(1))
+  }
+
   return (
     <div className="min-h-screen bg-black">
       <SearchModal 
@@ -623,7 +635,7 @@ export default function HomePage() {
             </div>
           </>
         ) : (
-          // MUSIC TAB - Now with full categories
+          // MUSIC TAB
           <>
             <HeroCarousel 
               items={allContent.slice(0, 3)} 
@@ -632,7 +644,6 @@ export default function HomePage() {
               activeTab={activeTab} 
             />
             <div className="container mx-auto px-4">
-              {/* Music Categories from Database */}
               {categories.length > 0 ? (
                 categories.map((category) => (
                   <ContentRow 
@@ -648,7 +659,6 @@ export default function HomePage() {
                   />
                 ))
               ) : (
-                // Fallback default music categories if none in database
                 <>
                   <ContentRow 
                     title="🔥 Trending Music"
@@ -723,6 +733,14 @@ export default function HomePage() {
               {selectedContent.artist && <p className="text-gray-400 mb-3">{selectedContent.artist}</p>}
               <p className="text-gray-300 mb-4 text-sm leading-relaxed">{selectedContent.long_description || selectedContent.description}</p>
               
+              {/* Rating Display */}
+              <div className="flex items-center gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg">
+                <Star size={20} className="text-yellow-400 fill-yellow-400" />
+                <span className="text-2xl font-bold">{getRating(selectedContent)}</span>
+                <span className="text-gray-400">/10</span>
+                <span className="text-xs text-gray-500 ml-2">based on {selectedContent.stats_highly + selectedContent.stats_recommended + selectedContent.stats_not} votes</span>
+              </div>
+              
               <div className="flex gap-6 mb-4 p-3 bg-gray-800/50 rounded-lg">
                 <div className="text-center">
                   <div className="text-2xl text-teal-500">🔥</div>
@@ -741,7 +759,7 @@ export default function HomePage() {
                 </div>
               </div>
               
-              {/* Where to Watch / Listen - Working Links */}
+              {/* Where to Watch / Listen */}
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
                 <div className="flex flex-wrap gap-2">
@@ -762,18 +780,38 @@ export default function HomePage() {
                 </div>
               </div>
               
+              {/* Movie Details with Clickable Cast */}
               {selectedContent.type === 'movie' && selectedContent.director && (
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
                   <div><span className="text-gray-400">🎬 Director:</span> {selectedContent.director}</div>
                   <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
                   <div><span className="text-gray-400">⏱️ Runtime:</span> {selectedContent.runtime || 'N/A'}</div>
                   <div><span className="text-gray-400">🎭 Genre:</span> {selectedContent.genre}</div>
-                  {selectedContent.actors && selectedContent.actors.length > 0 && (
-                    <div className="col-span-2"><span className="text-gray-400">⭐ Cast:</span> {selectedContent.actors.join(', ')}</div>
-                  )}
                 </div>
               )}
               
+              {/* Clickable Cast Section */}
+              {selectedContent.type === 'movie' && selectedContent.actors && selectedContent.actors.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="text-md font-semibold mb-2">⭐ Cast</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedContent.actors.map((actor: string, idx: number) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          setShowDetailsModal(false)
+                          router.push(`/actor/${encodeURIComponent(actor)}`)
+                        }}
+                        className="px-3 py-1 bg-gray-800 rounded-full text-sm hover:bg-teal-600/30 hover:text-teal-400 transition"
+                      >
+                        {actor}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Trailer */}
               {selectedContent.trailer_url && (
                 <div className="mb-4">
                   <h3 className="text-md font-semibold mb-2">▶️ Watch Trailer</h3>
