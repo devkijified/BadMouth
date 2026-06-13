@@ -271,52 +271,54 @@ export default function HomePage() {
 
   // Load data for Movies tab
   const loadMoviesData = async () => {
-    setLoading(true)
+  setLoading(true)
+  
+  try {
+    // Load categories in display_order (already sorted)
+    const { data: categoriesData } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('type', 'movie')
+      .eq('is_active', true)
+      .order('display_order')  // This is good - keeps category order
     
-    try {
-      const { data: categoriesData } = await supabase
-        .from('categories')
-        .select('*')
-        .eq('type', 'movie')
-        .eq('is_active', true)
-        .order('display_order')
-      
-      setCategories(categoriesData || [])
-      
-      let contentQuery = supabase
-        .from('content')
-        .select('*')
-        .eq('type', 'movie')
-      
-      if (selectedGenre !== 'all') {
-        contentQuery = contentQuery.eq('genre', selectedGenre)
-      }
-      
-      const { data: contentData } = await contentQuery
-      
-      const contentWithImages = (contentData || []).map(item => ({
-        ...item,
-        image_url: item.image_url || `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(item.title)}`
-      }))
-      
-      setAllContent(contentWithImages)
-      
-      const { data: relations } = await supabase
-        .from('content_categories')
-        .select('*')
-      
-      const byCategory: Record<string, ContentItem[]> = {}
-      for (const category of categoriesData || []) {
-        const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
-        byCategory[category.name] = contentWithImages.filter(c => contentIds.includes(c.id))
-      }
-      setContentByCategory(byCategory)
-    } catch (error) {
-      console.error('Error loading movies data:', error)
-    } finally {
-      setLoading(false)
+    setCategories(categoriesData || [])
+    
+    // Load all content (no sorting here - keep as is)
+    const { data: contentData } = await supabase
+      .from('content')
+      .select('*')
+      .eq('type', 'movie')
+    
+    // DON'T sort contentData here - preserve the order from database
+    // The content-category relations will determine which content goes where
+    
+    const contentWithImages = (contentData || []).map(item => ({
+      ...item,
+      image_url: item.image_url || `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(item.title)}`
+    }))
+    
+    setAllContent(contentWithImages)
+    
+    // Load relations
+    const { data: relations } = await supabase
+      .from('content_categories')
+      .select('*')
+    
+    // Build category map - order preserved from categoriesData
+    const byCategory: Record<string, ContentItem[]> = {}
+    for (const category of categoriesData || []) {
+      const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
+      // IMPORTANT: Filter content and preserve order from database
+      byCategory[category.name] = contentWithImages.filter(c => contentIds.includes(c.id))
     }
+    setContentByCategory(byCategory)
+  } catch (error) {
+    console.error('Error loading movies data:', error)
+  } finally {
+    setLoading(false)
   }
+}
 
   // Load data for Music tab
   const loadMusicData = async () => {
