@@ -176,7 +176,7 @@ export default function HomePage() {
     if (user && !authLoading && currentPage !== 'home') {
       loadData()
     }
-  }, [activeTab, user, authLoading, currentPage])
+  }, [activeTab, user, authLoading, currentPage, selectedGenre])
 
   const loadData = async () => {
     setLoading(true)
@@ -191,10 +191,17 @@ export default function HomePage() {
       
       setCategories(categoriesData || [])
       
-      const { data: contentData } = await supabase
+      // Build content query with genre filter
+      let contentQuery = supabase
         .from('content')
         .select('*')
         .eq('type', activeTab)
+      
+      if (selectedGenre !== 'all') {
+        contentQuery = contentQuery.eq('genre', selectedGenre)
+      }
+      
+      const { data: contentData } = await contentQuery
       
       // Ensure all content has an image_url
       const contentWithImages = (contentData || []).map(item => ({
@@ -260,6 +267,7 @@ export default function HomePage() {
   const handleMoviesClick = () => {
     setCurrentPage('movies')
     setActiveTab('movie')
+    setSelectedGenre('all')
     scrollToTop()
     loadData()
   }
@@ -267,6 +275,7 @@ export default function HomePage() {
   const handleMusicClick = () => {
     setCurrentPage('music')
     setActiveTab('music')
+    setSelectedGenre('all')
     scrollToTop()
     loadData()
   }
@@ -322,23 +331,20 @@ export default function HomePage() {
 
   const filteredContent = getFilteredContent()
 
-  // Platform links mapping for external sites
-  const platformLinks: Record<string, string> = {
-    'Netflix': 'https://netflix.com',
-    'Prime Video': 'https://primevideo.com',
-    'Amazon Prime': 'https://primevideo.com',
-    'Max': 'https://max.com',
-    'HBO Max': 'https://max.com',
-    'Hulu': 'https://hulu.com',
-    'Disney+': 'https://disneyplus.com',
-    'Paramount+': 'https://paramountplus.com',
-    'Apple TV+': 'https://tv.apple.com',
-    'Peacock': 'https://peacocktv.com',
-    'Spotify': 'https://spotify.com',
-    'Apple Music': 'https://music.apple.com',
-    'YouTube Music': 'https://music.youtube.com',
-    'Tidal': 'https://tidal.com',
-    'Deezer': 'https://deezer.com',
+  // Platform icons mapping for Where to Watch/Listen section
+  const platformIcons: Record<string, { icon: string; color: string; url: string }> = {
+    'Spotify': { icon: '🎵', color: 'bg-green-600', url: 'https://spotify.com' },
+    'Apple Music': { icon: '🍎', color: 'bg-red-600', url: 'https://music.apple.com' },
+    'YouTube Music': { icon: '📺', color: 'bg-red-500', url: 'https://music.youtube.com' },
+    'Netflix': { icon: '📺', color: 'bg-red-700', url: 'https://netflix.com' },
+    'Prime Video': { icon: '📦', color: 'bg-blue-600', url: 'https://primevideo.com' },
+    'Amazon Prime': { icon: '📦', color: 'bg-blue-600', url: 'https://primevideo.com' },
+    'Max': { icon: '🔷', color: 'bg-blue-500', url: 'https://max.com' },
+    'HBO Max': { icon: '🔷', color: 'bg-blue-500', url: 'https://max.com' },
+    'Hulu': { icon: '🟢', color: 'bg-green-500', url: 'https://hulu.com' },
+    'Disney+': { icon: '✨', color: 'bg-blue-700', url: 'https://disneyplus.com' },
+    'Paramount+': { icon: '⭐', color: 'bg-blue-600', url: 'https://paramountplus.com' },
+    'Deezer': { icon: '🎧', color: 'bg-purple-600', url: 'https://deezer.com' },
   }
 
   // Calculate rating
@@ -485,26 +491,29 @@ export default function HomePage() {
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
               </button>
 
-              <div className="relative">
-                <button onClick={() => setShowGenreFilter(!showGenreFilter)} className="text-gray-300 hover:text-white flex items-center gap-1">
-                  <Filter size={18} /> <span className="text-xs hidden md:inline">Genre</span>
-                </button>
-                {showGenreFilter && currentPage !== 'home' && (
-                  <div className="absolute top-8 right-0 w-48 bg-gray-900 rounded-xl shadow-xl border border-gray-700 z-50">
-                    <div className="p-2">
-                      {genres.map(genre => (
-                        <button 
-                          key={genre} 
-                          onClick={() => { setSelectedGenre(genre); setShowGenreFilter(false); loadData(); }} 
-                          className={`w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-800 ${selectedGenre === genre ? 'text-teal-500' : 'text-gray-300'}`}
-                        >
-                          {genre === 'all' ? 'All Genres' : genre}
-                        </button>
-                      ))}
+              {/* Genre Filter - Only show on Movies and Music tabs, NOT on Home */}
+              {currentPage !== 'home' && (
+                <div className="relative">
+                  <button onClick={() => setShowGenreFilter(!showGenreFilter)} className="text-gray-300 hover:text-white flex items-center gap-1">
+                    <Filter size={18} /> <span className="text-xs hidden md:inline">Genre</span>
+                  </button>
+                  {showGenreFilter && (
+                    <div className="absolute top-8 right-0 w-48 bg-gray-900 rounded-xl shadow-xl border border-gray-700 z-50">
+                      <div className="p-2">
+                        {genres.map(genre => (
+                          <button 
+                            key={genre} 
+                            onClick={() => { setSelectedGenre(genre); setShowGenreFilter(false); loadData(); }} 
+                            className={`w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-800 ${selectedGenre === genre ? 'text-teal-500' : 'text-gray-300'}`}
+                          >
+                            {genre === 'all' ? 'All Genres' : genre}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
               
               <button onClick={toggleNotifications} className="text-gray-300 hover:text-white relative">
                 <Bell size={20} />
@@ -759,21 +768,23 @@ export default function HomePage() {
                 </div>
               </div>
               
-              {/* Where to Watch / Listen */}
+              {/* Where to Watch / Listen - Platform Icons */}
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-3">
                   {selectedContent.platforms?.map((platform: string, idx: number) => {
-                    const link = platformLinks[platform] || '#'
+                    const info = platformIcons[platform] || { icon: '🎬', color: 'bg-gray-600', url: '#' }
                     return (
                       <a 
                         key={idx} 
-                        href={link} 
+                        href={info.url} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        className="px-4 py-2 bg-teal-600 rounded-lg text-sm font-medium hover:bg-teal-700 transition flex items-center gap-2"
+                        className={`flex items-center gap-2 px-3 py-2 ${info.color} rounded-lg text-sm font-medium hover:opacity-80 transition`}
+                        title={platform}
                       >
-                        {platform} <span className="text-xs">↗</span>
+                        <span className="text-base">{info.icon}</span>
+                        <span className="hidden sm:inline">{platform}</span>
                       </a>
                     )
                   })}
