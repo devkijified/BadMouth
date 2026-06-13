@@ -89,6 +89,10 @@ export default function HomePage() {
     }
   }
 
+  // ============================================
+  // FIXED WATCHLIST FUNCTIONS - Using TEXT for content_id
+  // ============================================
+
   // Load watchlist from Supabase
   const loadWatchlistFromSupabase = async () => {
     if (!user) return
@@ -138,6 +142,7 @@ export default function HomePage() {
         .eq('content_id', item.id)
       
       if (error) {
+        console.error('Remove error:', error)
         toast.error('Failed to remove from watchlist')
         return
       }
@@ -158,7 +163,8 @@ export default function HomePage() {
         })
       
       if (error) {
-        toast.error('Failed to add to watchlist')
+        console.error('Insert error:', error)
+        toast.error('Failed to add to watchlist: ' + error.message)
         return
       }
       
@@ -189,6 +195,7 @@ export default function HomePage() {
 
   const isInWatchlist = (id: string) => watchlistIds.has(id)
 
+  // Load watchlist when user is logged in
   useEffect(() => {
     if (user) {
       loadWatchlistFromSupabase()
