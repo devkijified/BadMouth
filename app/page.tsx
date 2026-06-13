@@ -233,15 +233,23 @@ export default function HomePage() {
     setLoading(true)
     
     try {
-      const { data: categoriesData } = await supabase
+      // First, check if music categories exist
+      const { data: categoriesData, error: categoriesError } = await supabase
         .from('categories')
         .select('*')
         .eq('type', 'music')
         .eq('is_active', true)
         .order('display_order')
       
+      console.log('Music categories loaded:', categoriesData?.length || 0)
+      
+      if (categoriesError) {
+        console.error('Error loading music categories:', categoriesError)
+      }
+      
       setCategories(categoriesData || [])
       
+      // Load music content
       let contentQuery = supabase
         .from('content')
         .select('*')
@@ -251,7 +259,13 @@ export default function HomePage() {
         contentQuery = contentQuery.eq('genre', selectedGenre)
       }
       
-      const { data: contentData } = await contentQuery
+      const { data: contentData, error: contentError } = await contentQuery
+      
+      console.log('Music content loaded:', contentData?.length || 0)
+      
+      if (contentError) {
+        console.error('Error loading music content:', contentError)
+      }
       
       const contentWithImages = (contentData || []).map(item => ({
         ...item,
@@ -260,10 +274,16 @@ export default function HomePage() {
       
       setAllContent(contentWithImages)
       
-      const { data: relations } = await supabase
+      // Load content-category relations
+      const { data: relations, error: relationsError } = await supabase
         .from('content_categories')
         .select('*')
       
+      if (relationsError) {
+        console.error('Error loading relations:', relationsError)
+      }
+      
+      // Organize content by category
       const byCategory: Record<string, ContentItem[]> = {}
       for (const category of categoriesData || []) {
         const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
@@ -759,7 +779,7 @@ export default function HomePage() {
             </div>
           </>
         ) : (
-          // MUSIC TAB - Categories should show here
+          // MUSIC TAB - This will show all music categories
           <>
             <HeroCarousel 
               items={allContent.slice(0, 3)} 
@@ -768,65 +788,33 @@ export default function HomePage() {
               activeTab={activeTab} 
             />
             <div className="container mx-auto px-4">
-              {categories.length > 0 ? (
-                categories.map((category) => (
-                  <ContentRow 
-                    key={category.id}
-                    title={category.name}
-                    items={contentByCategory[category.name] || []}
-                    type={activeTab}
-                    onViewDetails={handleViewDetails}
-                    onRecommend={handleRecommend}
-                    onAddToWatchlist={addToWatchlist}
-                    onRemoveFromWatchlist={removeFromWatchlist}
-                    isInWatchlist={isInWatchlist}
-                  />
-                ))
-              ) : (
-                // Fallback default music categories if none in database
+              {/* Show categories if they exist */}
+              {categories.length > 0 && (
                 <>
-                  <ContentRow 
-                    title="🔥 Trending Music"
-                    items={allContent.filter(c => c.stats_highly > 0).slice(0, 10)}
-                    type="music"
-                    onViewDetails={handleViewDetails}
-                    onRecommend={handleRecommend}
-                    onAddToWatchlist={addToWatchlist}
-                    onRemoveFromWatchlist={removeFromWatchlist}
-                    isInWatchlist={isInWatchlist}
-                  />
-                  <ContentRow 
-                    title="🎤 Top Artists"
-                    items={allContent.slice(0, 8)}
-                    type="music"
-                    onViewDetails={handleViewDetails}
-                    onRecommend={handleRecommend}
-                    onAddToWatchlist={addToWatchlist}
-                    onRemoveFromWatchlist={removeFromWatchlist}
-                    isInWatchlist={isInWatchlist}
-                  />
-                  <ContentRow 
-                    title="✨ New Releases"
-                    items={allContent.slice(0, 8)}
-                    type="music"
-                    onViewDetails={handleViewDetails}
-                    onRecommend={handleRecommend}
-                    onAddToWatchlist={addToWatchlist}
-                    onRemoveFromWatchlist={removeFromWatchlist}
-                    isInWatchlist={isInWatchlist}
-                  />
-                  <ContentRow 
-                    title="🎵 Pop Hits"
-                    items={allContent.filter(c => c.genre === 'Pop').slice(0, 8)}
-                    type="music"
-                    onViewDetails={handleViewDetails}
-                    onRecommend={handleRecommend}
-                    onAddToWatchlist={addToWatchlist}
-                    onRemoveFromWatchlist={removeFromWatchlist}
-                    isInWatchlist={isInWatchlist}
-                  />
+                  {categories.map((category) => (
+                    <ContentRow 
+                      key={category.id}
+                      title={category.name}
+                      items={contentByCategory[category.name] || []}
+                      type={activeTab}
+                      onViewDetails={handleViewDetails}
+                      onRecommend={handleRecommend}
+                      onAddToWatchlist={addToWatchlist}
+                      onRemoveFromWatchlist={removeFromWatchlist}
+                      isInWatchlist={isInWatchlist}
+                    />
+                  ))}
                 </>
               )}
+              
+              {/* Fallback if no music content */}
+              {allContent.length === 0 && (
+                <div className="text-center py-12 text-gray-500">
+                  <Music size={48} className="mx-auto mb-4 opacity-50" />
+                  <p>No music content yet. Check back later!</p>
+                </div>
+              )}
+              
               <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
             </div>
           </>
