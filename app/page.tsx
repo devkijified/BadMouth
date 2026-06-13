@@ -875,28 +875,32 @@ export default function HomePage() {
                   <div className="font-bold">{selectedContent.stats_not || 0}</div>
                 </div>
               </div>
-              
-              <div className="mb-4">
-                <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
-                <div className="flex flex-wrap gap-3">
-                  {selectedContent.platforms?.map((platform: string, idx: number) => {
-                    const info = platformIcons[platform] || { icon: '🎬', color: 'bg-gray-600', url: '#' }
-                    return (
-                      <a 
-                        key={idx} 
-                        href={info.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className={`flex items-center gap-2 px-3 py-2 ${info.color} rounded-lg text-sm font-medium hover:opacity-80 transition`}
-                        title={platform}
-                      >
-                        <span className="text-base">{info.icon}</span>
-                        <span className="hidden sm:inline">{platform}</span>
-                      </a>
-                    )
-                  })}
-                </div>
-              </div>
+              {/* Where to Watch / Listen - Always show, even if empty */}
+<div className="mb-4">
+  <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
+  <div className="flex flex-wrap gap-3">
+    {selectedContent.platforms && selectedContent.platforms.length > 0 ? (
+      selectedContent.platforms.map((platform: string, idx: number) => {
+        const info = platformIcons[platform] || { icon: '🎬', color: 'bg-gray-600', url: '#' }
+        return (
+          <a 
+            key={idx} 
+            href={info.url} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className={`flex items-center gap-2 px-3 py-2 ${info.color} rounded-lg text-sm font-medium hover:opacity-80 transition`}
+            title={platform}
+          >
+            <span className="text-base">{info.icon}</span>
+            <span className="hidden sm:inline">{platform}</span>
+          </a>
+        )
+      })
+    ) : (
+      <p className="text-sm text-gray-500">Platform information coming soon</p>
+    )}
+  </div>
+</div>
               
               {selectedContent.type === 'movie' && selectedContent.director && (
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
