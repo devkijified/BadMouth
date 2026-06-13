@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase/client'
 import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield, Star } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import HeroCarousel from '@/components/HeroCarousel'
 import ContentRow from '@/components/ContentRow'
 import SocialRecommendations from '@/components/SocialRecommendations'
@@ -443,20 +444,80 @@ export default function HomePage() {
 
   const filteredContent = getFilteredContent()
 
-  // Platform icons mapping for Where to Watch/Listen section
-  const platformIcons: Record<string, { icon: string; color: string; url: string }> = {
-    'Spotify': { icon: '🎵', color: 'bg-green-600', url: 'https://spotify.com' },
-    'Apple Music': { icon: '🍎', color: 'bg-red-600', url: 'https://music.apple.com' },
-    'YouTube Music': { icon: '📺', color: 'bg-red-500', url: 'https://music.youtube.com' },
-    'Netflix': { icon: '📺', color: 'bg-red-700', url: 'https://netflix.com' },
-    'Prime Video': { icon: '📦', color: 'bg-blue-600', url: 'https://primevideo.com' },
-    'Amazon Prime': { icon: '📦', color: 'bg-blue-600', url: 'https://primevideo.com' },
-    'Max': { icon: '🔷', color: 'bg-blue-500', url: 'https://max.com' },
-    'HBO Max': { icon: '🔷', color: 'bg-blue-500', url: 'https://max.com' },
-    'Hulu': { icon: '🟢', color: 'bg-green-500', url: 'https://hulu.com' },
-    'Disney+': { icon: '✨', color: 'bg-blue-700', url: 'https://disneyplus.com' },
-    'Paramount+': { icon: '⭐', color: 'bg-blue-600', url: 'https://paramountplus.com' },
-    'Deezer': { icon: '🎧', color: 'bg-purple-600', url: 'https://deezer.com' },
+  // Platform icons mapping with real images
+  const platformIcons: Record<string, { icon: string; color: string; url: string; imageUrl: string }> = {
+    'Spotify': { 
+      icon: '🎵', 
+      color: 'bg-green-600', 
+      url: 'https://spotify.com',
+      imageUrl: 'https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_White.png'
+    },
+    'Apple Music': { 
+      icon: '🍎', 
+      color: 'bg-red-600', 
+      url: 'https://music.apple.com',
+      imageUrl: 'https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg'
+    },
+    'YouTube Music': { 
+      icon: '📺', 
+      color: 'bg-red-500', 
+      url: 'https://music.youtube.com',
+      imageUrl: 'https://www.youtube.com/s/desktop/014c3cd3/img/favicon_32x32.png'
+    },
+    'Netflix': { 
+      icon: '📺', 
+      color: 'bg-red-700', 
+      url: 'https://netflix.com',
+      imageUrl: 'https://assets.nflxext.com/us/ffe/siteui/common/icons/nficon2016.ico'
+    },
+    'Prime Video': { 
+      icon: '📦', 
+      color: 'bg-blue-600', 
+      url: 'https://primevideo.com',
+      imageUrl: 'https://www.primevideo.com/assets/images/logo.png'
+    },
+    'Amazon Prime': { 
+      icon: '📦', 
+      color: 'bg-blue-600', 
+      url: 'https://primevideo.com',
+      imageUrl: 'https://www.primevideo.com/assets/images/logo.png'
+    },
+    'Max': { 
+      icon: '🔷', 
+      color: 'bg-blue-500', 
+      url: 'https://max.com',
+      imageUrl: 'https://www.max.com/favicon.ico'
+    },
+    'HBO Max': { 
+      icon: '🔷', 
+      color: 'bg-blue-500', 
+      url: 'https://max.com',
+      imageUrl: 'https://www.max.com/favicon.ico'
+    },
+    'Hulu': { 
+      icon: '🟢', 
+      color: 'bg-green-500', 
+      url: 'https://hulu.com',
+      imageUrl: 'https://www.hulu.com/static/favicon.ico'
+    },
+    'Disney+': { 
+      icon: '✨', 
+      color: 'bg-blue-700', 
+      url: 'https://disneyplus.com',
+      imageUrl: 'https://static-assets.bamgrid.com/web/favicons/favicon-32x32.png'
+    },
+    'Paramount+': { 
+      icon: '⭐', 
+      color: 'bg-blue-600', 
+      url: 'https://paramountplus.com',
+      imageUrl: 'https://www.paramountplus.com/favicon.ico'
+    },
+    'Deezer': { 
+      icon: '🎧', 
+      color: 'bg-purple-600', 
+      url: 'https://deezer.com',
+      imageUrl: 'https://e-cdns-images.dzcdn.net/images/common/favicon/favicon-32x32.png'
+    },
   }
 
   // Calculate rating
@@ -825,12 +886,17 @@ export default function HomePage() {
                 </div>
               </div>
               
-              {/* Where to Watch / Listen - Platform Icons */}
+              {/* Where to Watch / Listen - Platform Icons with Real Images */}
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
                 <div className="flex flex-wrap gap-3">
                   {selectedContent.platforms?.map((platform: string, idx: number) => {
-                    const info = platformIcons[platform] || { icon: '🎬', color: 'bg-gray-600', url: '#' }
+                    const info = platformIcons[platform] || { 
+                      icon: '🎬', 
+                      color: 'bg-gray-600', 
+                      url: '#',
+                      imageUrl: ''
+                    }
                     return (
                       <a 
                         key={idx} 
@@ -840,7 +906,11 @@ export default function HomePage() {
                         className={`flex items-center gap-2 px-3 py-2 ${info.color} rounded-lg text-sm font-medium hover:opacity-80 transition`}
                         title={platform}
                       >
-                        <span className="text-base">{info.icon}</span>
+                        {info.imageUrl ? (
+                          <img src={info.imageUrl} alt={platform} className="w-5 h-5 object-contain" />
+                        ) : (
+                          <span className="text-base">{info.icon}</span>
+                        )}
                         <span className="hidden sm:inline">{platform}</span>
                       </a>
                     )
@@ -858,7 +928,7 @@ export default function HomePage() {
                 </div>
               )}
               
-              {/* Music Details with Clickable Artist - Fixed null check */}
+              {/* Music Details with Clickable Artist */}
               {selectedContent.type === 'music' && selectedContent.artist && (
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
                   <div className="col-span-2">
