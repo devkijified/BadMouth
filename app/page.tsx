@@ -89,7 +89,7 @@ export default function HomePage() {
     }
   }
 
-  // Load watchlist from Supabase (not localStorage)
+  // Load watchlist from Supabase
   const loadWatchlistFromSupabase = async () => {
     if (!user) return
     
@@ -112,7 +112,9 @@ export default function HomePage() {
       
       if (contentData) {
         setWatchlist(contentData)
-        setWatchlistIds(new Set(contentData.map(item => item.id)))
+        const idsSet = new Set<string>()
+        contentData.forEach(item => idsSet.add(item.id))
+        setWatchlistIds(idsSet)
       }
     } else {
       setWatchlist([])
@@ -141,11 +143,9 @@ export default function HomePage() {
       }
       
       setWatchlist(prev => prev.filter(i => i.id !== item.id))
-      setWatchlistIds(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(item.id)
-        return newSet
-      })
+      const newIdsSet = new Set(watchlistIds)
+      newIdsSet.delete(item.id)
+      setWatchlistIds(newIdsSet)
       toast.success(`Removed "${item.title}" from watchlist`)
     } else {
       // Add to watchlist
@@ -163,7 +163,9 @@ export default function HomePage() {
       }
       
       setWatchlist(prev => [...prev, item])
-      setWatchlistIds(prev => new Set([...prev, item.id]))
+      const newIdsSet = new Set(watchlistIds)
+      newIdsSet.add(item.id)
+      setWatchlistIds(newIdsSet)
       toast.success(`✨ "${item.title}" added to watchlist!`)
     }
   }
@@ -179,11 +181,9 @@ export default function HomePage() {
     
     if (!error) {
       setWatchlist(prev => prev.filter(i => i.id !== id))
-      setWatchlistIds(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(id)
-        return newSet
-      })
+      const newIdsSet = new Set(watchlistIds)
+      newIdsSet.delete(id)
+      setWatchlistIds(newIdsSet)
     }
   }
 
