@@ -21,6 +21,7 @@ export default function ExplorePage() {
   const [showFilters, setShowFilters] = useState(false)
   const [selectedItem, setSelectedItem] = useState<ContentItem | null>(null)
   const [showRecommendModal, setShowRecommendModal] = useState(false)
+  const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [watchlist, setWatchlist] = useState<ContentItem[]>([])
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set())
   const [genreFilter, setGenreFilter] = useState<string>('all')
@@ -179,8 +180,8 @@ export default function ExplorePage() {
   }
 
   const handleViewDetails = (item: ContentItem) => {
-    router.push('/')
-    sessionStorage.setItem('selectedContent', JSON.stringify(item))
+    setSelectedItem(item)
+    setShowDetailsModal(true)
   }
 
   const getRating = (item: ContentItem) => {
@@ -190,6 +191,19 @@ export default function ExplorePage() {
     const total = (item.stats_highly || 0) + (item.stats_recommended || 0) + (item.stats_not || 0)
     if (total === 0) return 0
     return Number((((item.stats_highly || 0) * 10 + (item.stats_recommended || 0) * 7) / total).toFixed(1))
+  }
+
+  // Platform icons mapping
+  const platformIcons: Record<string, { icon: string; color: string; url: string }> = {
+    'Spotify': { icon: '🎵', color: 'bg-green-600', url: 'https://spotify.com' },
+    'Apple Music': { icon: '🍎', color: 'bg-red-600', url: 'https://music.apple.com' },
+    'YouTube Music': { icon: '📺', color: 'bg-red-500', url: 'https://music.youtube.com' },
+    'Netflix': { icon: '📺', color: 'bg-red-700', url: 'https://netflix.com' },
+    'Prime Video': { icon: '📦', color: 'bg-blue-600', url: 'https://primevideo.com' },
+    'Max': { icon: '🔷', color: 'bg-blue-500', url: 'https://max.com' },
+    'Hulu': { icon: '🟢', color: 'bg-green-500', url: 'https://hulu.com' },
+    'Disney+': { icon: '✨', color: 'bg-blue-700', url: 'https://disneyplus.com' },
+    'Deezer': { icon: '🎧', color: 'bg-purple-600', url: 'https://deezer.com' },
   }
 
   if (!user) {
@@ -213,6 +227,145 @@ export default function ExplorePage() {
         userId={user?.id}
         onSuccess={handleRecommendSuccess}
       />
+
+      {/* Details Modal */}
+      {showDetailsModal && selectedItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 overflow-y-auto">
+          <div className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="relative">
+              <img src={selectedItem.backdrop_url || selectedItem.image_url} alt={selectedItem.title} className="w-full h-48 object-cover" />
+              <button onClick={() => setShowDetailsModal(false)} className="absolute top-4 right-4 p-2 bg-black/50 rounded-full">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-5">
+              <h2 className="text-2xl font-bold mb-1">{selectedItem.title}</h2>
+              {selectedItem.artist && <p className="text-gray-400 mb-3">{selectedItem.artist}</p>}
+              <p className="text-gray-300 mb-4 text-sm leading-relaxed">{selectedItem.long_description || selectedItem.description}</p>
+              
+              {/* Rating Display */}
+              <div className="flex items-center gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg">
+                <Star size={20} className="text-yellow-400 fill-yellow-400" />
+                <span className="text-2xl font-bold">{getRating(selectedItem)}</span>
+                <span className="text-gray-400">/10</span>
+                <span className="text-xs text-gray-500 ml-2">
+                  based on {(selectedItem.stats_highly || 0) + (selectedItem.stats_recommended || 0) + (selectedItem.stats_not || 0)} votes
+                </span>
+              </div>
+              
+              <div className="flex gap-6 mb-4 p-3 bg-gray-800/50 rounded-lg">
+                <div className="text-center">
+                  <div className="text-2xl text-teal-500">🔥</div>
+                  <div className="text-xs text-gray-400 mt-1">HIGHLY RECOMMENDED</div>
+                  <div className="font-bold">{selectedItem.stats_highly || 0}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl text-blue-500">👍</div>
+                  <div className="text-xs text-gray-400 mt-1">RECOMMENDED</div>
+                  <div className="font-bold">{selectedItem.stats_recommended || 0}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl text-gray-500">👎</div>
+                  <div className="text-xs text-gray-400 mt-1">NOT RECOMMENDED</div>
+                  <div className="font-bold">{selectedItem.stats_not || 0}</div>
+                </div>
+              </div>
+              
+              {/* Where to Watch / Listen */}
+              <div className="mb-4">
+                <h3 className="text-md font-semibold mb-2">{selectedItem.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
+                <div className="flex flex-wrap gap-3">
+                  {selectedItem.platforms && selectedItem.platforms.length > 0 ? (
+                    selectedItem.platforms.map((platform: string, idx: number) => {
+                      const info = platformIcons[platform] || { icon: '🎬', color: 'bg-gray-600', url: '#' }
+                      return (
+                        <a 
+                          key={idx} 
+                          href={info.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className={`flex items-center gap-2 px-3 py-2 ${info.color} rounded-lg text-sm font-medium hover:opacity-80 transition`}
+                          title={platform}
+                        >
+                          <span className="text-base">{info.icon}</span>
+                          <span className="hidden sm:inline">{platform}</span>
+                        </a>
+                      )
+                    })
+                  ) : (
+                    <p className="text-sm text-gray-500">Platform information coming soon</p>
+                  )}
+                </div>
+              </div>
+              
+              {/* Movie Details */}
+              {selectedItem.type === 'movie' && selectedItem.director && (
+                <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
+                  <div><span className="text-gray-400">🎬 Director:</span> {selectedItem.director}</div>
+                  <div><span className="text-gray-400">📅 Year:</span> {selectedItem.year}</div>
+                  <div><span className="text-gray-400">⏱️ Runtime:</span> {selectedItem.runtime || 'N/A'}</div>
+                  <div><span className="text-gray-400">🎭 Genre:</span> {selectedItem.genre}</div>
+                </div>
+              )}
+              
+              {/* Music Details */}
+              {selectedItem.type === 'music' && selectedItem.artist && (
+                <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
+                  <div className="col-span-2">
+                    <span className="text-gray-400">🎤 Artist:</span>{' '}
+                    <span className="text-teal-400">{selectedItem.artist}</span>
+                  </div>
+                  <div><span className="text-gray-400">📅 Year:</span> {selectedItem.year}</div>
+                  <div><span className="text-gray-400">⏱️ Duration:</span> {selectedItem.duration || 'N/A'}</div>
+                  <div><span className="text-gray-400">🎭 Genre:</span> {selectedItem.genre}</div>
+                </div>
+              )}
+              
+              {/* Cast Section for Movies */}
+              {selectedItem.type === 'movie' && selectedItem.actors && selectedItem.actors.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="text-md font-semibold mb-2">⭐ Cast</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedItem.actors.map((actor: string, idx: number) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          setShowDetailsModal(false)
+                          router.push(`/actor/${encodeURIComponent(actor)}`)
+                        }}
+                        className="px-3 py-1 bg-gray-800 rounded-full text-sm hover:bg-teal-600/30 hover:text-teal-400 transition"
+                      >
+                        {actor}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Trailer/Audio Preview */}
+              {selectedItem.trailer_url && (
+                <div className="mb-4">
+                  <h3 className="text-md font-semibold mb-2">
+                    {selectedItem.type === 'music' ? '🎧 Audio Preview' : '▶️ Watch Trailer'}
+                  </h3>
+                  {selectedItem.type === 'music' ? (
+                    <div className="bg-gray-800 rounded-lg p-4">
+                      <audio controls className="w-full" src={selectedItem.trailer_url}>
+                        Your browser does not support the audio element.
+                      </audio>
+                      <p className="text-xs text-gray-500 mt-2 text-center">30-second preview</p>
+                    </div>
+                  ) : (
+                    <div className="aspect-video rounded-lg overflow-hidden">
+                      <iframe src={selectedItem.trailer_url} title={selectedItem.title} className="w-full h-full" allowFullScreen />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <header className="sticky top-0 z-50 bg-black/95 backdrop-blur-md border-b border-gray-800">
