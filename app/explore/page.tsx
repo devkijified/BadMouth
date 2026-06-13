@@ -124,7 +124,6 @@ export default function ExplorePage() {
     
     if (data) {
       setItems(data)
-      // Extract unique genres
       const allGenres = new Set<string>()
       data.forEach(item => {
         if (item.genre) allGenres.add(item.genre)
@@ -228,13 +227,13 @@ export default function ExplorePage() {
         onSuccess={handleRecommendSuccess}
       />
 
-      {/* Details Modal */}
+      {/* Details Modal - Fixed close button z-index */}
       {showDetailsModal && selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 overflow-y-auto">
-          <div className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto mt-16">
-            <div className="sticky top-0 z-10 bg-gray-900 rounded-t-xl">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 overflow-y-auto">
+          <div className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
+            <div className="sticky top-0 bg-gray-900 z-10 rounded-t-xl">
               <div className="relative">
-                <img src={selectedItem.backdrop_url || selectedItem.image_url} alt={selectedItem.title} className="w-full h-48 object-cover" />
+                <img src={selectedItem.backdrop_url || selectedItem.image_url} alt={selectedItem.title} className="w-full h-48 object-cover rounded-t-xl" />
                 <button 
                   onClick={() => setShowDetailsModal(false)} 
                   className="absolute top-4 right-4 p-2 bg-black/70 hover:bg-black/90 rounded-full transition z-20"
@@ -467,7 +466,6 @@ export default function ExplorePage() {
           </div>
         ) : (
           <>
-            {/* Results count */}
             <div className="mb-4 text-sm text-gray-400">
               Found {filteredItems.length} {filteredItems.length === 1 ? 'item' : 'items'}
             </div>
@@ -484,7 +482,6 @@ export default function ExplorePage() {
                         (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(item.title)}`
                       }}
                     />
-                    {/* Rating Badge */}
                     <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm px-1.5 py-0.5 rounded-lg flex items-center gap-0.5">
                       <Star size={10} className="text-yellow-400 fill-yellow-400" />
                       <span className="text-[10px] font-bold">{getRating(item)}</span>
