@@ -16,7 +16,6 @@ import HomeFeed from '@/components/HomeFeed'
 import TrendingBar from '@/components/TrendingBar'
 import QuickStats from '@/components/QuickStats'
 import WatchlistBasedRecommendations from '@/components/WatchlistBasedRecommendations'
-import MusicSearch from '@/components/MusicSearch'
 import { ContentItem, Category } from '@/types/content'
 
 export default function HomePage() {
@@ -757,7 +756,7 @@ export default function HomePage() {
             </div>
           </>
         ) : (
-          // MUSIC TAB
+          // MUSIC TAB - No Deezer search here, only categories
           <>
             <HeroCarousel 
               items={allContent.slice(0, 3)} 
@@ -849,7 +848,7 @@ export default function HomePage() {
                 </div>
               </div>
               
-              {/* Movie Details with Clickable Cast */}
+              {/* Movie Details */}
               {selectedContent.type === 'movie' && selectedContent.director && (
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
                   <div><span className="text-gray-400">🎬 Director:</span> {selectedContent.director}</div>
@@ -859,7 +858,28 @@ export default function HomePage() {
                 </div>
               )}
               
-              {/* Clickable Cast Section */}
+              {/* Music Details with Clickable Artist */}
+              {selectedContent.type === 'music' && selectedContent.artist && (
+                <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
+                  <div className="col-span-2">
+                    <span className="text-gray-400">🎤 Artist:</span>{' '}
+                    <button
+                      onClick={() => {
+                        setShowDetailsModal(false)
+                        router.push(`/actor/${encodeURIComponent(selectedContent.artist)}`)
+                      }}
+                      className="text-teal-400 hover:text-teal-300 hover:underline transition"
+                    >
+                      {selectedContent.artist}
+                    </button>
+                  </div>
+                  <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
+                  <div><span className="text-gray-400">⏱️ Duration:</span> {selectedContent.duration || 'N/A'}</div>
+                  <div><span className="text-gray-400">🎭 Genre:</span> {selectedContent.genre}</div>
+                </div>
+              )}
+              
+              {/* Clickable Cast Section for Movies */}
               {selectedContent.type === 'movie' && selectedContent.actors && selectedContent.actors.length > 0 && (
                 <div className="mb-4">
                   <h3 className="text-md font-semibold mb-2">⭐ Cast</h3>
