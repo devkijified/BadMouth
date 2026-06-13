@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
-import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield, Star } from 'lucide-react'
+import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield, Star, ThumbsUp, Trash2, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import HeroCarousel from '@/components/HeroCarousel'
@@ -18,6 +18,13 @@ import QuickStats from '@/components/QuickStats'
 import WatchlistBasedRecommendations from '@/components/WatchlistBasedRecommendations'
 import { ContentItem, Category } from '@/types/content'
 import toast from 'react-hot-toast'
+
+// Tier config for recommendation display
+const tierConfig = {
+  highly: { emoji: '🔥', label: 'HIGHLY RECOMMENDED', color: 'bg-teal-600/20 text-teal-400 border-teal-600' },
+  recommended: { emoji: '👍', label: 'RECOMMENDED', color: 'bg-blue-600/20 text-blue-400 border-blue-600' },
+  not: { emoji: '👎', label: 'NOT RECOMMENDED', color: 'bg-gray-600/20 text-gray-400 border-gray-600' }
+}
 
 export default function HomePage() {
   const router = useRouter()
@@ -40,6 +47,10 @@ export default function HomePage() {
   const [showSearchModal, setShowSearchModal] = useState(false)
   const [showRecommendModal, setShowRecommendModal] = useState(false)
   const [recommendItem, setRecommendItem] = useState<ContentItem | null>(null)
+  
+  // User's own recommendations for profile modal
+  const [myRecommendations, setMyRecommendations] = useState<any[]>([])
+  const [loadingRecs, setLoadingRecs] = useState(false)
   
   // Data from Supabase
   const [categories, setCategories] = useState<Category[]>([])
@@ -77,6 +88,7 @@ export default function HomePage() {
       setShowWatchlist(false)
       setShowNotifications(false)
       setShowProfile(true)
+      loadMyRecommendations()
     }
   }
 
@@ -88,6 +100,65 @@ export default function HomePage() {
       setShowProfile(false)
       setShowNotifications(true)
     }
+  }
+
+  // Load user's own recommendations for profile modal
+  const loadMyRecommendations = async () => {
+    if (!user) return
+    setLoadingRecs(true)
+    try {
+      const { data: recsData, error } = await supabase
+        .from('recommendations')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10)
+      
+      if (error) throw error
+      
+      if (recsData && recsData.length > 0) {
+        const contentIds = recsData.map(rec => rec.content_id)
+        const { data: contentData } = await supabase
+          .from('content')
+          .select('id, title, image_url, artist, type, year')
+          .in('id', contentIds)
+        
+        const merged = recsData.map(rec => ({
+          ...rec,
+          content: contentData?.find(c => c.id === rec.content_id)
+        }))
+        setMyRecommendations(merged)
+      } else {
+        setMyRecommendations([])
+      }
+    } catch (error) {
+      console.error('Error loading recommendations:', error)
+    } finally {
+      setLoadingRecs(false)
+    }
+  }
+
+  // Delete a recommendation
+  const deleteRecommendation = async (recId: string, contentTitle: string) => {
+    if (!confirm(`Remove your recommendation for "${contentTitle}"?`)) return
+    
+    const { error } = await supabase
+      .from('recommendations')
+      .delete()
+      .eq('id', recId)
+    
+    if (error) {
+      toast.error('Failed to delete recommendation')
+      return
+    }
+    
+    setMyRecommendations(prev => prev.filter(r => r.id !== recId))
+    toast.success(`Removed recommendation for "${contentTitle}"`)
+    
+    // Refresh content stats
+    if (currentPage === 'home') loadHomeData()
+    if (currentPage === 'movies') loadMoviesData()
+    if (currentPage === 'music') loadMusicData()
   }
 
   // Load watchlist from Supabase
@@ -125,7 +196,7 @@ export default function HomePage() {
     }
   }
 
-  // Add to watchlist (save to Supabase)
+  // Add to watchlist
   const addToWatchlist = async (item: ContentItem) => {
     if (!user) {
       toast.error('Please sign in to add to watchlist')
@@ -133,7 +204,6 @@ export default function HomePage() {
     }
     
     if (watchlistIds.has(item.id)) {
-      // Remove from watchlist
       const { error } = await supabase
         .from('watchlist')
         .delete()
@@ -141,20 +211,17 @@ export default function HomePage() {
         .eq('content_id', item.id)
       
       if (error) {
-        console.error('Remove error:', error)
         toast.error('Failed to remove from watchlist')
         return
       }
       
-      const newWatchlist = watchlist.filter(i => i.id !== item.id)
-      setWatchlist(newWatchlist)
-      setWatchlistCount(newWatchlist.length)
+      setWatchlist(prev => prev.filter(i => i.id !== item.id))
+      setWatchlistCount(prev => prev - 1)
       const newIdsSet = new Set(watchlistIds)
       newIdsSet.delete(item.id)
       setWatchlistIds(newIdsSet)
       toast.success(`Removed "${item.title}" from watchlist`)
     } else {
-      // Add to watchlist
       const { error } = await supabase
         .from('watchlist')
         .insert({
@@ -164,14 +231,12 @@ export default function HomePage() {
         })
       
       if (error) {
-        console.error('Insert error:', error)
-        toast.error('Failed to add to watchlist: ' + error.message)
+        toast.error('Failed to add to watchlist')
         return
       }
       
-      const newWatchlist = [...watchlist, item]
-      setWatchlist(newWatchlist)
-      setWatchlistCount(newWatchlist.length)
+      setWatchlist(prev => [...prev, item])
+      setWatchlistCount(prev => prev + 1)
       const newIdsSet = new Set(watchlistIds)
       newIdsSet.add(item.id)
       setWatchlistIds(newIdsSet)
@@ -189,9 +254,8 @@ export default function HomePage() {
       .eq('content_id', id)
     
     if (!error) {
-      const newWatchlist = watchlist.filter(i => i.id !== id)
-      setWatchlist(newWatchlist)
-      setWatchlistCount(newWatchlist.length)
+      setWatchlist(prev => prev.filter(i => i.id !== id))
+      setWatchlistCount(prev => prev - 1)
       const newIdsSet = new Set(watchlistIds)
       newIdsSet.delete(id)
       setWatchlistIds(newIdsSet)
@@ -304,7 +368,7 @@ export default function HomePage() {
     }
   }
 
-  // Load data for Home page (combined movies and music)
+  // Load data for Home page
   const loadHomeData = async () => {
     setHomeLoading(true)
     
@@ -368,6 +432,7 @@ export default function HomePage() {
     } else if (currentPage === 'music') {
       loadMusicData()
     }
+    loadMyRecommendations()
   }
 
   const getFilteredContent = (): ContentItem[] => {
@@ -445,7 +510,6 @@ export default function HomePage() {
     )
   }
 
-  // Show loading for non-home pages
   if ((currentPage === 'movies' || currentPage === 'music') && loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -457,7 +521,6 @@ export default function HomePage() {
     )
   }
 
-  // Show loading for home page
   if (currentPage === 'home' && homeLoading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -471,35 +534,27 @@ export default function HomePage() {
 
   const filteredContent = getFilteredContent()
 
-  // Platform icons mapping
   const platformIcons: Record<string, { icon: string; color: string; url: string }> = {
     'Spotify': { icon: '🎵', color: 'bg-green-600', url: 'https://spotify.com' },
     'Apple Music': { icon: '🍎', color: 'bg-red-600', url: 'https://music.apple.com' },
     'YouTube Music': { icon: '📺', color: 'bg-red-500', url: 'https://music.youtube.com' },
     'Netflix': { icon: '📺', color: 'bg-red-700', url: 'https://netflix.com' },
     'Prime Video': { icon: '📦', color: 'bg-blue-600', url: 'https://primevideo.com' },
-    'Amazon Prime': { icon: '📦', color: 'bg-blue-600', url: 'https://primevideo.com' },
     'Max': { icon: '🔷', color: 'bg-blue-500', url: 'https://max.com' },
-    'HBO Max': { icon: '🔷', color: 'bg-blue-500', url: 'https://max.com' },
     'Hulu': { icon: '🟢', color: 'bg-green-500', url: 'https://hulu.com' },
     'Disney+': { icon: '✨', color: 'bg-blue-700', url: 'https://disneyplus.com' },
-    'Paramount+': { icon: '⭐', color: 'bg-blue-600', url: 'https://paramountplus.com' },
     'Deezer': { icon: '🎧', color: 'bg-purple-600', url: 'https://deezer.com' },
   }
 
-  // Calculate rating
   const getRating = (item: ContentItem) => {
-    if (item.rating_scale && item.rating_scale > 0) {
-      return item.rating_scale
-    }
+    if (item.rating_scale && item.rating_scale > 0) return item.rating_scale
     const highly = item.stats_highly || 0
     const recommended = item.stats_recommended || 0
     const not = item.stats_not || 0
     const total = highly + recommended + not
     if (total === 0) return 0
     const rating = (highly * 10 + recommended * 7) / total
-    const rounded = Number(rating.toFixed(1))
-    return isNaN(rounded) ? 0 : rounded
+    return Number(rating.toFixed(1))
   }
 
   return (
@@ -577,32 +632,90 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Profile Panel */}
+      {/* Profile Panel - Shows User's Recommendations */}
       {showProfile && (
         <div className="fixed top-16 right-4 z-50 w-80 bg-gray-900 rounded-xl shadow-xl border border-gray-700">
           <div className="p-4 border-b border-gray-700 flex justify-between items-center">
             <h3 className="font-semibold">Profile</h3>
-            <button onClick={() => setShowProfile(false)}><X size={16} /></button>
+            <button onClick={toggleProfile} className="p-1 hover:bg-gray-800 rounded"><X size={16} /></button>
           </div>
-          <div className="p-4 text-center">
+          
+          {/* User Info */}
+          <div className="p-4 text-center border-b border-gray-700">
             <img 
               src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} 
               alt="Profile" 
-              className="w-20 h-20 rounded-full mx-auto mb-3" 
+              className="w-16 h-16 rounded-full mx-auto mb-2 border-2 border-teal-500" 
             />
             <h4 className="font-semibold">{user.user_metadata?.username || user.email?.split('@')[0]}</h4>
-            <p className="text-xs text-gray-400 mb-3">{user.email}</p>
-            <div className="grid grid-cols-2 gap-3 text-center">
-              <div className="bg-gray-800 rounded-lg p-2">
-                <p className="text-xl font-bold">{watchlistCount}</p>
-                <p className="text-xs text-gray-400">Watchlist</p>
-              </div>
-              <div className="bg-gray-800 rounded-lg p-2">
-                <p className="text-xl font-bold">0</p>
-                <p className="text-xs text-gray-400">Recommendations</p>
-              </div>
+            <p className="text-xs text-gray-400">{user.email}</p>
+          </div>
+          
+          {/* Stats */}
+          <div className="grid grid-cols-2 gap-3 p-4 border-b border-gray-700">
+            <div className="bg-gray-800 rounded-lg p-2 text-center">
+              <Heart size={16} className="text-red-500 mx-auto mb-1" />
+              <p className="text-xl font-bold">{watchlistCount}</p>
+              <p className="text-xs text-gray-400">Watchlist</p>
             </div>
-            <button onClick={signOut} className="w-full mt-4 py-2 bg-red-600 rounded-lg text-sm">Sign Out</button>
+            <div className="bg-gray-800 rounded-lg p-2 text-center">
+              <ThumbsUp size={16} className="text-teal-500 mx-auto mb-1" />
+              <p className="text-xl font-bold">{myRecommendations.length}</p>
+              <p className="text-xs text-gray-400">Recommendations</p>
+            </div>
+          </div>
+          
+          {/* My Recommendations List */}
+          <div className="max-h-60 overflow-y-auto">
+            <div className="p-3 border-b border-gray-700">
+              <p className="text-sm font-semibold mb-2">My Recommendations</p>
+              {loadingRecs ? (
+                <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-teal-500" /></div>
+              ) : myRecommendations.length === 0 ? (
+                <p className="text-xs text-gray-500 text-center py-4">No recommendations yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {myRecommendations.map((rec) => {
+                    const tier = tierConfig[rec.recommendation_tier as keyof typeof tierConfig]
+                    return (
+                      <div key={rec.id} className="bg-gray-800 rounded-lg p-2 text-sm">
+                        <div className="flex justify-between items-start">
+                          <div 
+                            className="flex-1 cursor-pointer" 
+                            onClick={() => handleViewDetails({ 
+                              id: rec.content_id, 
+                              title: rec.content?.title || 'Unknown', 
+                              type: rec.content_type,
+                              image_url: rec.content?.image_url,
+                              artist: rec.content?.artist
+                            } as ContentItem)}
+                          >
+                            <p className="font-medium text-xs truncate">{rec.content?.title || 'Unknown'}</p>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className="text-xs">{tier?.emoji || '👍'}</span>
+                              <span className="text-xs text-gray-400">{rec.content?.artist || (rec.content_type === 'movie' ? 'Movie' : 'Music')}</span>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => deleteRecommendation(rec.id, rec.content?.title || 'this content')}
+                            className="text-gray-500 hover:text-red-500 transition ml-2"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Sign Out Button */}
+          <div className="p-4">
+            <button onClick={signOut} className="w-full py-2 bg-red-600 rounded-lg text-sm hover:bg-red-700 transition">
+              Sign Out
+            </button>
           </div>
         </div>
       )}
@@ -636,7 +749,6 @@ export default function HomePage() {
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
               </button>
 
-              {/* Genre Filter - Only show on Movies and Music tabs, NOT on Home */}
               {currentPage !== 'home' && (
                 <div className="relative">
                   <button onClick={() => setShowGenreFilter(!showGenreFilter)} className="text-gray-300 hover:text-white flex items-center gap-1">
@@ -665,7 +777,6 @@ export default function HomePage() {
                 {notifications.length > 0 && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />}
               </button>
               
-              {/* Watchlist Button with Count */}
               <button onClick={toggleWatchlist} className="text-gray-300 hover:text-white relative">
                 <Heart size={20} />
                 {watchlistCount > 0 && (
@@ -794,7 +905,6 @@ export default function HomePage() {
             </div>
           </>
         ) : (
-          // MUSIC TAB
           <>
             <HeroCarousel 
               items={allContent.slice(0, 3)} 
@@ -851,7 +961,6 @@ export default function HomePage() {
               {selectedContent.artist && <p className="text-gray-400 mb-3">{selectedContent.artist}</p>}
               <p className="text-gray-300 mb-4 text-sm leading-relaxed">{selectedContent.long_description || selectedContent.description}</p>
               
-              {/* Rating Display */}
               <div className="flex items-center gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg">
                 <Star size={20} className="text-yellow-400 fill-yellow-400" />
                 <span className="text-2xl font-bold">{getRating(selectedContent)}</span>
@@ -879,7 +988,6 @@ export default function HomePage() {
                 </div>
               </div>
               
-              {/* Where to Watch / Listen */}
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
                 <div className="flex flex-wrap gap-3">
@@ -906,7 +1014,6 @@ export default function HomePage() {
                 </div>
               </div>
               
-              {/* Movie Details */}
               {selectedContent.type === 'movie' && selectedContent.director && (
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
                   <div><span className="text-gray-400">🎬 Director:</span> {selectedContent.director}</div>
@@ -916,7 +1023,6 @@ export default function HomePage() {
                 </div>
               )}
               
-              {/* Music Details with Clickable Artist */}
               {selectedContent.type === 'music' && selectedContent.artist && (
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
                   <div className="col-span-2">
@@ -937,7 +1043,6 @@ export default function HomePage() {
                 </div>
               )}
               
-              {/* Clickable Cast Section for Movies */}
               {selectedContent.type === 'movie' && selectedContent.actors && selectedContent.actors.length > 0 && (
                 <div className="mb-4">
                   <h3 className="text-md font-semibold mb-2">⭐ Cast</h3>
@@ -958,7 +1063,6 @@ export default function HomePage() {
                 </div>
               )}
               
-              {/* Music Preview Player instead of Trailer for Music */}
               {selectedContent.type === 'music' && selectedContent.trailer_url && (
                 <div className="mb-4">
                   <h3 className="text-md font-semibold mb-2">🎧 Audio Preview</h3>
@@ -966,12 +1070,11 @@ export default function HomePage() {
                     <audio controls className="w-full" src={selectedContent.trailer_url}>
                       Your browser does not support the audio element.
                     </audio>
-                    <p className="text-xs text-gray-500 mt-2 text-center">30-second preview from Deezer</p>
+                    <p className="text-xs text-gray-500 mt-2 text-center">30-second preview</p>
                   </div>
                 </div>
               )}
               
-              {/* Watch Trailer for Movies */}
               {selectedContent.type === 'movie' && selectedContent.trailer_url && (
                 <div className="mb-4">
                   <h3 className="text-md font-semibold mb-2">▶️ Watch Trailer</h3>
