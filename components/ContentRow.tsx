@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle, Heart, Star, Tv, Calendar, Clock, Layers } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle, Heart, Star, Tv } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ContentItem } from '@/types/content'
@@ -53,9 +53,11 @@ export default function ContentRow({
     return Number((((item.stats_highly || 0) * 10 + (item.stats_recommended || 0) * 7) / total).toFixed(1))
   }
 
-  // Check if this is a TV show (by genre or content_type)
+  // Check if this is a TV show
   const isTVShow = (item: ContentItem) => {
-    return item.genre === 'TV Series' || item.content_type === 'tv_show' || item.runtime === 'TV Series'
+    return item.genre === 'TV Series' || 
+           item.is_tv_show === true ||
+           (item.type === 'movie' && item.runtime && item.runtime.includes('min per episode'))
   }
 
   return (
@@ -68,16 +70,26 @@ export default function ContentRow({
       </div>
 
       <div className="relative group">
-        <button onClick={() => scroll('left')} className="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/50 rounded-r-lg opacity-0 group-hover:opacity-100 transition">
+        <button 
+          onClick={() => scroll('left')} 
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/50 rounded-r-lg opacity-0 group-hover:opacity-100 transition hover:bg-black/70"
+        >
           <ChevronLeft size={24} />
         </button>
         
-        <div id={`scroll-${title.replace(/\s/g, '')}`} className="flex gap-3 sm:gap-4 overflow-x-auto scroll-container px-4 pb-4" style={{ scrollBehavior: 'smooth' }}>
+        <div 
+          id={`scroll-${title.replace(/\s/g, '')}`} 
+          className="flex gap-3 sm:gap-4 overflow-x-auto scroll-container px-4 pb-4" 
+          style={{ scrollBehavior: 'smooth' }}
+        >
           {displayItems.map((item, idx) => {
             const tvShow = isTVShow(item)
             return (
               <div key={`${item.id}-${idx}`} className="flex-shrink-0 w-[140px] xs:w-[160px] md:w-[200px] group/item">
-                <div className="relative rounded-lg overflow-hidden bg-gray-800 cursor-pointer" onClick={() => onViewDetails(item)}>
+                <div 
+                  className="relative rounded-lg overflow-hidden bg-gray-800 cursor-pointer" 
+                  onClick={() => onViewDetails(item)}
+                >
                   <img 
                     src={item.image_url} 
                     alt={item.title} 
@@ -86,9 +98,9 @@ export default function ContentRow({
                   
                   {/* TV Show Badge */}
                   {tvShow && (
-                    <div className="absolute top-2 left-2 flex gap-1">
+                    <div className="absolute top-2 left-2">
                       <div className="bg-purple-600 text-white text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-                        <Tv size={8} /> TV
+                        <Tv size={10} /> TV Series
                       </div>
                     </div>
                   )}
@@ -99,47 +111,97 @@ export default function ContentRow({
                     <span className="text-[10px] xs:text-xs font-bold">{getRating(item)}</span>
                   </div>
                   
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/item:opacity-100 transition flex flex-col justify-end p-2 xs:p-3 gap-1 xs:gap-2">
-                    <button onClick={(e) => { e.stopPropagation(); onRecommend(item); }} className="flex items-center justify-center gap-1 xs:gap-2 p-1.5 xs:p-2 bg-teal-600 rounded-lg text-[10px] xs:text-xs font-semibold hover:bg-teal-700 transition">
+                  {/* Hover Overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent opacity-0 group-hover/item:opacity-100 transition-all duration-300 flex flex-col justify-end p-2 xs:p-3 gap-1 xs:gap-2">
+                    <button 
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        onRecommend(item); 
+                      }} 
+                      className="flex items-center justify-center gap-1 xs:gap-2 p-1.5 xs:p-2 bg-teal-600 rounded-lg text-[10px] xs:text-xs font-semibold hover:bg-teal-700 transition"
+                    >
                       <ThumbsUp size={12} /> Recommend
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); onViewDetails(item); }} className="flex items-center justify-center gap-1 xs:gap-2 p-1.5 xs:p-2 bg-gray-600/70 rounded-lg text-[10px] xs:text-xs font-semibold hover:bg-gray-600 transition">
+                    <button 
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        onViewDetails(item); 
+                      }} 
+                      className="flex items-center justify-center gap-1 xs:gap-2 p-1.5 xs:p-2 bg-gray-600/80 rounded-lg text-[10px] xs:text-xs font-semibold hover:bg-gray-600 transition"
+                    >
                       <MessageCircle size={12} /> Details
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); if (isInWatchlist(item.id)) { onRemoveFromWatchlist(item.id) } else { onAddToWatchlist(item) } }} className={`flex items-center justify-center gap-1 xs:gap-2 p-1.5 xs:p-2 rounded-lg text-[10px] xs:text-xs font-semibold transition ${isInWatchlist(item.id) ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'}`}>
+                    <button 
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        if (isInWatchlist(item.id)) { 
+                          onRemoveFromWatchlist(item.id) 
+                        } else { 
+                          onAddToWatchlist(item) 
+                        } 
+                      }} 
+                      className={`flex items-center justify-center gap-1 xs:gap-2 p-1.5 xs:p-2 rounded-lg text-[10px] xs:text-xs font-semibold transition ${
+                        isInWatchlist(item.id) 
+                          ? 'bg-teal-600' 
+                          : 'bg-gray-700 hover:bg-gray-600'
+                      }`}
+                    >
                       <Heart size={12} className={isInWatchlist(item.id) ? 'fill-white' : ''} /> 
                       <span className="hidden xs:inline">{isInWatchlist(item.id) ? 'In Watchlist' : 'Watchlist'}</span>
                     </button>
                   </div>
                 </div>
+                
+                {/* Content Info */}
                 <div className="p-1 xs:p-2">
                   <h3 className="font-semibold text-[11px] xs:text-sm truncate">{item.title}</h3>
+                  
                   {tvShow ? (
-                    <p className="text-[9px] xs:text-[10px] text-purple-400 truncate">TV Series • {item.year}</p>
+                    <p className="text-[9px] xs:text-[10px] text-purple-400 truncate">
+                      TV Series • {item.year}
+                    </p>
                   ) : item.artist ? (
-                    <p className="text-[9px] xs:text-xs text-gray-400 truncate">{item.artist}</p>
+                    <p className="text-[9px] xs:text-xs text-gray-400 truncate">
+                      {item.artist}
+                    </p>
                   ) : item.actors && item.actors.length > 0 ? (
                     <div className="flex flex-wrap gap-1 mt-0.5">
                       {item.actors.slice(0, 2).map((actor) => (
-                        <button key={actor} onClick={(e) => handleActorClick(actor, e)} className="text-[9px] xs:text-[10px] text-gray-400 hover:text-teal-400 transition truncate max-w-[70px]">
+                        <button 
+                          key={actor} 
+                          onClick={(e) => handleActorClick(actor, e)} 
+                          className="text-[9px] xs:text-[10px] text-gray-400 hover:text-teal-400 transition truncate max-w-[70px]"
+                        >
                           {actor}
                         </button>
                       ))}
-                      {item.actors.length > 2 && <span className="text-[9px] xs:text-[10px] text-gray-500">+{item.actors.length - 2}</span>}
+                      {item.actors.length > 2 && (
+                        <span className="text-[9px] xs:text-[10px] text-gray-500">
+                          +{item.actors.length - 2}
+                        </span>
+                      )}
                     </div>
                   ) : null}
+                  
+                  {/* Stats */}
                   <div className="flex justify-between mt-1">
                     <span className="flex items-center gap-0.5">
                       <span className="text-teal-500 text-[9px] xs:text-xs">🔥</span>
-                      <span className="text-[8px] xs:text-[9px] text-gray-300">{item.stats_highly || 0}</span>
+                      <span className="text-[8px] xs:text-[9px] text-gray-300">
+                        {item.stats_highly || 0}
+                      </span>
                     </span>
                     <span className="flex items-center gap-0.5">
                       <span className="text-blue-500 text-[9px] xs:text-xs">👍</span>
-                      <span className="text-[8px] xs:text-[9px] text-gray-300">{item.stats_recommended || 0}</span>
+                      <span className="text-[8px] xs:text-[9px] text-gray-300">
+                        {item.stats_recommended || 0}
+                      </span>
                     </span>
                     <span className="flex items-center gap-0.5">
                       <span className="text-gray-500 text-[9px] xs:text-xs">👎</span>
-                      <span className="text-[8px] xs:text-[9px] text-gray-300">{item.stats_not || 0}</span>
+                      <span className="text-[8px] xs:text-[9px] text-gray-300">
+                        {item.stats_not || 0}
+                      </span>
                     </span>
                   </div>
                 </div>
@@ -148,7 +210,10 @@ export default function ContentRow({
           })}
         </div>
 
-        <button onClick={() => scroll('right')} className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/50 rounded-l-lg opacity-0 group-hover:opacity-100 transition">
+        <button 
+          onClick={() => scroll('right')} 
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/50 rounded-l-lg opacity-0 group-hover:opacity-100 transition hover:bg-black/70"
+        >
           <ChevronRight size={24} />
         </button>
       </div>
