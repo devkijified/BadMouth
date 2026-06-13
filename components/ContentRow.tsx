@@ -140,18 +140,22 @@ export default function ContentRow({
                     )}
                   </div>
                 ) : null}
+                {/* Mobile responsive stats - text hidden on small screens, only emojis and numbers */}
                 <div className="flex justify-between mt-1">
                   <span className="flex items-center gap-0.5">
                     <span className="text-teal-500 text-[9px] xs:text-xs">🔥</span>
                     <span className="text-[8px] xs:text-[9px] text-gray-300">{item.stats_highly || 0}</span>
+                    <span className="hidden sm:inline text-[8px] xs:text-[9px] text-gray-500">HIGHLY</span>
                   </span>
                   <span className="flex items-center gap-0.5">
                     <span className="text-blue-500 text-[9px] xs:text-xs">👍</span>
                     <span className="text-[8px] xs:text-[9px] text-gray-300">{item.stats_recommended || 0}</span>
+                    <span className="hidden sm:inline text-[8px] xs:text-[9px] text-gray-500">REC</span>
                   </span>
                   <span className="flex items-center gap-0.5">
                     <span className="text-gray-500 text-[9px] xs:text-xs">👎</span>
                     <span className="text-[8px] xs:text-[9px] text-gray-300">{item.stats_not || 0}</span>
+                    <span className="hidden sm:inline text-[8px] xs:text-[9px] text-gray-500">NOT</span>
                   </span>
                 </div>
               </div>
