@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
       .select(`
         *,
         profiles!user_id (id, username, avatar_url),
-        content!content_id (id, title, image_url, type, artist)
+        content!content_id (id, title, image_url, type, artist, actors)
       `)
       .eq('content_type', contentType)
       .order('created_at', { ascending: false })
@@ -43,42 +43,41 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const supabase = createServerSupabaseClient()
-    const { content_id, content_type, recommendation_tier, comment, existing_id } = await req.json()
+    const { content_id, content_type, recommendation_tier, comment } = await req.json()
     
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    let recId = existing_id
-    let oldTier: string | null = null
+    // Check if user already has a recommendation for this content
+    const { data: existing } = await supabase
+      .from('recommendations')
+      .select('id, recommendation_tier')
+      .eq('user_id', session.user.id)
+      .eq('content_id', content_id)
+      .maybeSingle()
     
-    // If no existing_id provided, check if user already has a recommendation
-    if (!recId) {
-      const { data: existing } = await supabase
-        .from('recommendations')
-        .select('id, recommendation_tier')
-        .eq('user_id', session.user.id)
-        .eq('content_id', content_id)
-        .maybeSingle()
-      
-      if (existing) {
-        recId = existing.id
-        oldTier = existing.recommendation_tier
-      }
-    } else {
-      // Get old tier for the existing recommendation
-      const { data: oldRec } = await supabase
-        .from('recommendations')
-        .select('recommendation_tier')
-        .eq('id', existing_id)
-        .single()
-      oldTier = oldRec?.recommendation_tier || null
+    // Get current content stats
+    const { data: currentStats } = await supabase
+      .from('content')
+      .select('stats_highly, stats_recommended, stats_not')
+      .eq('id', content_id)
+      .single()
+    
+    let newStats = { 
+      stats_highly: currentStats?.stats_highly || 0,
+      stats_recommended: currentStats?.stats_recommended || 0,
+      stats_not: currentStats?.stats_not || 0
     }
     
-    // UPSERT: Update if exists, Insert if not
-    if (recId) {
-      // UPDATE existing recommendation
+    if (existing) {
+      // Remove old vote
+      if (existing.recommendation_tier === 'highly') newStats.stats_highly = Math.max(0, newStats.stats_highly - 1)
+      else if (existing.recommendation_tier === 'recommended') newStats.stats_recommended = Math.max(0, newStats.stats_recommended - 1)
+      else if (existing.recommendation_tier === 'not') newStats.stats_not = Math.max(0, newStats.stats_not - 1)
+      
+      // Update the recommendation
       const { error: updateError } = await supabase
         .from('recommendations')
         .update({
@@ -86,11 +85,11 @@ export async function POST(req: NextRequest) {
           comment: comment || null,
           updated_at: new Date().toISOString()
         })
-        .eq('id', recId)
+        .eq('id', existing.id)
       
       if (updateError) throw updateError
     } else {
-      // INSERT new recommendation
+      // Insert new recommendation
       const { error: insertError } = await supabase
         .from('recommendations')
         .insert({
@@ -104,28 +103,7 @@ export async function POST(req: NextRequest) {
       if (insertError) throw insertError
     }
     
-    // Get current content stats
-    const { data: currentStats } = await supabase
-      .from('content')
-      .select('stats_highly, stats_recommended, stats_not')
-      .eq('id', content_id)
-      .single()
-    
-    // Calculate new stats
-    let newStats = { 
-      stats_highly: currentStats?.stats_highly || 0,
-      stats_recommended: currentStats?.stats_recommended || 0,
-      stats_not: currentStats?.stats_not || 0
-    }
-    
-    // Remove old tier if it exists (for updates)
-    if (oldTier) {
-      if (oldTier === 'highly') newStats.stats_highly = Math.max(0, newStats.stats_highly - 1)
-      else if (oldTier === 'recommended') newStats.stats_recommended = Math.max(0, newStats.stats_recommended - 1)
-      else if (oldTier === 'not') newStats.stats_not = Math.max(0, newStats.stats_not - 1)
-    }
-    
-    // Add new tier
+    // Add new vote
     if (recommendation_tier === 'highly') newStats.stats_highly += 1
     else if (recommendation_tier === 'recommended') newStats.stats_recommended += 1
     else if (recommendation_tier === 'not') newStats.stats_not += 1
