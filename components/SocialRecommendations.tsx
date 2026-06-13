@@ -83,8 +83,12 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
       
       console.log('Found recommendations:', recsData.length)
       
-      // Step 2: Get unique user IDs
-      const userIds = [...new Set(recsData.map(rec => rec.user_id))]
+      // Step 2: Get unique user IDs (without Set spread operator)
+      const userIdMap: Record<string, boolean> = {}
+      recsData.forEach(rec => {
+        userIdMap[rec.user_id] = true
+      })
+      const userIds = Object.keys(userIdMap)
       
       // Step 3: Get profiles
       const { data: profilesData, error: profilesError } = await supabase
@@ -96,8 +100,12 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
         console.error('Error loading profiles:', profilesError)
       }
       
-      // Step 4: Get unique content IDs
-      const contentIds = [...new Set(recsData.map(rec => rec.content_id))]
+      // Step 4: Get unique content IDs (without Set spread operator)
+      const contentIdMap: Record<string, boolean> = {}
+      recsData.forEach(rec => {
+        contentIdMap[rec.content_id] = true
+      })
+      const contentIds = Object.keys(contentIdMap)
       
       // Step 5: Get content details
       const { data: contentsData, error: contentsError } = await supabase
@@ -110,20 +118,20 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
       }
       
       // Create maps for quick lookup
-      const profileMap = new Map()
+      const profileMap: Record<string, any> = {}
       profilesData?.forEach(profile => {
-        profileMap.set(profile.id, profile)
+        profileMap[profile.id] = profile
       })
       
-      const contentMap = new Map()
+      const contentMap: Record<string, any> = {}
       contentsData?.forEach(content => {
-        contentMap.set(content.id, content)
+        contentMap[content.id] = content
       })
       
       // Step 6: Merge all data
       const merged: Recommendation[] = recsData.map(rec => {
-        const profile = profileMap.get(rec.user_id)
-        const content = contentMap.get(rec.content_id)
+        const profile = profileMap[rec.user_id]
+        const content = contentMap[rec.content_id]
         
         return {
           id: rec.id,
