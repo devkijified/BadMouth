@@ -52,9 +52,49 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
   const loadRecommendations = async () => {
     setLoading(true)
     try {
-      const response = await fetch(`/api/recommendations?type=${activeTab}`)
-      const data = await response.json()
-      setRecommendations(data.recommendations || [])
+      // Fetch recommendations with proper joins
+      const { data, error } = await supabase
+        .from('recommendations')
+        .select(`
+          id,
+          user_id,
+          content_id,
+          content_type,
+          recommendation_tier,
+          comment,
+          created_at,
+          updated_at,
+          profiles!user_id (
+            id,
+            username,
+            avatar_url
+          )
+        `)
+        .eq('content_type', activeTab)
+        .order('created_at', { ascending: false })
+        .limit(20)
+      
+      if (error) throw error
+      
+      if (data && data.length > 0) {
+        // Fetch content details separately
+        const contentIds = data.map(rec => rec.content_id)
+        const { data: contentData } = await supabase
+          .from('content')
+          .select('id, title, image_url, type, artist')
+          .in('id', contentIds)
+        
+        // Merge the data
+        const merged = data.map(rec => ({
+          ...rec,
+          profiles: Array.isArray(rec.profiles) ? rec.profiles[0] : rec.profiles,
+          content: contentData?.find(c => c.id === rec.content_id)
+        }))
+        
+        setRecommendations(merged)
+      } else {
+        setRecommendations([])
+      }
     } catch (error) {
       console.error('Error loading recommendations:', error)
       setRecommendations([])
@@ -154,19 +194,13 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
                   {rec.comment && <p className="text-sm text-gray-400 mb-3 line-clamp-2">{rec.comment}</p>}
                   <div className="flex gap-4">
                     <button 
-                      onClick={(e) => { 
-                        e.stopPropagation()
-                        // Like functionality would go here
-                      }} 
+                      onClick={(e) => { e.stopPropagation() }} 
                       className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"
                     >
                       <ThumbsUp size={14} /> Like
                     </button>
                     <button 
-                      onClick={(e) => { 
-                        e.stopPropagation()
-                        // Share functionality would go here
-                      }} 
+                      onClick={(e) => { e.stopPropagation() }} 
                       className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"
                     >
                       <Share2 size={14} /> Share
