@@ -478,28 +478,17 @@ export default function HomePage() {
     'Deezer': { icon: '🎧', color: 'bg-purple-600', url: 'https://deezer.com' },
   }
 
-  // ============================================
-  // FIXED getRating FUNCTION - No more NaN
-  // ============================================
+  // Calculate rating
   const getRating = (item: ContentItem) => {
-    // If rating_scale is already set and valid, use it
     if (item.rating_scale && item.rating_scale > 0) {
       return item.rating_scale
     }
-    
-    // Get stats with defaults to avoid NaN
     const highly = item.stats_highly || 0
     const recommended = item.stats_recommended || 0
     const not = item.stats_not || 0
     const total = highly + recommended + not
-    
-    // Avoid division by zero
     if (total === 0) return 0
-    
-    // Calculate weighted rating (🔥=10, 👍=7, 👎=2)
     const rating = (highly * 10 + recommended * 7) / total
-    
-    // Round to 1 decimal place and ensure it's a number
     const rounded = Number(rating.toFixed(1))
     return isNaN(rounded) ? 0 : rounded
   }
@@ -848,7 +837,7 @@ export default function HomePage() {
               {selectedContent.artist && <p className="text-gray-400 mb-3">{selectedContent.artist}</p>}
               <p className="text-gray-300 mb-4 text-sm leading-relaxed">{selectedContent.long_description || selectedContent.description}</p>
               
-              {/* Rating Display - Now safe from NaN */}
+              {/* Rating Display */}
               <div className="flex items-center gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg">
                 <Star size={20} className="text-yellow-400 fill-yellow-400" />
                 <span className="text-2xl font-bold">{getRating(selectedContent)}</span>
@@ -875,33 +864,35 @@ export default function HomePage() {
                   <div className="font-bold">{selectedContent.stats_not || 0}</div>
                 </div>
               </div>
-              {/* Where to Watch / Listen - Always show, even if empty */}
-<div className="mb-4">
-  <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
-  <div className="flex flex-wrap gap-3">
-    {selectedContent.platforms && selectedContent.platforms.length > 0 ? (
-      selectedContent.platforms.map((platform: string, idx: number) => {
-        const info = platformIcons[platform] || { icon: '🎬', color: 'bg-gray-600', url: '#' }
-        return (
-          <a 
-            key={idx} 
-            href={info.url} 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className={`flex items-center gap-2 px-3 py-2 ${info.color} rounded-lg text-sm font-medium hover:opacity-80 transition`}
-            title={platform}
-          >
-            <span className="text-base">{info.icon}</span>
-            <span className="hidden sm:inline">{platform}</span>
-          </a>
-        )
-      })
-    ) : (
-      <p className="text-sm text-gray-500">Platform information coming soon</p>
-    )}
-  </div>
-</div>
               
+              {/* Where to Watch / Listen */}
+              <div className="mb-4">
+                <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
+                <div className="flex flex-wrap gap-3">
+                  {selectedContent.platforms && selectedContent.platforms.length > 0 ? (
+                    selectedContent.platforms.map((platform: string, idx: number) => {
+                      const info = platformIcons[platform] || { icon: '🎬', color: 'bg-gray-600', url: '#' }
+                      return (
+                        <a 
+                          key={idx} 
+                          href={info.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className={`flex items-center gap-2 px-3 py-2 ${info.color} rounded-lg text-sm font-medium hover:opacity-80 transition`}
+                          title={platform}
+                        >
+                          <span className="text-base">{info.icon}</span>
+                          <span className="hidden sm:inline">{platform}</span>
+                        </a>
+                      )
+                    })
+                  ) : (
+                    <p className="text-sm text-gray-500">Platform information coming soon</p>
+                  )}
+                </div>
+              </div>
+              
+              {/* Movie Details */}
               {selectedContent.type === 'movie' && selectedContent.director && (
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
                   <div><span className="text-gray-400">🎬 Director:</span> {selectedContent.director}</div>
@@ -911,6 +902,7 @@ export default function HomePage() {
                 </div>
               )}
               
+              {/* Music Details with Clickable Artist */}
               {selectedContent.type === 'music' && selectedContent.artist && (
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
                   <div className="col-span-2">
@@ -931,6 +923,7 @@ export default function HomePage() {
                 </div>
               )}
               
+              {/* Clickable Cast Section for Movies */}
               {selectedContent.type === 'movie' && selectedContent.actors && selectedContent.actors.length > 0 && (
                 <div className="mb-4">
                   <h3 className="text-md font-semibold mb-2">⭐ Cast</h3>
@@ -951,7 +944,21 @@ export default function HomePage() {
                 </div>
               )}
               
-              {selectedContent.trailer_url && (
+              {/* Music Preview Player instead of Trailer for Music */}
+              {selectedContent.type === 'music' && selectedContent.trailer_url && (
+                <div className="mb-4">
+                  <h3 className="text-md font-semibold mb-2">🎧 Audio Preview</h3>
+                  <div className="bg-gray-800 rounded-lg p-4">
+                    <audio controls className="w-full" src={selectedContent.trailer_url}>
+                      Your browser does not support the audio element.
+                    </audio>
+                    <p className="text-xs text-gray-500 mt-2 text-center">30-second preview from Deezer</p>
+                  </div>
+                </div>
+              )}
+              
+              {/* Watch Trailer for Movies */}
+              {selectedContent.type === 'movie' && selectedContent.trailer_url && (
                 <div className="mb-4">
                   <h3 className="text-md font-semibold mb-2">▶️ Watch Trailer</h3>
                   <div className="aspect-video rounded-lg overflow-hidden">
