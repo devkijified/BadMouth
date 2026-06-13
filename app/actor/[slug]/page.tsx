@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
-import { ArrowLeft, Film, Music, Star } from 'lucide-react'
+import { ArrowLeft, Film, Music, Star, User as UserIcon } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ContentItem } from '@/types/content'
 import ContentRow from '@/components/ContentRow'
 import RecommendModal from '@/components/RecommendModal'
@@ -16,9 +17,11 @@ interface ActorPageProps {
 }
 
 export default function ActorPage({ params }: ActorPageProps) {
+  const router = useRouter()
   const { user } = useAuth()
   const [actorName, setActorName] = useState('')
   const [movies, setMovies] = useState<ContentItem[]>([])
+  const [music, setMusic] = useState<ContentItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showRecommendModal, setShowRecommendModal] = useState(false)
   const [recommendItem, setRecommendItem] = useState<ContentItem | null>(null)
@@ -57,15 +60,25 @@ export default function ActorPage({ params }: ActorPageProps) {
 
   const loadActorContent = async (name: string) => {
     setLoading(true)
+    
     // Search for movies where cast array contains the actor name
-    const { data } = await supabase
+    const { data: moviesData } = await supabase
       .from('content')
       .select('*')
       .eq('type', 'movie')
       .contains('actors', [name])
       .order('stats_highly', { ascending: false })
     
-    setMovies(data || [])
+    // Search for music where artist matches the name
+    const { data: musicData } = await supabase
+      .from('content')
+      .select('*')
+      .eq('type', 'music')
+      .ilike('artist', `%${name}%`)
+      .order('stats_highly', { ascending: false })
+    
+    setMovies(moviesData || [])
+    setMusic(musicData || [])
     setLoading(false)
   }
 
@@ -79,8 +92,19 @@ export default function ActorPage({ params }: ActorPageProps) {
   }
 
   const handleViewDetails = (item: ContentItem) => {
-    // This will be handled by a modal or navigation
-    console.log('View details:', item)
+    // Close modal and navigate back to home with content selected
+    router.push('/')
+    // Store in sessionStorage to show modal on home
+    sessionStorage.setItem('selectedContent', JSON.stringify(item))
+  }
+
+  const getRating = (item: ContentItem) => {
+    if (item.rating_scale && item.rating_scale > 0) {
+      return item.rating_scale
+    }
+    const total = (item.stats_highly || 0) + (item.stats_recommended || 0) + (item.stats_not || 0)
+    if (total === 0) return 0
+    return Number((((item.stats_highly || 0) * 10 + (item.stats_recommended || 0) * 7) / total).toFixed(1))
   }
 
   if (loading) {
@@ -90,6 +114,8 @@ export default function ActorPage({ params }: ActorPageProps) {
       </div>
     )
   }
+
+  const totalAppearances = movies.length + music.length
 
   return (
     <div className="min-h-screen bg-black">
@@ -106,9 +132,9 @@ export default function ActorPage({ params }: ActorPageProps) {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-4">
-              <Link href="/" className="text-gray-400 hover:text-white transition">
+              <button onClick={() => router.back()} className="text-gray-400 hover:text-white transition">
                 <ArrowLeft size={20} />
-              </Link>
+              </button>
               <h1 className="text-xl font-bold bg-gradient-to-r from-teal-500 to-blue-500 bg-clip-text text-transparent">
                 {actorName}
               </h1>
@@ -121,20 +147,28 @@ export default function ActorPage({ params }: ActorPageProps) {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        {/* Actor Info */}
+        {/* Actor/Artist Info */}
         <div className="bg-gray-800/50 rounded-xl p-6 mb-8 text-center">
           <div className="w-24 h-24 mx-auto mb-4 bg-gradient-to-r from-teal-600 to-blue-600 rounded-full flex items-center justify-center">
-            <span className="text-4xl">🎬</span>
+            <UserIcon size={40} className="text-white" />
           </div>
           <h1 className="text-2xl font-bold mb-2">{actorName}</h1>
           <p className="text-gray-400">
-            Appears in {movies.length} {movies.length === 1 ? 'movie' : 'movies'}
+            {totalAppearances} {totalAppearances === 1 ? 'appearance' : 'appearances'}
           </p>
+          <div className="flex justify-center gap-4 mt-3">
+            {movies.length > 0 && (
+              <span className="text-sm text-teal-400">🎬 {movies.length} Movie{movies.length !== 1 ? 's' : ''}</span>
+            )}
+            {music.length > 0 && (
+              <span className="text-sm text-purple-400">🎵 {music.length} Track{music.length !== 1 ? 's' : ''}</span>
+            )}
+          </div>
         </div>
 
-        {/* Movies Grid */}
-        {movies.length > 0 ? (
-          <div>
+        {/* Movies Section */}
+        {movies.length > 0 && (
+          <div className="mb-8">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <Film className="text-teal-500" size={20} />
               Movies featuring {actorName}
@@ -147,6 +181,9 @@ export default function ActorPage({ params }: ActorPageProps) {
                       src={movie.image_url} 
                       alt={movie.title} 
                       className="w-full aspect-[2/3] object-cover group-hover:scale-105 transition duration-300"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(movie.title)}`
+                      }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition flex flex-col justify-end p-3">
                       <button 
@@ -168,16 +205,68 @@ export default function ActorPage({ params }: ActorPageProps) {
                     <p className="text-xs text-gray-400">{movie.year}</p>
                     <div className="flex items-center gap-1 mt-1">
                       <Star size={12} className="text-yellow-400 fill-yellow-400" />
-                      <span className="text-xs">{movie.rating_scale || (movie.stats_highly > 0 ? '8.5' : '0')}/10</span>
+                      <span className="text-xs">{getRating(movie)}/10</span>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
-        ) : (
+        )}
+
+        {/* Music Section */}
+        {music.length > 0 && (
+          <div>
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <Music className="text-purple-500" size={20} />
+              Music by {actorName}
+            </h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {music.map((song) => (
+                <div key={song.id} className="group cursor-pointer">
+                  <div className="relative rounded-xl overflow-hidden bg-gray-800">
+                    <img 
+                      src={song.image_url} 
+                      alt={song.title} 
+                      className="w-full aspect-square object-cover group-hover:scale-105 transition duration-300"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(song.title)}`
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition flex flex-col justify-end p-3">
+                      <button 
+                        onClick={() => handleRecommend(song)}
+                        className="w-full py-2 bg-teal-600 rounded-lg text-sm font-semibold mb-2"
+                      >
+                        Recommend
+                      </button>
+                      <button 
+                        onClick={() => addToWatchlist(song)}
+                        className={`w-full py-2 rounded-lg text-sm font-semibold transition ${isInWatchlist(song.id) ? 'bg-teal-600' : 'bg-gray-700'}`}
+                      >
+                        {isInWatchlist(song.id) ? 'In Watchlist' : 'Add to Watchlist'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <h3 className="font-semibold text-sm truncate">{song.title}</h3>
+                    <p className="text-xs text-gray-400">{song.artist}</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <Star size={12} className="text-yellow-400 fill-yellow-400" />
+                      <span className="text-xs">{getRating(song)}/10</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* No results message */}
+        {totalAppearances === 0 && (
           <div className="text-center py-12 text-gray-500">
-            <p>No movies found for {actorName}</p>
+            <UserIcon size={48} className="mx-auto mb-4 opacity-50" />
+            <p>No movies or music found for {actorName}</p>
           </div>
         )}
       </main>
