@@ -858,7 +858,7 @@ export default function HomePage() {
                 </div>
               )}
               
-              {/* Music Details with Clickable Artist */}
+              {/* Music Details with Clickable Artist - Fixed null check */}
               {selectedContent.type === 'music' && selectedContent.artist && (
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
                   <div className="col-span-2">
@@ -866,7 +866,7 @@ export default function HomePage() {
                     <button
                       onClick={() => {
                         setShowDetailsModal(false)
-                        router.push(`/actor/${encodeURIComponent(selectedContent.artist)}`)
+                        router.push(`/actor/${encodeURIComponent(selectedContent.artist!)}`)
                       }}
                       className="text-teal-400 hover:text-teal-300 hover:underline transition"
                     >
