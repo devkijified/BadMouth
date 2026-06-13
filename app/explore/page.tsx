@@ -3,12 +3,15 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
-import { ArrowLeft, Film, Music, Heart, Star, Filter, X, Sparkles, Flame } from 'lucide-react'
+import { ArrowLeft, Film, Music, Heart, Star, Filter, X, Sparkles, ThumbsUp, MessageCircle } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ContentItem } from '@/types/content'
 import RecommendModal from '@/components/RecommendModal'
+import toast from 'react-hot-toast'
 
 export default function ExplorePage() {
+  const router = useRouter()
   const { user } = useAuth()
   const [items, setItems] = useState<ContentItem[]>([])
   const [filteredItems, setFilteredItems] = useState<ContentItem[]>([])
@@ -18,22 +21,98 @@ export default function ExplorePage() {
   const [showFilters, setShowFilters] = useState(false)
   const [selectedItem, setSelectedItem] = useState<ContentItem | null>(null)
   const [showRecommendModal, setShowRecommendModal] = useState(false)
-  const [watchlist, setWatchlist] = useState<string[]>([])
+  const [watchlist, setWatchlist] = useState<ContentItem[]>([])
+  const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set())
   const [genreFilter, setGenreFilter] = useState<string>('all')
   const [genres, setGenres] = useState<string[]>([])
 
-  useEffect(() => {
-    const saved = localStorage.getItem('badmouth_watchlist')
-    if (saved) {
-      try {
-        setWatchlist(JSON.parse(saved).map((i: any) => i.id))
-      } catch (e) {}
+  // Load watchlist from Supabase
+  const loadWatchlist = async () => {
+    if (!user) return
+    
+    const { data, error } = await supabase
+      .from('watchlist')
+      .select('content_id')
+      .eq('user_id', user.id)
+    
+    if (error) {
+      console.error('Error loading watchlist:', error)
+      return
     }
-  }, [])
+    
+    if (data && data.length > 0) {
+      const contentIds = data.map(item => item.content_id)
+      const { data: contentData } = await supabase
+        .from('content')
+        .select('*')
+        .in('id', contentIds)
+      
+      if (contentData) {
+        setWatchlist(contentData)
+        const idsSet = new Set<string>()
+        contentData.forEach(item => idsSet.add(item.id))
+        setWatchlistIds(idsSet)
+      }
+    } else {
+      setWatchlist([])
+      setWatchlistIds(new Set())
+    }
+  }
+
+  // Add to watchlist
+  const addToWatchlist = async (item: ContentItem) => {
+    if (!user) {
+      toast.error('Please sign in to add to watchlist')
+      return
+    }
+    
+    if (watchlistIds.has(item.id)) {
+      const { error } = await supabase
+        .from('watchlist')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('content_id', item.id)
+      
+      if (error) {
+        toast.error('Failed to remove from watchlist')
+        return
+      }
+      
+      setWatchlist(prev => prev.filter(i => i.id !== item.id))
+      const newIdsSet = new Set(watchlistIds)
+      newIdsSet.delete(item.id)
+      setWatchlistIds(newIdsSet)
+      toast.success(`Removed "${item.title}" from watchlist`)
+    } else {
+      const { error } = await supabase
+        .from('watchlist')
+        .insert({
+          user_id: user.id,
+          content_id: item.id,
+          content_type: item.type
+        })
+      
+      if (error) {
+        toast.error('Failed to add to watchlist')
+        return
+      }
+      
+      setWatchlist(prev => [...prev, item])
+      const newIdsSet = new Set(watchlistIds)
+      newIdsSet.add(item.id)
+      setWatchlistIds(newIdsSet)
+      toast.success(`✨ "${item.title}" added to watchlist!`)
+    }
+  }
+
+  const isInWatchlist = (id: string) => watchlistIds.has(id)
 
   useEffect(() => {
+    if (user) {
+      loadWatchlist()
+    }
     loadContent()
-  }, [])
+  }, [user])
 
   const loadContent = async () => {
     setLoading(true)
@@ -90,21 +169,28 @@ export default function ExplorePage() {
     applyFilters(items, typeFilter, sortBy, genre)
   }
 
-  const addToWatchlist = (item: ContentItem) => {
-    const saved = localStorage.getItem('badmouth_watchlist')
-    let current = saved ? JSON.parse(saved) : []
-    
-    if (current.some((i: any) => i.id === item.id)) {
-      current = current.filter((i: any) => i.id !== item.id)
-    } else {
-      current.push(item)
-    }
-    
-    localStorage.setItem('badmouth_watchlist', JSON.stringify(current))
-    setWatchlist(current.map((i: any) => i.id))
+  const handleRecommend = (item: ContentItem) => {
+    setSelectedItem(item)
+    setShowRecommendModal(true)
   }
 
-  const isInWatchlist = (id: string) => watchlist.includes(id)
+  const handleRecommendSuccess = () => {
+    loadContent()
+  }
+
+  const handleViewDetails = (item: ContentItem) => {
+    router.push('/')
+    sessionStorage.setItem('selectedContent', JSON.stringify(item))
+  }
+
+  const getRating = (item: ContentItem) => {
+    if (item.rating_scale && item.rating_scale > 0) {
+      return item.rating_scale
+    }
+    const total = (item.stats_highly || 0) + (item.stats_recommended || 0) + (item.stats_not || 0)
+    if (total === 0) return 0
+    return Number((((item.stats_highly || 0) * 10 + (item.stats_recommended || 0) * 7) / total).toFixed(1))
+  }
 
   if (!user) {
     return (
@@ -124,8 +210,8 @@ export default function ExplorePage() {
         isOpen={showRecommendModal} 
         onClose={() => setShowRecommendModal(false)} 
         item={selectedItem}
-        userId={user.id}
-        onSuccess={() => loadContent()}
+        userId={user?.id}
+        onSuccess={handleRecommendSuccess}
       />
 
       {/* Header */}
@@ -133,9 +219,9 @@ export default function ExplorePage() {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-4">
-              <Link href="/" className="text-gray-400 hover:text-white transition">
+              <button onClick={() => router.back()} className="text-gray-400 hover:text-white transition">
                 <ArrowLeft size={20} />
-              </Link>
+              </button>
               <h1 className="text-xl font-bold bg-gradient-to-r from-teal-500 to-blue-500 bg-clip-text text-transparent">
                 Explore All
               </h1>
@@ -158,19 +244,19 @@ export default function ExplorePage() {
               <div className="flex flex-wrap gap-2">
                 <button 
                   onClick={() => handleFilterChange('all')}
-                  className={`px-4 py-2 rounded-lg transition ${typeFilter === 'all' ? 'bg-teal-600' : 'bg-gray-800 hover:bg-gray-700'}`}
+                  className={`px-4 py-2 rounded-lg transition text-sm ${typeFilter === 'all' ? 'bg-teal-600' : 'bg-gray-800 hover:bg-gray-700'}`}
                 >
                   All
                 </button>
                 <button 
                   onClick={() => handleFilterChange('movie')}
-                  className={`px-4 py-2 rounded-lg transition flex items-center gap-2 ${typeFilter === 'movie' ? 'bg-teal-600' : 'bg-gray-800 hover:bg-gray-700'}`}
+                  className={`px-4 py-2 rounded-lg transition flex items-center gap-2 text-sm ${typeFilter === 'movie' ? 'bg-teal-600' : 'bg-gray-800 hover:bg-gray-700'}`}
                 >
                   <Film size={16} /> Movies
                 </button>
                 <button 
                   onClick={() => handleFilterChange('music')}
-                  className={`px-4 py-2 rounded-lg transition flex items-center gap-2 ${typeFilter === 'music' ? 'bg-teal-600' : 'bg-gray-800 hover:bg-gray-700'}`}
+                  className={`px-4 py-2 rounded-lg transition flex items-center gap-2 text-sm ${typeFilter === 'music' ? 'bg-teal-600' : 'bg-gray-800 hover:bg-gray-700'}`}
                 >
                   <Music size={16} /> Music
                 </button>
@@ -180,7 +266,7 @@ export default function ExplorePage() {
                 <select 
                   value={sortBy}
                   onChange={(e) => handleSortChange(e.target.value as any)}
-                  className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500"
+                  className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500 text-sm"
                 >
                   <option value="highly">🔥 Most Highly Recommended</option>
                   <option value="recommended">👍 Most Recommended</option>
@@ -189,7 +275,7 @@ export default function ExplorePage() {
                 <select 
                   value={genreFilter}
                   onChange={(e) => handleGenreChange(e.target.value)}
-                  className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500"
+                  className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500 text-sm"
                 >
                   {genres.map(genre => (
                     <option key={genre} value={genre}>
@@ -228,27 +314,39 @@ export default function ExplorePage() {
                       src={item.image_url} 
                       alt={item.title} 
                       className="w-full aspect-[2/3] object-cover group-hover:scale-105 transition duration-300"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(item.title)}`
+                      }}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition flex flex-col justify-end p-3">
+                    {/* Rating Badge */}
+                    <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm px-1.5 py-0.5 rounded-lg flex items-center gap-0.5">
+                      <Star size={10} className="text-yellow-400 fill-yellow-400" />
+                      <span className="text-[10px] font-bold">{getRating(item)}</span>
+                    </div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition flex flex-col justify-end p-3 gap-2">
                       <button 
-                        onClick={() => {
-                          setSelectedItem(item)
-                          setShowRecommendModal(true)
-                        }}
-                        className="w-full py-2 bg-teal-600 rounded-lg text-sm font-semibold mb-2"
+                        onClick={() => handleRecommend(item)}
+                        className="w-full py-2 bg-teal-600 rounded-lg text-sm font-semibold hover:bg-teal-700 transition flex items-center justify-center gap-2"
                       >
-                        Recommend
+                        <ThumbsUp size={14} /> Recommend
+                      </button>
+                      <button 
+                        onClick={() => handleViewDetails(item)}
+                        className="w-full py-2 bg-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-600 transition flex items-center justify-center gap-2"
+                      >
+                        <MessageCircle size={14} /> Details
                       </button>
                       <button 
                         onClick={() => addToWatchlist(item)}
-                        className={`w-full py-2 rounded-lg text-sm font-semibold transition ${isInWatchlist(item.id) ? 'bg-teal-600' : 'bg-gray-700'}`}
+                        className={`w-full py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 ${isInWatchlist(item.id) ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'}`}
                       >
+                        <Heart size={14} className={isInWatchlist(item.id) ? 'fill-white' : ''} />
                         {isInWatchlist(item.id) ? 'In Watchlist' : 'Add to Watchlist'}
                       </button>
                     </div>
                     {isInWatchlist(item.id) && (
-                      <div className="absolute top-2 right-2 bg-teal-600 rounded-full p-1">
-                        <Heart size={12} className="fill-white" />
+                      <div className="absolute top-2 left-2 bg-teal-600 rounded-full p-1">
+                        <Heart size={10} className="fill-white" />
                       </div>
                     )}
                   </div>
