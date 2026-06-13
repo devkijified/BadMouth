@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Loader2 } from 'lucide-react'
+import { X, Loader2, Pencil } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 import toast from 'react-hot-toast'
 
@@ -38,13 +38,14 @@ export default function RecommendModal({ isOpen, onClose, item, onSuccess }: Rec
         setExistingTier(data.recommendation_tier)
         setExistingComment(data.comment || '')
         setExistingId(data.id)
-        // Pre-fill form with existing values
+        // Pre-fill form with existing values for update
         setSelectedTier(data.recommendation_tier)
         setComment(data.comment || '')
       } else {
         setHasExisting(false)
         setExistingTier(null)
         setExistingComment('')
+        setExistingId(null)
         setSelectedTier(null)
         setComment('')
       }
@@ -117,8 +118,8 @@ export default function RecommendModal({ isOpen, onClose, item, onSuccess }: Rec
               {hasExisting ? 'Update Your Recommendation' : `Recommend ${item.title}`}
             </h3>
             {hasExisting && (
-              <p className="text-xs text-teal-400 mt-1">
-                You previously recommended this as {tierIcons[existingTier as keyof typeof tierIcons]?.icon} {tierIcons[existingTier as keyof typeof tierIcons]?.label}
+              <p className="text-xs text-teal-400 mt-1 flex items-center gap-1">
+                <Pencil size={10} /> You previously recommended this as {tierIcons[existingTier as keyof typeof tierIcons]?.icon} {tierIcons[existingTier as keyof typeof tierIcons]?.label}
               </p>
             )}
           </div>
@@ -134,7 +135,7 @@ export default function RecommendModal({ isOpen, onClose, item, onSuccess }: Rec
             }} 
           />
           <p className="text-center text-gray-400 mb-4">
-            {hasExisting ? 'Update your recommendation' : 'How do you recommend this?'}
+            {hasExisting ? 'Update your recommendation (this will replace your previous vote)' : 'How do you recommend this?'}
           </p>
           <div className="grid grid-cols-3 gap-3 mb-4">
             <button 
@@ -148,7 +149,7 @@ export default function RecommendModal({ isOpen, onClose, item, onSuccess }: Rec
               <span className="text-4xl mb-2">🔥</span>
               <span className="text-sm font-semibold">HIGHLY</span>
               {existingTier === 'highly' && (
-                <span className="text-[10px] text-teal-400 mt-1">Your current</span>
+                <span className="text-[10px] text-teal-400 mt-1">Current</span>
               )}
             </button>
             <button 
@@ -162,7 +163,7 @@ export default function RecommendModal({ isOpen, onClose, item, onSuccess }: Rec
               <span className="text-4xl mb-2">👍</span>
               <span className="text-sm font-semibold">RECOMMENDED</span>
               {existingTier === 'recommended' && (
-                <span className="text-[10px] text-blue-400 mt-1">Your current</span>
+                <span className="text-[10px] text-blue-400 mt-1">Current</span>
               )}
             </button>
             <button 
@@ -176,7 +177,7 @@ export default function RecommendModal({ isOpen, onClose, item, onSuccess }: Rec
               <span className="text-4xl mb-2">👎</span>
               <span className="text-sm font-semibold">NOT</span>
               {existingTier === 'not' && (
-                <span className="text-[10px] text-gray-400 mt-1">Your current</span>
+                <span className="text-[10px] text-gray-400 mt-1">Current</span>
               )}
             </button>
           </div>
@@ -197,7 +198,7 @@ export default function RecommendModal({ isOpen, onClose, item, onSuccess }: Rec
           </button>
           {hasExisting && (
             <p className="text-center text-xs text-gray-500 mt-3">
-              💡 Updating will replace your previous recommendation
+              💡 Updating will replace your previous vote and update the rating
             </p>
           )}
         </div>
