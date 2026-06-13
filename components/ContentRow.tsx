@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle, Heart } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle, Heart, Star } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ContentItem } from '@/types/content'
