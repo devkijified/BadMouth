@@ -230,28 +230,28 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
           const avatarUrl = rec.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`
           const isCurrentUser = user?.id === rec.user_id
           
-          const fullContent: ContentItem = {
-            id: rec.content.id,
-            title: rec.content.title,
-            description: rec.content.description,
-            long_description: rec.content.description,
-            image_url: rec.content.image_url,
-            backdrop_url: rec.content.image_url,
-            type: rec.content.type as 'movie' | 'music',
-            year: rec.content.year,
-            director: null,
-            artist: rec.content.artist,
-            actors: null,
-            platforms: [],
-            trailer_url: null,
-            runtime: null,
-            duration: null,
-            genre: rec.content.genre,
-            stats_highly: rec.content.stats_highly,
-            stats_recommended: rec.content.stats_recommended,
-            stats_not: rec.content.stats_not,
-            rating_scale: rec.content.rating_scale
-          }
+         const fullContent: ContentItem = {
+  id: rec.content.id,
+  title: rec.content.title,
+  description: rec.content.description,
+  long_description: rec.content.description,
+  image_url: rec.content.image_url,
+  backdrop_url: rec.content.image_url,
+  type: rec.content.type as 'movie' | 'music',
+  year: rec.content.year,
+  director: rec.content.director || null,
+  artist: rec.content.artist,
+  actors: rec.content.actors || null,
+  platforms: rec.content.platforms || ['Netflix', 'Prime Video', 'Max', 'Spotify', 'Apple Music'], // Add fallback platforms
+  trailer_url: rec.content.trailer_url || null,
+  runtime: rec.content.runtime || null,
+  duration: rec.content.duration || null,
+  genre: rec.content.genre,
+  stats_highly: rec.content.stats_highly,
+  stats_recommended: rec.content.stats_recommended,
+  stats_not: rec.content.stats_not,
+  rating_scale: rec.content.rating_scale
+}
           
           return (
             <div 
