@@ -32,6 +32,7 @@ export default function HomePage() {
   const [showGenreFilter, setShowGenreFilter] = useState(false)
   const [watchlist, setWatchlist] = useState<ContentItem[]>([])
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set())
+  const [watchlistCount, setWatchlistCount] = useState(0)
   const [notifications, setNotifications] = useState<string[]>([])
   const [showWatchlist, setShowWatchlist] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
@@ -112,12 +113,14 @@ export default function HomePage() {
       
       if (contentData) {
         setWatchlist(contentData)
+        setWatchlistCount(contentData.length)
         const idsSet = new Set<string>()
         contentData.forEach(item => idsSet.add(item.id))
         setWatchlistIds(idsSet)
       }
     } else {
       setWatchlist([])
+      setWatchlistCount(0)
       setWatchlistIds(new Set())
     }
   }
@@ -143,7 +146,9 @@ export default function HomePage() {
         return
       }
       
-      setWatchlist(prev => prev.filter(i => i.id !== item.id))
+      const newWatchlist = watchlist.filter(i => i.id !== item.id)
+      setWatchlist(newWatchlist)
+      setWatchlistCount(newWatchlist.length)
       const newIdsSet = new Set(watchlistIds)
       newIdsSet.delete(item.id)
       setWatchlistIds(newIdsSet)
@@ -164,7 +169,9 @@ export default function HomePage() {
         return
       }
       
-      setWatchlist(prev => [...prev, item])
+      const newWatchlist = [...watchlist, item]
+      setWatchlist(newWatchlist)
+      setWatchlistCount(newWatchlist.length)
       const newIdsSet = new Set(watchlistIds)
       newIdsSet.add(item.id)
       setWatchlistIds(newIdsSet)
@@ -182,7 +189,9 @@ export default function HomePage() {
       .eq('content_id', id)
     
     if (!error) {
-      setWatchlist(prev => prev.filter(i => i.id !== id))
+      const newWatchlist = watchlist.filter(i => i.id !== id)
+      setWatchlist(newWatchlist)
+      setWatchlistCount(newWatchlist.length)
       const newIdsSet = new Set(watchlistIds)
       newIdsSet.delete(id)
       setWatchlistIds(newIdsSet)
@@ -532,7 +541,7 @@ export default function HomePage() {
       {showWatchlist && (
         <div className="fixed top-16 right-4 z-50 w-80 bg-gray-900 rounded-xl shadow-xl border border-gray-700">
           <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-            <h3 className="font-semibold">My Watchlist ({watchlist.length})</h3>
+            <h3 className="font-semibold">My Watchlist ({watchlistCount})</h3>
             <button onClick={() => setShowWatchlist(false)}><X size={16} /></button>
           </div>
           <div className="max-h-96 overflow-y-auto">
@@ -585,7 +594,7 @@ export default function HomePage() {
             <p className="text-xs text-gray-400 mb-3">{user.email}</p>
             <div className="grid grid-cols-2 gap-3 text-center">
               <div className="bg-gray-800 rounded-lg p-2">
-                <p className="text-xl font-bold">{watchlist.length}</p>
+                <p className="text-xl font-bold">{watchlistCount}</p>
                 <p className="text-xs text-gray-400">Watchlist</p>
               </div>
               <div className="bg-gray-800 rounded-lg p-2">
@@ -656,9 +665,14 @@ export default function HomePage() {
                 {notifications.length > 0 && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />}
               </button>
               
+              {/* Watchlist Button with Count */}
               <button onClick={toggleWatchlist} className="text-gray-300 hover:text-white relative">
                 <Heart size={20} />
-                {watchlist.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-teal-500 rounded-full text-[10px] flex items-center justify-center text-white">{watchlist.length}</span>}
+                {watchlistCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-teal-500 rounded-full text-[10px] flex items-center justify-center text-white">
+                    {watchlistCount}
+                  </span>
+                )}
               </button>
 
               {user?.email === 'kijified@gmail.com' && (
@@ -707,7 +721,7 @@ export default function HomePage() {
               <button onClick={() => { handleHomeClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🏠 Home</button>
               <button onClick={() => { handleMoviesClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎬 Movies</button>
               <button onClick={() => { handleMusicClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎵 Music</button>
-              <button onClick={() => { toggleWatchlist(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">❤️ Watchlist ({watchlist.length})</button>
+              <button onClick={() => { toggleWatchlist(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">❤️ Watchlist ({watchlistCount})</button>
               <button onClick={() => { toggleProfile(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">👤 Profile</button>
               <button onClick={() => { toggleNotifications(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🔔 Notifications</button>
               {user?.email === 'kijified@gmail.com' && (
@@ -972,18 +986,18 @@ export default function HomePage() {
       )}
 
       <MobileNav 
-  activeTab={activeTab} 
-  onTabChange={(tab) => {
-    if (tab === 'movie') handleMoviesClick()
-    else handleMusicClick()
-  }} 
-  onViewDetails={handleViewDetails}
-  onHomeClick={handleHomeClick}
-  onProfileClick={toggleProfile}
-  onWatchlistClick={toggleWatchlist}
-  items={filteredContent}
-  currentPage={currentPage}
-/>
+        activeTab={activeTab} 
+        onTabChange={(tab) => {
+          if (tab === 'movie') handleMoviesClick()
+          else handleMusicClick()
+        }} 
+        onViewDetails={handleViewDetails}
+        onHomeClick={handleHomeClick}
+        onProfileClick={toggleProfile}
+        onWatchlistClick={toggleWatchlist}
+        items={filteredContent}
+        currentPage={currentPage}
+      />
     </div>
   )
 }
