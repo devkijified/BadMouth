@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle, Star } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 
 interface HeroCarouselProps {
@@ -37,6 +37,14 @@ export default function HeroCarousel({ items, onViewDetails, onRecommend, active
   if (items.length === 0) return null
 
   const content = items[currentIndex]
+  
+  // Calculate rating
+  const getRating = () => {
+    if (content.rating_scale && content.rating_scale > 0) return content.rating_scale
+    const total = (content.stats_highly || 0) + (content.stats_recommended || 0) + (content.stats_not || 0)
+    if (total === 0) return 0
+    return (((content.stats_highly || 0) * 10 + (content.stats_recommended || 0) * 7) / total).toFixed(1)
+  }
 
   return (
     <div className="relative h-[60vh] md:h-[70vh] w-full overflow-hidden mb-8">
@@ -48,8 +56,13 @@ export default function HeroCarousel({ items, onViewDetails, onRecommend, active
       </div>
       
       <div className="absolute bottom-0 left-0 right-0 p-8 md:p-12">
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
           <span className="text-sm px-2 py-1 bg-teal-600 rounded-full">{content.type === 'movie' ? '🎬 Movie' : '🎵 Music'}</span>
+          {content.year && <span className="text-sm text-gray-300">{content.year}</span>}
+          <div className="flex items-center gap-1 bg-black/50 px-2 py-1 rounded-full">
+            <Star size={14} className="text-yellow-400 fill-yellow-400" />
+            <span className="text-sm font-semibold">{getRating()}/10</span>
+          </div>
         </div>
         <h1 className="text-3xl md:text-5xl font-bold mb-2">{content.title}</h1>
         <p className="text-gray-300 text-sm md:text-base mb-4 max-w-lg">{content.description}</p>
