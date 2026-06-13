@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, ThumbsUp, MessageCircle, Star } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 
+// ... rest of the component remains the same
+
 interface HeroCarouselProps {
   items: ContentItem[]
   onViewDetails: (item: ContentItem) => void
