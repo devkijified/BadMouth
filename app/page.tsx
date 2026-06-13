@@ -172,20 +172,18 @@ export default function HomePage() {
 
   const isInWatchlist = (id: string) => watchlist.some(i => i.id === id)
 
-  useEffect(() => {
-    if (user && !authLoading && currentPage !== 'home') {
-      loadData()
-    }
-  }, [activeTab, user, authLoading, currentPage, selectedGenre])
-
+  // Load data function that respects current tab and genre
   const loadData = async () => {
     setLoading(true)
     
     try {
+      // Determine which content type to load based on currentPage
+      const contentType = currentPage === 'movies' ? 'movie' : (currentPage === 'music' ? 'music' : activeTab)
+      
       const { data: categoriesData } = await supabase
         .from('categories')
         .select('*')
-        .eq('type', activeTab)
+        .eq('type', contentType)
         .eq('is_active', true)
         .order('display_order')
       
@@ -195,7 +193,7 @@ export default function HomePage() {
       let contentQuery = supabase
         .from('content')
         .select('*')
-        .eq('type', activeTab)
+        .eq('type', contentType)
       
       if (selectedGenre !== 'all') {
         contentQuery = contentQuery.eq('genre', selectedGenre)
@@ -228,15 +226,20 @@ export default function HomePage() {
     }
   }
 
+  // Load data when currentPage changes, genre changes, or user logs in
+  useEffect(() => {
+    if (user && !authLoading && currentPage !== 'home') {
+      loadData()
+    }
+  }, [currentPage, selectedGenre, user, authLoading])
+
   const handleRecommend = (item: ContentItem) => {
     setRecommendItem(item)
     setShowRecommendModal(true)
   }
 
   const handleRecommendSuccess = () => {
-    if (currentPage === 'home') {
-      // Refresh would happen on next visit
-    } else {
+    if (currentPage !== 'home') {
       loadData()
     }
   }
@@ -269,7 +272,6 @@ export default function HomePage() {
     setActiveTab('movie')
     setSelectedGenre('all')
     scrollToTop()
-    loadData()
   }
 
   const handleMusicClick = () => {
@@ -277,7 +279,6 @@ export default function HomePage() {
     setActiveTab('music')
     setSelectedGenre('all')
     scrollToTop()
-    loadData()
   }
 
   useEffect(() => {
@@ -503,7 +504,7 @@ export default function HomePage() {
                         {genres.map(genre => (
                           <button 
                             key={genre} 
-                            onClick={() => { setSelectedGenre(genre); setShowGenreFilter(false); loadData(); }} 
+                            onClick={() => { setSelectedGenre(genre); setShowGenreFilter(false); }} 
                             className={`w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-800 ${selectedGenre === genre ? 'text-teal-500' : 'text-gray-300'}`}
                           >
                             {genre === 'all' ? 'All Genres' : genre}
@@ -653,74 +654,19 @@ export default function HomePage() {
               activeTab={activeTab} 
             />
             <div className="container mx-auto px-4">
-              {categories.length > 0 ? (
-                categories.map((category) => (
-                  <ContentRow 
-                    key={category.id}
-                    title={category.name}
-                    items={contentByCategory[category.name] || []}
-                    type={activeTab}
-                    onViewDetails={handleViewDetails}
-                    onRecommend={handleRecommend}
-                    onAddToWatchlist={addToWatchlist}
-                    onRemoveFromWatchlist={removeFromWatchlist}
-                    isInWatchlist={isInWatchlist}
-                  />
-                ))
-              ) : (
-                <>
-                  <ContentRow 
-                    title="🔥 Trending Music"
-                    items={allContent.filter(c => c.stats_highly > 100).slice(0, 10)}
-                    type="music"
-                    onViewDetails={handleViewDetails}
-                    onRecommend={handleRecommend}
-                    onAddToWatchlist={addToWatchlist}
-                    onRemoveFromWatchlist={removeFromWatchlist}
-                    isInWatchlist={isInWatchlist}
-                  />
-                  <ContentRow 
-                    title="🎤 Top Artists"
-                    items={allContent.slice(0, 8)}
-                    type="music"
-                    onViewDetails={handleViewDetails}
-                    onRecommend={handleRecommend}
-                    onAddToWatchlist={addToWatchlist}
-                    onRemoveFromWatchlist={removeFromWatchlist}
-                    isInWatchlist={isInWatchlist}
-                  />
-                  <ContentRow 
-                    title="✨ New Releases"
-                    items={allContent.slice(0, 8)}
-                    type="music"
-                    onViewDetails={handleViewDetails}
-                    onRecommend={handleRecommend}
-                    onAddToWatchlist={addToWatchlist}
-                    onRemoveFromWatchlist={removeFromWatchlist}
-                    isInWatchlist={isInWatchlist}
-                  />
-                  <ContentRow 
-                    title="🎵 Pop Hits"
-                    items={allContent.filter(c => c.genre === 'Pop').slice(0, 8)}
-                    type="music"
-                    onViewDetails={handleViewDetails}
-                    onRecommend={handleRecommend}
-                    onAddToWatchlist={addToWatchlist}
-                    onRemoveFromWatchlist={removeFromWatchlist}
-                    isInWatchlist={isInWatchlist}
-                  />
-                </>
-              )}
-              
-              {/* Deezer Music Search Section */}
-              <div className="my-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <Music className="w-6 h-6 text-teal-500" />
-                  <h2 className="text-xl md:text-2xl font-semibold">Discover New Music</h2>
-                </div>
-                <MusicSearch />
-              </div>
-              
+              {categories.map((category) => (
+                <ContentRow 
+                  key={category.id}
+                  title={category.name}
+                  items={contentByCategory[category.name] || []}
+                  type={activeTab}
+                  onViewDetails={handleViewDetails}
+                  onRecommend={handleRecommend}
+                  onAddToWatchlist={addToWatchlist}
+                  onRemoveFromWatchlist={removeFromWatchlist}
+                  isInWatchlist={isInWatchlist}
+                />
+              ))}
               <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
             </div>
           </>
