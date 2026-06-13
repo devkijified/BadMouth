@@ -6,7 +6,6 @@ import { supabase } from '@/lib/supabase/client'
 import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield, Star } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import Image from 'next/image'
 import HeroCarousel from '@/components/HeroCarousel'
 import ContentRow from '@/components/ContentRow'
 import SocialRecommendations from '@/components/SocialRecommendations'
@@ -31,6 +30,7 @@ export default function HomePage() {
   const [selectedGenre, setSelectedGenre] = useState<string>('all')
   const [showGenreFilter, setShowGenreFilter] = useState(false)
   const [watchlist, setWatchlist] = useState<ContentItem[]>([])
+  const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set())
   const [notifications, setNotifications] = useState<string[]>([])
   const [showWatchlist, setShowWatchlist] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
@@ -96,7 +96,9 @@ export default function HomePage() {
       const saved = localStorage.getItem('badmouth_watchlist')
       if (saved) {
         try {
-          setWatchlist(JSON.parse(saved))
+          const items = JSON.parse(saved)
+          setWatchlist(items)
+          setWatchlistIds(new Set(items.map((i: ContentItem) => i.id)))
         } catch (e) {
           console.error('Failed to parse watchlist', e)
         }
@@ -107,24 +109,21 @@ export default function HomePage() {
   const loadWatchlistFromSupabase = async () => {
     const { data } = await supabase
       .from('watchlist')
-      .select('*')
+      .select('*, content(*)')
       .eq('user_id', user?.id)
     
-    if (data && data.length > 0) {
-      const contentIds = data.map(item => item.content_id)
-      const { data: contentData } = await supabase
-        .from('content')
-        .select('*')
-        .in('id', contentIds)
-      setWatchlist(contentData || [])
+    if (data) {
+      const items = data.map((item: any) => item.content)
+      setWatchlist(items)
+      setWatchlistIds(new Set(items.map((i: ContentItem) => i.id)))
     }
   }
 
   const addToWatchlist = async (item: ContentItem) => {
-    if (watchlist.some(i => i.id === item.id)) {
+    if (watchlistIds.has(item.id)) {
       const newWatchlist = watchlist.filter(i => i.id !== item.id)
       setWatchlist(newWatchlist)
-      setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
+      setWatchlistIds(new Set(newWatchlist.map(i => i.id)))
       
       if (user) {
         await supabase
@@ -135,10 +134,11 @@ export default function HomePage() {
       } else {
         localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
       }
+      setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
     } else {
       const newWatchlist = [...watchlist, item]
       setWatchlist(newWatchlist)
-      setNotifications([`✨ "${item.title}" added to watchlist!`, ...notifications.slice(0, 4)])
+      setWatchlistIds(new Set(newWatchlist.map(i => i.id)))
       
       if (user) {
         await supabase
@@ -151,6 +151,7 @@ export default function HomePage() {
       } else {
         localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
       }
+      setNotifications([`✨ "${item.title}" added to watchlist!`, ...notifications.slice(0, 4)])
     }
     setTimeout(() => setNotifications(prev => prev.slice(1)), 3000)
   }
@@ -160,7 +161,7 @@ export default function HomePage() {
     if (item) {
       const newWatchlist = watchlist.filter(i => i.id !== id)
       setWatchlist(newWatchlist)
-      setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
+      setWatchlistIds(new Set(newWatchlist.map(i => i.id)))
       
       if (user) {
         await supabase
@@ -171,11 +172,12 @@ export default function HomePage() {
       } else {
         localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
       }
+      setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
       setTimeout(() => setNotifications(prev => prev.slice(1)), 3000)
     }
   }
 
-  const isInWatchlist = (id: string) => watchlist.some(i => i.id === id)
+  const isInWatchlist = (id: string) => watchlistIds.has(id)
 
   // Load data for Movies tab
   const loadMoviesData = async () => {
@@ -444,80 +446,20 @@ export default function HomePage() {
 
   const filteredContent = getFilteredContent()
 
-  // Platform icons mapping with real images
-  const platformIcons: Record<string, { icon: string; color: string; url: string; imageUrl: string }> = {
-    'Spotify': { 
-      icon: '🎵', 
-      color: 'bg-green-600', 
-      url: 'https://spotify.com',
-      imageUrl: 'https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_White.png'
-    },
-    'Apple Music': { 
-      icon: '🍎', 
-      color: 'bg-red-600', 
-      url: 'https://music.apple.com',
-      imageUrl: 'https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg'
-    },
-    'YouTube Music': { 
-      icon: '📺', 
-      color: 'bg-red-500', 
-      url: 'https://music.youtube.com',
-      imageUrl: 'https://www.youtube.com/s/desktop/014c3cd3/img/favicon_32x32.png'
-    },
-    'Netflix': { 
-      icon: '📺', 
-      color: 'bg-red-700', 
-      url: 'https://netflix.com',
-      imageUrl: 'https://assets.nflxext.com/us/ffe/siteui/common/icons/nficon2016.ico'
-    },
-    'Prime Video': { 
-      icon: '📦', 
-      color: 'bg-blue-600', 
-      url: 'https://primevideo.com',
-      imageUrl: 'https://www.primevideo.com/assets/images/logo.png'
-    },
-    'Amazon Prime': { 
-      icon: '📦', 
-      color: 'bg-blue-600', 
-      url: 'https://primevideo.com',
-      imageUrl: 'https://www.primevideo.com/assets/images/logo.png'
-    },
-    'Max': { 
-      icon: '🔷', 
-      color: 'bg-blue-500', 
-      url: 'https://max.com',
-      imageUrl: 'https://www.max.com/favicon.ico'
-    },
-    'HBO Max': { 
-      icon: '🔷', 
-      color: 'bg-blue-500', 
-      url: 'https://max.com',
-      imageUrl: 'https://www.max.com/favicon.ico'
-    },
-    'Hulu': { 
-      icon: '🟢', 
-      color: 'bg-green-500', 
-      url: 'https://hulu.com',
-      imageUrl: 'https://www.hulu.com/static/favicon.ico'
-    },
-    'Disney+': { 
-      icon: '✨', 
-      color: 'bg-blue-700', 
-      url: 'https://disneyplus.com',
-      imageUrl: 'https://static-assets.bamgrid.com/web/favicons/favicon-32x32.png'
-    },
-    'Paramount+': { 
-      icon: '⭐', 
-      color: 'bg-blue-600', 
-      url: 'https://paramountplus.com',
-      imageUrl: 'https://www.paramountplus.com/favicon.ico'
-    },
-    'Deezer': { 
-      icon: '🎧', 
-      color: 'bg-purple-600', 
-      url: 'https://deezer.com',
-      imageUrl: 'https://e-cdns-images.dzcdn.net/images/common/favicon/favicon-32x32.png'
-    },
+  // Platform icons mapping
+  const platformIcons: Record<string, { icon: string; color: string; url: string }> = {
+    'Spotify': { icon: '🎵', color: 'bg-green-600', url: 'https://spotify.com' },
+    'Apple Music': { icon: '🍎', color: 'bg-red-600', url: 'https://music.apple.com' },
+    'YouTube Music': { icon: '📺', color: 'bg-red-500', url: 'https://music.youtube.com' },
+    'Netflix': { icon: '📺', color: 'bg-red-700', url: 'https://netflix.com' },
+    'Prime Video': { icon: '📦', color: 'bg-blue-600', url: 'https://primevideo.com' },
+    'Amazon Prime': { icon: '📦', color: 'bg-blue-600', url: 'https://primevideo.com' },
+    'Max': { icon: '🔷', color: 'bg-blue-500', url: 'https://max.com' },
+    'HBO Max': { icon: '🔷', color: 'bg-blue-500', url: 'https://max.com' },
+    'Hulu': { icon: '🟢', color: 'bg-green-500', url: 'https://hulu.com' },
+    'Disney+': { icon: '✨', color: 'bg-blue-700', url: 'https://disneyplus.com' },
+    'Paramount+': { icon: '⭐', color: 'bg-blue-600', url: 'https://paramountplus.com' },
+    'Deezer': { icon: '🎧', color: 'bg-purple-600', url: 'https://deezer.com' },
   }
 
   // Calculate rating
@@ -817,7 +759,7 @@ export default function HomePage() {
             </div>
           </>
         ) : (
-          // MUSIC TAB - No Deezer search here, only categories
+          // MUSIC TAB - Categories should show here
           <>
             <HeroCarousel 
               items={allContent.slice(0, 3)} 
@@ -826,19 +768,65 @@ export default function HomePage() {
               activeTab={activeTab} 
             />
             <div className="container mx-auto px-4">
-              {categories.map((category) => (
-                <ContentRow 
-                  key={category.id}
-                  title={category.name}
-                  items={contentByCategory[category.name] || []}
-                  type={activeTab}
-                  onViewDetails={handleViewDetails}
-                  onRecommend={handleRecommend}
-                  onAddToWatchlist={addToWatchlist}
-                  onRemoveFromWatchlist={removeFromWatchlist}
-                  isInWatchlist={isInWatchlist}
-                />
-              ))}
+              {categories.length > 0 ? (
+                categories.map((category) => (
+                  <ContentRow 
+                    key={category.id}
+                    title={category.name}
+                    items={contentByCategory[category.name] || []}
+                    type={activeTab}
+                    onViewDetails={handleViewDetails}
+                    onRecommend={handleRecommend}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                  />
+                ))
+              ) : (
+                // Fallback default music categories if none in database
+                <>
+                  <ContentRow 
+                    title="🔥 Trending Music"
+                    items={allContent.filter(c => c.stats_highly > 0).slice(0, 10)}
+                    type="music"
+                    onViewDetails={handleViewDetails}
+                    onRecommend={handleRecommend}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                  />
+                  <ContentRow 
+                    title="🎤 Top Artists"
+                    items={allContent.slice(0, 8)}
+                    type="music"
+                    onViewDetails={handleViewDetails}
+                    onRecommend={handleRecommend}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                  />
+                  <ContentRow 
+                    title="✨ New Releases"
+                    items={allContent.slice(0, 8)}
+                    type="music"
+                    onViewDetails={handleViewDetails}
+                    onRecommend={handleRecommend}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                  />
+                  <ContentRow 
+                    title="🎵 Pop Hits"
+                    items={allContent.filter(c => c.genre === 'Pop').slice(0, 8)}
+                    type="music"
+                    onViewDetails={handleViewDetails}
+                    onRecommend={handleRecommend}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                  />
+                </>
+              )}
               <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
             </div>
           </>
@@ -886,17 +874,12 @@ export default function HomePage() {
                 </div>
               </div>
               
-              {/* Where to Watch / Listen - Platform Icons with Real Images */}
+              {/* Where to Watch / Listen - Platform Icons */}
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
                 <div className="flex flex-wrap gap-3">
                   {selectedContent.platforms?.map((platform: string, idx: number) => {
-                    const info = platformIcons[platform] || { 
-                      icon: '🎬', 
-                      color: 'bg-gray-600', 
-                      url: '#',
-                      imageUrl: ''
-                    }
+                    const info = platformIcons[platform] || { icon: '🎬', color: 'bg-gray-600', url: '#' }
                     return (
                       <a 
                         key={idx} 
@@ -906,11 +889,7 @@ export default function HomePage() {
                         className={`flex items-center gap-2 px-3 py-2 ${info.color} rounded-lg text-sm font-medium hover:opacity-80 transition`}
                         title={platform}
                       >
-                        {info.imageUrl ? (
-                          <img src={info.imageUrl} alt={platform} className="w-5 h-5 object-contain" />
-                        ) : (
-                          <span className="text-base">{info.icon}</span>
-                        )}
+                        <span className="text-base">{info.icon}</span>
                         <span className="hidden sm:inline">{platform}</span>
                       </a>
                     )
