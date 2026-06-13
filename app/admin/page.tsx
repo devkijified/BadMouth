@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { 
   Plus, Edit, Trash2, Film, Music, Layers, Shield, X, 
   Users, TrendingUp, Settings, Heart, Star, Search as SearchIcon,
-  Loader2
+  Loader2, Tv
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -72,15 +72,15 @@ export default function AdminPage() {
   const [deezerSearchQuery, setDeezerSearchQuery] = useState('')
   const [searchingDeezer, setSearchingDeezer] = useState(false)
   
-  // TMDB search states (for Movies) - WITH YOUR ACTUAL API KEY
+  // TMDB search states (for Movies & TV Shows)
   const [tmdbSearchResults, setTmdbSearchResults] = useState<any[]>([])
   const [showTmdbSearch, setShowTmdbSearch] = useState(false)
   const [tmdbSearchQuery, setTmdbSearchQuery] = useState('')
   const [searchingTmdb, setSearchingTmdb] = useState(false)
+  const [tmdbSearchType, setTmdbSearchType] = useState<'movie' | 'tv'>('movie')
   
   // YOUR TMDB API CREDENTIALS
   const TMDB_API_KEY = 'e40a2dd7da8c15d302e6790211dd958f'
-  const TMDB_READ_ACCESS_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJlNDBhMmRkN2RhOGMxNWQzMDJlNjc5MDIxMWRkOTU4ZiIsIm5iZiI6MTc4MTM2Njg4Mi4xODUsInN1YiI6IjZhMmQ4MDYyM2E1YzU5YjhlZDc1MTgyZSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.mvpajVP4SnCrjaxRI7bkRwj5FZWXyDVeP0VazrRbTJ4'
 
   // Category form state
   const [categoryForm, setCategoryForm] = useState({
@@ -178,7 +178,7 @@ export default function AdminPage() {
   }
 
   // ============================================
-  // DEEZER API (for Music) - WORKING
+  // DEEZER API (for Music)
   // ============================================
   const searchDeezerForMusic = async () => {
     if (!deezerSearchQuery.trim()) {
@@ -238,85 +238,101 @@ export default function AdminPage() {
   }
 
   // ============================================
-  // TMDB API (for Movies) - WORKING WITH YOUR API KEY
+  // TMDB API (for Movies & TV Shows)
   // ============================================
-  const searchTmdbForMovies = async () => {
+  const searchTmdb = async () => {
     if (!tmdbSearchQuery.trim()) {
-      toast.error('Please enter a movie title')
+      toast.error('Please enter a title to search')
       return
     }
     
     setSearchingTmdb(true)
     try {
-      // Search for movies using TMDB API with your key
-      const response = await fetch(
-        `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(tmdbSearchQuery)}&language=en-US&page=1`
-      )
+      let url = ''
+      if (tmdbSearchType === 'movie') {
+        url = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(tmdbSearchQuery)}&language=en-US&page=1`
+      } else {
+        url = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(tmdbSearchQuery)}&language=en-US&page=1`
+      }
+      
+      const response = await fetch(url)
       const data = await response.json()
       
       if (data.results && data.results.length > 0) {
         setTmdbSearchResults(data.results)
-        toast.success(`Found ${data.results.length} movies on TMDB`)
+        toast.success(`Found ${data.results.length} ${tmdbSearchType === 'movie' ? 'movies' : 'TV shows'} on TMDB`)
       } else {
         setTmdbSearchResults([])
-        toast.error('No results found. Try a different movie title.')
+        toast.error('No results found. Try a different title.')
       }
     } catch (error) {
       console.error('TMDB search error:', error)
-      toast.error('Failed to search movies. Check your API key.')
+      toast.error('Failed to search. Check your API key.')
     } finally {
       setSearchingTmdb(false)
     }
   }
 
-  const fetchMovieDetailsFromTmdb = async (movieId: number) => {
+  const fetchDetailsFromTmdb = async (id: number, type: 'movie' | 'tv') => {
     try {
-      const response = await fetch(
-        `https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits`
-      )
+      const url = `https://api.themoviedb.org/3/${type}/${id}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits`
+      const response = await fetch(url)
       const data = await response.json()
       return data
     } catch (error) {
-      console.error('Error fetching movie details:', error)
+      console.error('Error fetching details:', error)
       return null
     }
   }
 
-  const importFromTmdb = async (movie: any) => {
+  const importFromTmdb = async (item: any, type: 'movie' | 'tv') => {
     setSearchingTmdb(true)
     try {
-      // Fetch full movie details including credits
-      const details = await fetchMovieDetailsFromTmdb(movie.id)
+      const details = await fetchDetailsFromTmdb(item.id, type)
       
-      // Extract director
-      const director = details?.credits?.crew?.find((person: any) => person.job === 'Director')?.name || ''
+      // Extract director (for movies) or creators (for TV)
+      let director = ''
+      let cast: string[] = []
+      let runtime = ''
+      let title = ''
+      let year = new Date().getFullYear()
       
-      // Extract top 5 cast members
-      const cast = details?.credits?.cast?.slice(0, 5).map((actor: any) => actor.name) || []
+      if (type === 'movie') {
+        title = item.title
+        year = new Date(item.release_date).getFullYear() || new Date().getFullYear()
+        director = details?.credits?.crew?.find((person: any) => person.job === 'Director')?.name || ''
+        cast = details?.credits?.cast?.slice(0, 5).map((actor: any) => actor.name) || []
+        runtime = details?.runtime ? `${Math.floor(details.runtime / 60)}h ${details.runtime % 60}min` : ''
+      } else {
+        title = item.name
+        year = new Date(item.first_air_date).getFullYear() || new Date().getFullYear()
+        director = details?.created_by?.map((creator: any) => creator.name).join(', ') || ''
+        cast = details?.credits?.cast?.slice(0, 5).map((actor: any) => actor.name) || []
+        runtime = details?.episode_run_time?.[0] ? `${details.episode_run_time[0]} min per episode` : ''
+      }
       
-      // Get poster and backdrop URLs
-      const posterUrl = movie.poster_path 
-        ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` 
-        : `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(movie.title)}`
+      const posterUrl = item.poster_path 
+        ? `https://image.tmdb.org/t/p/w500${item.poster_path}` 
+        : `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(title)}`
       
-      const backdropUrl = movie.backdrop_path 
-        ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` 
+      const backdropUrl = item.backdrop_path 
+        ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` 
         : posterUrl
       
       setContentForm({
         ...contentForm,
-        title: movie.title,
-        description: movie.overview || `"${movie.title}" is a great movie worth watching.`,
-        long_description: movie.overview || `"${movie.title}" is a cinematic masterpiece.`,
+        title: title,
+        description: item.overview || `"${title}" is a great ${type === 'movie' ? 'movie' : 'TV series'} worth watching.`,
+        long_description: item.overview || `"${title}" is a ${type === 'movie' ? 'cinematic masterpiece' : 'must-watch series'}.`,
         image_url: posterUrl,
         backdrop_url: backdropUrl,
-        type: 'movie',
-        year: new Date(movie.release_date).getFullYear() || new Date().getFullYear(),
+        type: 'movie', // Both movies and TV shows go into movie type for now
+        year: year,
         director: director,
         actors: cast.join(', '),
-        platforms: 'Netflix, Prime Video, Max, Apple TV+',
-        runtime: details?.runtime ? `${Math.floor(details.runtime / 60)}h ${details.runtime % 60}min` : '',
-        genre: movie.genre_ids?.length ? 'Movie' : 'Drama',
+        platforms: 'Netflix, Prime Video, Max, Apple TV+, Disney+',
+        runtime: runtime,
+        genre: type === 'movie' ? 'Movie' : 'TV Series',
         stats_highly: Math.floor(Math.random() * 1000) + 500,
         stats_recommended: Math.floor(Math.random() * 500) + 200,
         stats_not: 0,
@@ -325,10 +341,10 @@ export default function AdminPage() {
       setShowTmdbSearch(false)
       setTmdbSearchQuery('')
       setTmdbSearchResults([])
-      toast.success(`Imported "${movie.title}" from TMDB!`)
+      toast.success(`Imported "${title}" from TMDB!`)
     } catch (error) {
       console.error('Import error:', error)
-      toast.error('Failed to import movie details')
+      toast.error('Failed to import details')
     } finally {
       setSearchingTmdb(false)
     }
@@ -613,8 +629,8 @@ export default function AdminPage() {
             <h2 className="text-xl font-bold mb-4">System Settings</h2>
             <div className="space-y-4">
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">About Display Order</h3><p className="text-sm text-gray-400">The "Order" field in categories determines how they appear on the main page. Lower numbers appear first (higher priority).</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Deezer API Integration</h3><p className="text-sm text-gray-400">When adding music, use the "Search on Deezer" button to automatically fetch song details, album art, and preview URLs.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TMDB Movie API</h3><p className="text-sm text-gray-400">When adding movies, use the "Search on TMDB" button to automatically fetch movie details, poster, cast, and runtime.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Deezer API Integration</h3><p className="text-sm text-gray-400">Search and import music from Deezer.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TMDB API Integration</h3><p className="text-sm text-gray-400">Search and import both Movies AND TV Shows from TMDB.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Recommendation Tiers</h3><p className="text-sm text-gray-400">🔥 HIGHLY RECOMMENDED - Best content that users love. 👍 RECOMMENDED - Good content worth watching. 👎 NOT RECOMMENDED - Content users suggest to skip.</p></div>
             </div>
           </div>
@@ -659,29 +675,47 @@ export default function AdminPage() {
               
               {contentForm.type === 'movie' ? (
                 <>
-                  {/* TMDB Search for Movies */}
+                  {/* TMDB Search for Movies & TV Shows */}
                   <div className="mb-2">
                     <button type="button" onClick={() => setShowTmdbSearch(!showTmdbSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1">
-                      {showTmdbSearch ? '− Hide TMDB Search' : '+ Search on TMDB (Movies)'}
+                      {showTmdbSearch ? '− Hide TMDB Search' : '+ Search on TMDB (Movies & TV Shows)'}
                     </button>
                     
                     {showTmdbSearch && (
                       <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
                         <div className="flex gap-2">
-                          <input type="text" placeholder="Search for a movie on TMDB..." value={tmdbSearchQuery} onChange={(e) => setTmdbSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchTmdbForMovies()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm" />
-                          <button onClick={searchTmdbForMovies} disabled={searchingTmdb} className="px-4 py-2 bg-teal-600 rounded hover:bg-teal-700 transition disabled:opacity-50">
-                            {searchingTmdb ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
-                          </button>
+                          <input type="text" placeholder="Search for a movie or TV show..." value={tmdbSearchQuery} onChange={(e) => setTmdbSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchTmdb()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm" />
+                          <div className="flex gap-1">
+                            <button 
+                              onClick={() => { setTmdbSearchType('movie'); searchTmdb(); }} 
+                              disabled={searchingTmdb} 
+                              className={`px-3 py-2 rounded transition ${tmdbSearchType === 'movie' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+                            >
+                              <Film size={16} />
+                            </button>
+                            <button 
+                              onClick={() => { setTmdbSearchType('tv'); searchTmdb(); }} 
+                              disabled={searchingTmdb} 
+                              className={`px-3 py-2 rounded transition ${tmdbSearchType === 'tv' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+                            >
+                              <Tv size={16} />
+                            </button>
+                          </div>
                         </div>
                         
                         {tmdbSearchResults.length > 0 && (
                           <div className="space-y-2 max-h-64 overflow-y-auto">
-                            {tmdbSearchResults.map((movie) => (
-                              <div key={movie.id} onClick={() => importFromTmdb(movie)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition">
-                                <img src={movie.poster_path ? `https://image.tmdb.org/t/p/w92${movie.poster_path}` : '/api/placeholder/92/138'} alt={movie.title} className="w-12 h-16 rounded object-cover" />
+                            {tmdbSearchResults.map((item) => (
+                              <div key={item.id} onClick={() => importFromTmdb(item, tmdbSearchType)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition">
+                                <img src={item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : '/api/placeholder/92/138'} alt={tmdbSearchType === 'movie' ? item.title : item.name} className="w-12 h-16 rounded object-cover" />
                                 <div className="flex-1 min-w-0">
-                                  <p className="font-medium text-sm truncate">{movie.title}</p>
-                                  <p className="text-xs text-gray-400 truncate">{movie.release_date?.split('-')[0] || 'Unknown year'}</p>
+                                  <p className="font-medium text-sm truncate">{tmdbSearchType === 'movie' ? item.title : item.name}</p>
+                                  <p className="text-xs text-gray-400 truncate">
+                                    {tmdbSearchType === 'movie' 
+                                      ? (item.release_date?.split('-')[0] || 'Unknown year')
+                                      : (item.first_air_date?.split('-')[0] || 'Unknown year')}
+                                  </p>
+                                  <p className="text-xs text-gray-500">{tmdbSearchType === 'movie' ? '🎬 Movie' : '📺 TV Show'}</p>
                                 </div>
                                 <button className="text-teal-400 text-sm whitespace-nowrap">Import →</button>
                               </div>
@@ -692,9 +726,9 @@ export default function AdminPage() {
                     )}
                   </div>
                   
-                  <input type="text" placeholder="Director" value={contentForm.director} onChange={e => setContentForm({ ...contentForm, director: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                  <input type="text" placeholder="Director / Creator" value={contentForm.director} onChange={e => setContentForm({ ...contentForm, director: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                   <input type="text" placeholder="Cast (comma separated)" value={contentForm.actors} onChange={e => setContentForm({ ...contentForm, actors: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-                  <input type="text" placeholder="Runtime (e.g., 2h 30min)" value={contentForm.runtime} onChange={e => setContentForm({ ...contentForm, runtime: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                  <input type="text" placeholder="Runtime" value={contentForm.runtime} onChange={e => setContentForm({ ...contentForm, runtime: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                 </>
               ) : (
                 <>
