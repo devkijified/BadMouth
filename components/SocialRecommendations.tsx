@@ -38,6 +38,12 @@ interface Recommendation {
     stats_recommended: number
     stats_not: number
     rating_scale: number
+    platforms?: string[]
+    director?: string
+    actors?: string[]
+    runtime?: string
+    duration?: string
+    trailer_url?: string
   }
 }
 
@@ -83,7 +89,7 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
       
       console.log('Found recommendations:', recsData.length)
       
-      // Step 2: Get unique user IDs (without Set spread operator)
+      // Step 2: Get unique user IDs
       const userIdMap: Record<string, boolean> = {}
       recsData.forEach(rec => {
         userIdMap[rec.user_id] = true
@@ -100,14 +106,14 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
         console.error('Error loading profiles:', profilesError)
       }
       
-      // Step 4: Get unique content IDs (without Set spread operator)
+      // Step 4: Get unique content IDs
       const contentIdMap: Record<string, boolean> = {}
       recsData.forEach(rec => {
         contentIdMap[rec.content_id] = true
       })
       const contentIds = Object.keys(contentIdMap)
       
-      // Step 5: Get content details
+      // Step 5: Get content details with all fields
       const { data: contentsData, error: contentsError } = await supabase
         .from('content')
         .select('*')
@@ -159,7 +165,13 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
             stats_highly: content?.stats_highly || 0,
             stats_recommended: content?.stats_recommended || 0,
             stats_not: content?.stats_not || 0,
-            rating_scale: content?.rating_scale || 0
+            rating_scale: content?.rating_scale || 0,
+            platforms: content?.platforms || [],
+            director: content?.director || null,
+            actors: content?.actors || [],
+            runtime: content?.runtime || null,
+            duration: content?.duration || null,
+            trailer_url: content?.trailer_url || null
           }
         }
       })
@@ -230,28 +242,28 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
           const avatarUrl = rec.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`
           const isCurrentUser = user?.id === rec.user_id
           
-         const fullContent: ContentItem = {
-  id: rec.content.id,
-  title: rec.content.title,
-  description: rec.content.description,
-  long_description: rec.content.description,
-  image_url: rec.content.image_url,
-  backdrop_url: rec.content.image_url,
-  type: rec.content.type as 'movie' | 'music',
-  year: rec.content.year,
-  director: rec.content.director || null,
-  artist: rec.content.artist,
-  actors: rec.content.actors || null,
-  platforms: rec.content.platforms || ['Netflix', 'Prime Video', 'Max', 'Spotify', 'Apple Music'], // Add fallback platforms
-  trailer_url: rec.content.trailer_url || null,
-  runtime: rec.content.runtime || null,
-  duration: rec.content.duration || null,
-  genre: rec.content.genre,
-  stats_highly: rec.content.stats_highly,
-  stats_recommended: rec.content.stats_recommended,
-  stats_not: rec.content.stats_not,
-  rating_scale: rec.content.rating_scale
-}
+          const fullContent: ContentItem = {
+            id: rec.content.id,
+            title: rec.content.title,
+            description: rec.content.description,
+            long_description: rec.content.description,
+            image_url: rec.content.image_url,
+            backdrop_url: rec.content.image_url,
+            type: rec.content.type as 'movie' | 'music',
+            year: rec.content.year,
+            director: rec.content.director || null,
+            artist: rec.content.artist,
+            actors: rec.content.actors || null,
+            platforms: rec.content.platforms || [],
+            trailer_url: rec.content.trailer_url || null,
+            runtime: rec.content.runtime || null,
+            duration: rec.content.duration || null,
+            genre: rec.content.genre,
+            stats_highly: rec.content.stats_highly,
+            stats_recommended: rec.content.stats_recommended,
+            stats_not: rec.content.stats_not,
+            rating_scale: rec.content.rating_scale
+          }
           
           return (
             <div 
