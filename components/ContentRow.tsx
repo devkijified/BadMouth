@@ -29,6 +29,7 @@ export default function ContentRow({
   maxItems = 10
 }: ContentRowProps) {
   const router = useRouter()
+  // IMPORTANT: DO NOT re-sort items - preserve the order from the database
   const displayItems = items.slice(0, maxItems)
   
   const scroll = (direction: 'left' | 'right') => {
@@ -78,8 +79,8 @@ export default function ContentRow({
           className="flex gap-3 sm:gap-4 overflow-x-auto scroll-container px-4 pb-4" 
           style={{ scrollBehavior: 'smooth' }}
         >
-          {displayItems.map((item) => (
-            <div key={item.id} className="flex-shrink-0 w-[140px] xs:w-[160px] md:w-[200px] group/item">
+          {displayItems.map((item, idx) => (
+            <div key={`${item.id}-${idx}`} className="flex-shrink-0 w-[140px] xs:w-[160px] md:w-[200px] group/item">
               <div className="relative rounded-lg overflow-hidden bg-gray-800 cursor-pointer" onClick={() => onViewDetails(item)}>
                 <img 
                   src={item.image_url} 
@@ -140,22 +141,18 @@ export default function ContentRow({
                     )}
                   </div>
                 ) : null}
-                {/* Mobile responsive stats - text hidden on small screens, only emojis and numbers */}
                 <div className="flex justify-between mt-1">
                   <span className="flex items-center gap-0.5">
                     <span className="text-teal-500 text-[9px] xs:text-xs">🔥</span>
                     <span className="text-[8px] xs:text-[9px] text-gray-300">{item.stats_highly || 0}</span>
-                    <span className="hidden sm:inline text-[8px] xs:text-[9px] text-gray-500">HIGHLY</span>
                   </span>
                   <span className="flex items-center gap-0.5">
                     <span className="text-blue-500 text-[9px] xs:text-xs">👍</span>
                     <span className="text-[8px] xs:text-[9px] text-gray-300">{item.stats_recommended || 0}</span>
-                    <span className="hidden sm:inline text-[8px] xs:text-[9px] text-gray-500">REC</span>
                   </span>
                   <span className="flex items-center gap-0.5">
                     <span className="text-gray-500 text-[9px] xs:text-xs">👎</span>
                     <span className="text-[8px] xs:text-[9px] text-gray-300">{item.stats_not || 0}</span>
-                    <span className="hidden sm:inline text-[8px] xs:text-[9px] text-gray-500">NOT</span>
                   </span>
                 </div>
               </div>
