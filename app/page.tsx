@@ -904,32 +904,91 @@ const loadMyRecommendations = async () => {
               <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
             </div>
           </>
-        ) : currentPage === 'movies' ? (
-          <>
-            <HeroCarousel 
-              items={allContent.slice(0, 3)} 
-              onViewDetails={handleViewDetails} 
+{currentPage === 'movies' ? (
+  <>
+    <HeroCarousel 
+      items={allContent.slice(0, 3)} 
+      onViewDetails={handleViewDetails} 
+      onRecommend={handleRecommend}
+      activeTab={activeTab} 
+    />
+    <div className="container mx-auto px-4">
+      {/* Display Trending Now first - with fallback content if no categories */}
+      {categories.length > 0 ? (
+        <>
+          {/* Show Trending Now if it exists */}
+          {categories.some(c => c.name === '🔥 Trending Now') ? (
+            categories.filter(c => c.name === '🔥 Trending Now').map((category) => (
+              <ContentRow 
+                key={category.id}
+                title={category.name}
+                items={contentByCategory[category.name] || allContent.slice(0, 10)}
+                type={activeTab}
+                onViewDetails={handleViewDetails}
+                onRecommend={handleRecommend}
+                onAddToWatchlist={addToWatchlist}
+                onRemoveFromWatchlist={removeFromWatchlist}
+                isInWatchlist={isInWatchlist}
+              />
+            ))
+          ) : (
+            // Fallback Trending row if category doesn't exist
+            <ContentRow 
+              title="🔥 Trending Now"
+              items={allContent.slice(0, 10)}
+              type={activeTab}
+              onViewDetails={handleViewDetails}
               onRecommend={handleRecommend}
-              activeTab={activeTab} 
+              onAddToWatchlist={addToWatchlist}
+              onRemoveFromWatchlist={removeFromWatchlist}
+              isInWatchlist={isInWatchlist}
             />
-            <div className="container mx-auto px-4">
-              {categories.map((category) => (
-                <ContentRow 
-                  key={category.id}
-                  title={category.name}
-                  items={contentByCategory[category.name] || []}
-                  type={activeTab}
-                  onViewDetails={handleViewDetails}
-                  onRecommend={handleRecommend}
-                  onAddToWatchlist={addToWatchlist}
-                  onRemoveFromWatchlist={removeFromWatchlist}
-                  isInWatchlist={isInWatchlist}
-                />
-              ))}
-              <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
-            </div>
-          </>
-        ) : (
+          )}
+          
+          {/* Show other categories (excluding Trending Now) */}
+          {categories.filter(c => c.name !== '🔥 Trending Now').map((category) => (
+            <ContentRow 
+              key={category.id}
+              title={category.name}
+              items={contentByCategory[category.name] || []}
+              type={activeTab}
+              onViewDetails={handleViewDetails}
+              onRecommend={handleRecommend}
+              onAddToWatchlist={addToWatchlist}
+              onRemoveFromWatchlist={removeFromWatchlist}
+              isInWatchlist={isInWatchlist}
+            />
+          ))}
+        </>
+      ) : (
+        // Fallback if no categories exist at all
+        <>
+          <ContentRow 
+            title="🔥 Trending Now"
+            items={allContent.slice(0, 10)}
+            type={activeTab}
+            onViewDetails={handleViewDetails}
+            onRecommend={handleRecommend}
+            onAddToWatchlist={addToWatchlist}
+            onRemoveFromWatchlist={removeFromWatchlist}
+            isInWatchlist={isInWatchlist}
+          />
+          <ContentRow 
+            title="🍿 Popular Movies"
+            items={allContent.slice(10, 20)}
+            type={activeTab}
+            onViewDetails={handleViewDetails}
+            onRecommend={handleRecommend}
+            onAddToWatchlist={addToWatchlist}
+            onRemoveFromWatchlist={removeFromWatchlist}
+            isInWatchlist={isInWatchlist}
+          />
+        </>
+      )}
+      <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
+    </div>
+  </>
+) : null}(
           <>
             <HeroCarousel 
               items={allContent.slice(0, 3)} 
