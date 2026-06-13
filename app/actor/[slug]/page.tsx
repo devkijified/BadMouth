@@ -3,12 +3,12 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
-import { ArrowLeft, Film, Music, Star, User as UserIcon } from 'lucide-react'
+import { ArrowLeft, Film, Music, Star, User as UserIcon, Heart } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ContentItem } from '@/types/content'
-import ContentRow from '@/components/ContentRow'
 import RecommendModal from '@/components/RecommendModal'
+import toast from 'react-hot-toast'
 
 interface ActorPageProps {
   params: {
@@ -26,6 +26,7 @@ export default function ActorPage({ params }: ActorPageProps) {
   const [showRecommendModal, setShowRecommendModal] = useState(false)
   const [recommendItem, setRecommendItem] = useState<ContentItem | null>(null)
   const [watchlist, setWatchlist] = useState<ContentItem[]>([])
+  const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const decodedName = decodeURIComponent(params.slug)
@@ -35,28 +36,72 @@ export default function ActorPage({ params }: ActorPageProps) {
   }, [params.slug])
 
   const loadWatchlist = async () => {
-    const saved = localStorage.getItem('badmouth_watchlist')
-    if (saved) {
-      try {
-        setWatchlist(JSON.parse(saved))
-      } catch (e) {}
-    }
-  }
-
-  const addToWatchlist = (item: ContentItem) => {
-    if (watchlist.some(i => i.id === item.id)) {
-      setWatchlist(watchlist.filter(i => i.id !== item.id))
+    if (user) {
+      // Load from Supabase
+      const { data } = await supabase
+        .from('watchlist')
+        .select('*, content(*)')
+        .eq('user_id', user.id)
+      
+      if (data) {
+        const items = data.map((item: any) => item.content)
+        setWatchlist(items)
+        setWatchlistIds(new Set(items.map((i: ContentItem) => i.id)))
+      }
     } else {
-      setWatchlist([...watchlist, item])
+      // Load from localStorage
+      const saved = localStorage.getItem('badmouth_watchlist')
+      if (saved) {
+        try {
+          const items = JSON.parse(saved)
+          setWatchlist(items)
+          setWatchlistIds(new Set(items.map((i: ContentItem) => i.id)))
+        } catch (e) {
+          console.error('Failed to parse watchlist', e)
+        }
+      }
     }
-    localStorage.setItem('badmouth_watchlist', JSON.stringify(watchlist))
   }
 
-  const removeFromWatchlist = (id: string) => {
-    setWatchlist(watchlist.filter(i => i.id !== id))
+  const addToWatchlist = async (item: ContentItem) => {
+    if (watchlistIds.has(item.id)) {
+      // Remove from watchlist
+      const newWatchlist = watchlist.filter(i => i.id !== item.id)
+      setWatchlist(newWatchlist)
+      setWatchlistIds(new Set(newWatchlist.map(i => i.id)))
+      
+      if (user) {
+        await supabase
+          .from('watchlist')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('content_id', item.id)
+      } else {
+        localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
+      }
+      toast.success(`Removed "${item.title}" from watchlist`)
+    } else {
+      // Add to watchlist
+      const newWatchlist = [...watchlist, item]
+      setWatchlist(newWatchlist)
+      setWatchlistIds(new Set(newWatchlist.map(i => i.id)))
+      
+      if (user) {
+        await supabase
+          .from('watchlist')
+          .insert({
+            user_id: user.id,
+            content_id: item.id,
+            content_type: item.type
+          })
+      } else {
+        localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
+      }
+      toast.success(`✨ "${item.title}" added to watchlist!`)
+    }
   }
 
-  const isInWatchlist = (id: string) => watchlist.some(i => i.id === id)
+  const isInWatchlist = (id: string) => watchlistIds.has(id)
 
   const loadActorContent = async (name: string) => {
     setLoading(true)
@@ -89,13 +134,6 @@ export default function ActorPage({ params }: ActorPageProps) {
 
   const handleRecommendSuccess = () => {
     loadActorContent(actorName)
-  }
-
-  const handleViewDetails = (item: ContentItem) => {
-    // Close modal and navigate back to home with content selected
-    router.push('/')
-    // Store in sessionStorage to show modal on home
-    sessionStorage.setItem('selectedContent', JSON.stringify(item))
   }
 
   const getRating = (item: ContentItem) => {
@@ -199,6 +237,11 @@ export default function ActorPage({ params }: ActorPageProps) {
                         {isInWatchlist(movie.id) ? 'In Watchlist' : 'Add to Watchlist'}
                       </button>
                     </div>
+                    {isInWatchlist(movie.id) && (
+                      <div className="absolute top-2 right-2 bg-teal-600 rounded-full p-1">
+                        <Heart size={12} className="fill-white" />
+                      </div>
+                    )}
                   </div>
                   <div className="mt-2">
                     <h3 className="font-semibold text-sm truncate">{movie.title}</h3>
@@ -247,6 +290,11 @@ export default function ActorPage({ params }: ActorPageProps) {
                         {isInWatchlist(song.id) ? 'In Watchlist' : 'Add to Watchlist'}
                       </button>
                     </div>
+                    {isInWatchlist(song.id) && (
+                      <div className="absolute top-2 right-2 bg-teal-600 rounded-full p-1">
+                        <Heart size={12} className="fill-white" />
+                      </div>
+                    )}
                   </div>
                   <div className="mt-2">
                     <h3 className="font-semibold text-sm truncate">{song.title}</h3>
