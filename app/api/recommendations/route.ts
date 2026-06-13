@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
       recommendation_tier: rec.recommendation_tier,
       comment: rec.comment,
       created_at: rec.created_at,
+      updated_at: rec.updated_at,
       profiles: Array.isArray(rec.profiles) ? rec.profiles[0] : rec.profiles,
       content: Array.isArray(rec.content) ? rec.content[0] : rec.content
     }))
@@ -50,32 +51,10 @@ export async function POST(req: NextRequest) {
     }
     
     let oldTier: string | null = null
-    let contentData: any = null
+    let recId = existing_id
     
-    // If updating existing recommendation
-    if (existing_id) {
-      // Get old recommendation tier to adjust stats
-      const { data: oldRec } = await supabase
-        .from('recommendations')
-        .select('recommendation_tier')
-        .eq('id', existing_id)
-        .single()
-      
-      oldTier = oldRec?.recommendation_tier || null
-      
-      // Update the recommendation
-      const { error: updateError } = await supabase
-        .from('recommendations')
-        .update({
-          recommendation_tier,
-          comment: comment || null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', existing_id)
-      
-      if (updateError) throw updateError
-    } else {
-      // Check if already exists (prevent duplicate)
+    // If no existing_id provided, check if user already has a recommendation
+    if (!recId) {
       const { data: existing } = await supabase
         .from('recommendations')
         .select('id, recommendation_tier')
@@ -84,32 +63,44 @@ export async function POST(req: NextRequest) {
         .maybeSingle()
       
       if (existing) {
-        // Update instead of creating new
-        const { error: updateError } = await supabase
-          .from('recommendations')
-          .update({
-            recommendation_tier,
-            comment: comment || null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existing.id)
-        
-        if (updateError) throw updateError
+        recId = existing.id
         oldTier = existing.recommendation_tier
-      } else {
-        // Insert new recommendation
-        const { error: insertError } = await supabase
-          .from('recommendations')
-          .insert({
-            user_id: session.user.id,
-            content_id,
-            content_type,
-            recommendation_tier,
-            comment: comment || null
-          })
-        
-        if (insertError) throw insertError
       }
+    } else {
+      // Get old tier for the existing recommendation
+      const { data: oldRec } = await supabase
+        .from('recommendations')
+        .select('recommendation_tier')
+        .eq('id', existing_id)
+        .single()
+      oldTier = oldRec?.recommendation_tier || null
+    }
+    
+    if (recId) {
+      // UPDATE existing recommendation
+      const { error: updateError } = await supabase
+        .from('recommendations')
+        .update({
+          recommendation_tier,
+          comment: comment || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', recId)
+      
+      if (updateError) throw updateError
+    } else {
+      // INSERT new recommendation
+      const { error: insertError } = await supabase
+        .from('recommendations')
+        .insert({
+          user_id: session.user.id,
+          content_id,
+          content_type,
+          recommendation_tier,
+          comment: comment || null
+        })
+      
+      if (insertError) throw insertError
     }
     
     // Get current content stats
@@ -120,19 +111,26 @@ export async function POST(req: NextRequest) {
       .single()
     
     // Calculate new stats
-    let newStats = { ...currentStats }
+    let newStats = { 
+      stats_highly: currentStats?.stats_highly || 0,
+      stats_recommended: currentStats?.stats_recommended || 0,
+      stats_not: currentStats?.stats_not || 0
+    }
     
-    // Remove old tier if it exists
+    // Remove old tier if it exists (for updates)
     if (oldTier) {
-      if (oldTier === 'highly') newStats.stats_highly = Math.max(0, (newStats.stats_highly || 0) - 1)
-      else if (oldTier === 'recommended') newStats.stats_recommended = Math.max(0, (newStats.stats_recommended || 0) - 1)
-      else if (oldTier === 'not') newStats.stats_not = Math.max(0, (newStats.stats_not || 0) - 1)
+      if (oldTier === 'highly') newStats.stats_highly = Math.max(0, newStats.stats_highly - 1)
+      else if (oldTier === 'recommended') newStats.stats_recommended = Math.max(0, newStats.stats_recommended - 1)
+      else if (oldTier === 'not') newStats.stats_not = Math.max(0, newStats.stats_not - 1)
+    } else if (recId) {
+      // This handles the case where we found existing but didn't have oldTier
+      // We need to fetch the current stats to properly adjust
     }
     
     // Add new tier
-    if (recommendation_tier === 'highly') newStats.stats_highly = (newStats.stats_highly || 0) + 1
-    else if (recommendation_tier === 'recommended') newStats.stats_recommended = (newStats.stats_recommended || 0) + 1
-    else if (recommendation_tier === 'not') newStats.stats_not = (newStats.stats_not || 0) + 1
+    if (recommendation_tier === 'highly') newStats.stats_highly += 1
+    else if (recommendation_tier === 'recommended') newStats.stats_recommended += 1
+    else if (recommendation_tier === 'not') newStats.stats_not += 1
     
     // Update content stats
     await supabase
@@ -142,6 +140,17 @@ export async function POST(req: NextRequest) {
         stats_recommended: newStats.stats_recommended,
         stats_not: newStats.stats_not
       })
+      .eq('id', content_id)
+    
+    // Update rating_scale
+    const total = newStats.stats_highly + newStats.stats_recommended + newStats.stats_not
+    const ratingScale = total > 0 
+      ? Number(((newStats.stats_highly * 10 + newStats.stats_recommended * 7) / total).toFixed(1))
+      : 0
+    
+    await supabase
+      .from('content')
+      .update({ rating_scale: ratingScale })
       .eq('id', content_id)
     
     return NextResponse.json({ success: true })
