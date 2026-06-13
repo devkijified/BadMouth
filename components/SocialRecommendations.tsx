@@ -59,89 +59,107 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
   const loadRecommendations = async () => {
     setLoading(true)
     try {
-      // Fetch recommendations with the content data directly joined
-      const { data, error } = await supabase
+      // Step 1: Get recommendations
+      const { data: recsData, error: recsError } = await supabase
         .from('recommendations')
-        .select(`
-          id,
-          user_id,
-          content_id,
-          content_type,
-          recommendation_tier,
-          comment,
-          created_at,
-          updated_at,
-          profiles!user_id (
-            id,
-            username,
-            avatar_url
-          ),
-          content!content_id (
-            id,
-            title,
-            image_url,
-            type,
-            artist,
-            description,
-            year,
-            genre,
-            stats_highly,
-            stats_recommended,
-            stats_not,
-            rating_scale
-          )
-        `)
+        .select('*')
         .eq('content_type', activeTab)
         .order('created_at', { ascending: false })
         .limit(20)
       
-      if (error) {
-        console.error('Error loading recommendations:', error)
+      if (recsError) {
+        console.error('Error loading recommendations:', recsError)
         setRecommendations([])
         setLoading(false)
         return
       }
       
-      if (!data || data.length === 0) {
+      if (!recsData || recsData.length === 0) {
+        console.log('No recommendations found for type:', activeTab)
         setRecommendations([])
         setLoading(false)
         return
       }
       
-      // Transform the data
-      const transformed: Recommendation[] = data.map((rec: any) => ({
-        id: rec.id,
-        user_id: rec.user_id,
-        content_id: rec.content_id,
-        content_type: rec.content_type,
-        recommendation_tier: rec.recommendation_tier,
-        comment: rec.comment || '',
-        created_at: rec.created_at,
-        updated_at: rec.updated_at,
-        profiles: {
-          id: rec.profiles?.id || '',
-          username: rec.profiles?.username || 'Anonymous',
-          avatar_url: rec.profiles?.avatar_url || null
-        },
-        content: {
-          id: rec.content?.id || '',
-          title: rec.content?.title || 'Unknown Content',
-          image_url: rec.content?.image_url || '',
-          type: rec.content?.type || rec.content_type,
-          artist: rec.content?.artist || '',
-          description: rec.content?.description || '',
-          year: rec.content?.year || 0,
-          genre: rec.content?.genre || '',
-          stats_highly: rec.content?.stats_highly || 0,
-          stats_recommended: rec.content?.stats_recommended || 0,
-          stats_not: rec.content?.stats_not || 0,
-          rating_scale: rec.content?.rating_scale || 0
+      console.log('Found recommendations:', recsData.length)
+      
+      // Step 2: Get unique user IDs
+      const userIds = [...new Set(recsData.map(rec => rec.user_id))]
+      
+      // Step 3: Get profiles
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url')
+        .in('id', userIds)
+      
+      if (profilesError) {
+        console.error('Error loading profiles:', profilesError)
+      }
+      
+      // Step 4: Get unique content IDs
+      const contentIds = [...new Set(recsData.map(rec => rec.content_id))]
+      
+      // Step 5: Get content details
+      const { data: contentsData, error: contentsError } = await supabase
+        .from('content')
+        .select('*')
+        .in('id', contentIds)
+      
+      if (contentsError) {
+        console.error('Error loading content:', contentsError)
+      }
+      
+      // Create maps for quick lookup
+      const profileMap = new Map()
+      profilesData?.forEach(profile => {
+        profileMap.set(profile.id, profile)
+      })
+      
+      const contentMap = new Map()
+      contentsData?.forEach(content => {
+        contentMap.set(content.id, content)
+      })
+      
+      // Step 6: Merge all data
+      const merged: Recommendation[] = recsData.map(rec => {
+        const profile = profileMap.get(rec.user_id)
+        const content = contentMap.get(rec.content_id)
+        
+        return {
+          id: rec.id,
+          user_id: rec.user_id,
+          content_id: rec.content_id,
+          content_type: rec.content_type,
+          recommendation_tier: rec.recommendation_tier,
+          comment: rec.comment || '',
+          created_at: rec.created_at,
+          updated_at: rec.updated_at,
+          profiles: {
+            id: profile?.id || '',
+            username: profile?.username || 'Anonymous',
+            avatar_url: profile?.avatar_url || null
+          },
+          content: {
+            id: content?.id || '',
+            title: content?.title || 'Unknown Content',
+            image_url: content?.image_url || '',
+            type: content?.type || rec.content_type,
+            artist: content?.artist || '',
+            description: content?.description || '',
+            year: content?.year || 0,
+            genre: content?.genre || '',
+            stats_highly: content?.stats_highly || 0,
+            stats_recommended: content?.stats_recommended || 0,
+            stats_not: content?.stats_not || 0,
+            rating_scale: content?.rating_scale || 0
+          }
         }
-      }))
+      })
       
-      setRecommendations(transformed)
+      console.log('Merged recommendations:', merged.length)
+      setRecommendations(merged)
     } catch (error) {
-      console.error('Error loading recommendations:', error)
+      console.error('Error in loadRecommendations:', error)
       setRecommendations([])
     } finally {
       setLoading(false)
@@ -204,7 +222,6 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
           const avatarUrl = rec.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`
           const isCurrentUser = user?.id === rec.user_id
           
-          // Pass the FULL content object to onViewDetails
           const fullContent: ContentItem = {
             id: rec.content.id,
             title: rec.content.title,
