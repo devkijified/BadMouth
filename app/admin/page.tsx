@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { 
   Plus, Edit, Trash2, Film, Music, Layers, Shield, X, 
   Users, TrendingUp, Settings, Heart, Star, Search as SearchIcon,
-  Loader2, Tv
+  Loader2, Tv, AlertTriangle
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -65,6 +65,7 @@ export default function AdminPage() {
   // Search/filter states
   const [searchQuery, setSearchQuery] = useState('')
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | 'movie' | 'music'>('all')
+  const [categoryTypeFilter, setCategoryTypeFilter] = useState<'all' | 'movie' | 'music'>('all')
   
   // Deezer search states (for Music)
   const [deezerSearchResults, setDeezerSearchResults] = useState<any[]>([])
@@ -81,37 +82,6 @@ export default function AdminPage() {
   
   // YOUR TMDB API CREDENTIALS
   const TMDB_API_KEY = 'e40a2dd7da8c15d302e6790211dd958f'
-
-  // Platform logos mapping for accurate display
-  const platformLogos: Record<string, { name: string, logo: string }> = {
-    'Netflix': { name: 'Netflix', logo: '📺' },
-    'Prime Video': { name: 'Prime Video', logo: '📦' },
-    'Apple TV+': { name: 'Apple TV+', logo: '🍎' },
-    'Disney+': { name: 'Disney+', logo: '✨' },
-    'Max': { name: 'Max', logo: '🔷' },
-    'Hulu': { name: 'Hulu', logo: '🟢' },
-    'Paramount+': { name: 'Paramount+', logo: '⭐' },
-    'Peacock': { name: 'Peacock', logo: '🦚' },
-  }
-
-  // Platform provider mapping based on TMDB provider IDs
-  const getPlatformsFromProviderIds = (providerIds: number[]): string[] => {
-    const providerMap: Record<number, string> = {
-      8: 'Netflix',
-      9: 'Prime Video',
-      10: 'Amazon Prime',
-      15: 'Hulu',
-      337: 'Disney+',
-      384: 'Max',
-      2: 'Apple TV+',
-      3: 'Google Play',
-      7: 'Vudu',
-      20: 'Paramount+',
-    }
-    
-    const platforms = providerIds.map(id => providerMap[id]).filter(Boolean)
-    return platforms.length > 0 ? platforms : ['Prime Video', 'Netflix', 'Apple TV+']
-  }
 
   // Category form state
   const [categoryForm, setCategoryForm] = useState({
@@ -185,7 +155,11 @@ export default function AdminPage() {
   }
 
   const loadCategories = async () => {
-    const { data } = await supabase.from('categories').select('*').order('display_order')
+    let query = supabase.from('categories').select('*').order('display_order')
+    if (categoryTypeFilter !== 'all') {
+      query = query.eq('type', categoryTypeFilter)
+    }
+    const { data } = await query
     setCategories(data || [])
   }
 
@@ -206,6 +180,45 @@ export default function AdminPage() {
       .order('created_at', { ascending: false })
       .limit(50)
     setRecommendations(data || [])
+  }
+
+  // Delete all content
+  const deleteAllContent = async () => {
+    if (!confirm('⚠️ WARNING: This will delete ALL movies, music, and recommendations. This action cannot be undone. Are you absolutely sure?')) {
+      return
+    }
+    
+    try {
+      // Delete all recommendations first (foreign key constraint)
+      await supabase.from('recommendations').delete().neq('id', '')
+      // Delete all content
+      await supabase.from('content').delete().neq('id', '')
+      
+      toast.success('All content deleted successfully!')
+      loadContent()
+      loadRecommendations()
+    } catch (error) {
+      console.error('Error deleting content:', error)
+      toast.error('Failed to delete all content')
+    }
+  }
+
+  // Delete all users (except admin)
+  const deleteAllUsers = async () => {
+    if (!confirm('⚠️ WARNING: This will delete ALL users except you. This action cannot be undone. Are you absolutely sure?')) {
+      return
+    }
+    
+    try {
+      // First delete user data from profiles table
+      await supabase.from('profiles').delete().neq('id', user?.id)
+      
+      toast.success('All users deleted successfully!')
+      loadUsers()
+    } catch (error) {
+      console.error('Error deleting users:', error)
+      toast.error('Failed to delete users')
+    }
   }
 
   // ============================================
@@ -310,7 +323,6 @@ export default function AdminPage() {
       const response = await fetch(url)
       const data = await response.json()
       
-      // Find the first YouTube trailer
       const trailer = data.results?.find(
         (video: any) => video.type === 'Trailer' && video.site === 'YouTube'
       )
@@ -331,7 +343,6 @@ export default function AdminPage() {
       const response = await fetch(url)
       const data = await response.json()
       
-      // Get US providers (you can make this dynamic based on user's region)
       const usProviders = data.results?.US?.flatrate || []
       const providerNames = usProviders.map((provider: any) => {
         const providerMap: Record<number, string> = {
@@ -362,17 +373,16 @@ export default function AdminPage() {
       // Fetch watch providers
       const platforms = await fetchWatchProviders(item.id, type)
       
-      // Fetch full details for cast/crew
+      // Fetch full details
       const detailsUrl = `https://api.themoviedb.org/3/${type}/${item.id}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits`
       const detailsResponse = await fetch(detailsUrl)
       const details = await detailsResponse.json()
       
-      // Extract director/creator
       let director = ''
       let cast: string[] = []
       let title = ''
       let year = new Date().getFullYear()
-      let genre = type === 'movie' ? 'Movie' : 'TV Show'
+      let genre = type === 'movie' ? 'Movie' : 'TV Series'
       let runtime = ''
       
       if (type === 'movie') {
@@ -411,7 +421,7 @@ export default function AdminPage() {
         director: director,
         actors: cast.join(', '),
         platforms: platforms.join(', '),
-        trailer_url: trailerUrl,
+        trailer_url: trailerUrl || '',
         runtime: runtime,
         genre: genre,
         stats_highly: Math.floor(Math.random() * 1000) + 500,
@@ -543,6 +553,11 @@ export default function AdminPage() {
     return matchesSearch && matchesType
   })
 
+  const filteredCategories = categories.filter(cat => {
+    if (categoryTypeFilter === 'all') return true
+    return cat.type === categoryTypeFilter
+  })
+
   if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -594,11 +609,28 @@ export default function AdminPage() {
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
           <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Users size={20} /> Users</div><p className="text-2xl font-bold">{totalUsers}</p></div>
-          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Film size={20} /> Movies</div><p className="text-2xl font-bold">{totalMovies}</p></div>
+          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Film size={20} /> Movies & TV</div><p className="text-2xl font-bold">{totalMovies}</p></div>
           <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Music size={20} /> Music</div><p className="text-2xl font-bold">{totalMusic}</p></div>
           <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Layers size={20} /> Categories</div><p className="text-2xl font-bold">{totalCategories}</p></div>
           <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Heart size={20} /> Recs</div><p className="text-2xl font-bold">{totalRecommendations}</p></div>
           <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Star size={20} /> Content</div><p className="text-2xl font-bold">{totalContent}</p></div>
+        </div>
+
+        {/* Danger Zone Actions */}
+        <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-4 mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="text-red-500" size={20} />
+            <h3 className="text-lg font-semibold text-red-500">Danger Zone</h3>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button onClick={deleteAllContent} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition text-sm font-semibold">
+              Delete All Content
+            </button>
+            <button onClick={deleteAllUsers} className="px-4 py-2 bg-red-600/70 hover:bg-red-700 rounded-lg transition text-sm font-semibold">
+              Delete All Users
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">⚠️ These actions cannot be undone</p>
         </div>
 
         {/* Navigation Tabs */}
@@ -632,7 +664,8 @@ export default function AdminPage() {
           <div className="bg-gray-800 rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-700"><tr><th className="px-4 py-3 text-left">User</th><th className="px-4 py-3 text-left">Username</th><th className="px-4 py-3 text-left">Role</th><th className="px-4 py-3 text-left">Joined</th><th className="px-4 py-3 text-left">Actions</th></tr></thead>
+                <thead className="bg-gray-700">
+                  <tr><th className="px-4 py-3 text-left">User</th><th className="px-4 py-3 text-left">Username</th><th className="px-4 py-3 text-left">Role</th><th className="px-4 py-3 text-left">Joined</th><th className="px-4 py-3 text-left">Actions</th></tr></thead>
                 <tbody>
                   {users.map(userItem => (
                     <tr key={userItem.id} className="border-b border-gray-700">
@@ -649,15 +682,19 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Categories Tab */}
+        {/* Categories Tab with Filter */}
         {activeTab === 'categories' && (
           <div>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">Categories</h2>
-              <button onClick={() => { setShowCategoryModal(true); setEditingItem(null); setCategoryForm({ name: '', description: '', type: 'movie', is_active: true, display_order: 0 }) }} className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"><Plus size={16} /> Add Category</button>
+            <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+              <div className="flex gap-2">
+                <button onClick={() => setCategoryTypeFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${categoryTypeFilter === 'all' ? 'bg-teal-600' : 'bg-gray-700'}`}>All</button>
+                <button onClick={() => setCategoryTypeFilter('movie')} className={`px-3 py-1 rounded-lg text-sm ${categoryTypeFilter === 'movie' ? 'bg-teal-600' : 'bg-gray-700'}`}>Movies</button>
+                <button onClick={() => setCategoryTypeFilter('music')} className={`px-3 py-1 rounded-lg text-sm ${categoryTypeFilter === 'music' ? 'bg-teal-600' : 'bg-gray-700'}`}>Music</button>
+              </div>
+              <button onClick={() => { setShowCategoryModal(true); setEditingItem(null); setCategoryForm({ name: '', description: '', type: categoryTypeFilter === 'all' ? 'movie' : categoryTypeFilter, is_active: true, display_order: 0 }) }} className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"><Plus size={16} /> Add Category</button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {categories.map(cat => (
+              {filteredCategories.map(cat => (
                 <div key={cat.id} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
                   <div className="flex justify-between items-start mb-2">
                     <div><h3 className="font-bold text-lg">{cat.name}</h3><p className="text-xs text-gray-400">{cat.type}</p></div>
@@ -678,7 +715,7 @@ export default function AdminPage() {
               <h2 className="text-xl font-semibold">Content Management</h2>
               <div className="flex gap-2">
                 <div className="relative"><SearchIcon size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" /><input type="text" placeholder="Search content..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500" /></div>
-                <select value={contentTypeFilter} onChange={(e) => setContentTypeFilter(e.target.value as any)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg"><option value="all">All Types</option><option value="movie">Movies</option><option value="music">Music</option></select>
+                <select value={contentTypeFilter} onChange={(e) => setContentTypeFilter(e.target.value as any)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg"><option value="all">All Types</option><option value="movie">Movies & TV</option><option value="music">Music</option></select>
                 <button onClick={() => { setShowContentModal(true); setEditingItem(null); setContentForm({ title: '', description: '', long_description: '', image_url: '', backdrop_url: '', type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '', platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', stats_highly: 0, stats_recommended: 0, stats_not: 0, category_ids: [] }); }} className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"><Plus size={16} /> Add Content</button>
               </div>
             </div>
@@ -688,7 +725,7 @@ export default function AdminPage() {
                   <img src={item.image_url} alt={item.title} className="w-full h-40 object-cover" />
                   <div className="p-4">
                     <h3 className="font-bold">{item.title}</h3>
-                    <p className="text-xs text-gray-400 mb-2">{item.type} • {item.year}</p>
+                    <p className="text-xs text-gray-400 mb-2">{item.type === 'movie' ? '🎬 Movie/TV' : '🎵 Music'} • {item.year}</p>
                     <p className="text-sm text-gray-300 line-clamp-2">{item.description}</p>
                     <div className="flex justify-between mt-3">
                       <span className="text-xs flex gap-2"><span className="text-teal-400">🔥 {item.stats_highly}</span><span className="text-blue-400">👍 {item.stats_recommended}</span><span className="text-gray-400">👎 {item.stats_not}</span></span>
@@ -710,9 +747,9 @@ export default function AdminPage() {
             <h2 className="text-xl font-bold mb-4">System Settings</h2>
             <div className="space-y-4">
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">About Display Order</h3><p className="text-sm text-gray-400">The "Order" field in categories determines how they appear on the main page. Lower numbers appear first (higher priority).</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Deezer API Integration</h3><p className="text-sm text-gray-400">Search and import music from Deezer.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TMDB API Integration</h3><p className="text-sm text-gray-400">Search and import both Movies AND TV Shows. Automatically fetches trailers and streaming platforms.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Recommendation Tiers</h3><p className="text-sm text-gray-400">🔥 HIGHLY RECOMMENDED - Best content that users love. 👍 RECOMMENDED - Good content worth watching. 👎 NOT RECOMMENDED - Content users suggest to skip.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Category Filter</h3><p className="text-sm text-gray-400">You can now filter categories by type (Movies or Music) to easily manage them.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Danger Zone Actions</h3><p className="text-sm text-gray-400">Delete all content or all users in one click. These actions cannot be undone.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TV Shows</h3><p className="text-sm text-gray-400">TV shows are imported and displayed under Movies for users. They include series metadata, episode runtime, and creators.</p></div>
             </div>
           </div>
         )}
@@ -725,7 +762,7 @@ export default function AdminPage() {
             <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Category</h2><button onClick={() => setShowCategoryModal(false)} className="p-1 hover:bg-gray-800 rounded"><X size={20} /></button></div>
             <input type="text" placeholder="Name" value={categoryForm.name} onChange={e => setCategoryForm({ ...categoryForm, name: e.target.value })} className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded" />
             <input type="text" placeholder="Description" value={categoryForm.description} onChange={e => setCategoryForm({ ...categoryForm, description: e.target.value })} className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded" />
-            <select value={categoryForm.type} onChange={e => setCategoryForm({ ...categoryForm, type: e.target.value as 'movie' | 'music' })} className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded"><option value="movie">Movies</option><option value="music">Music</option></select>
+            <select value={categoryForm.type} onChange={e => setCategoryForm({ ...categoryForm, type: e.target.value as 'movie' | 'music' })} className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded"><option value="movie">Movies & TV Shows</option><option value="music">Music</option></select>
             <input type="number" placeholder="Display Order (lower = higher priority)" value={categoryForm.display_order} onChange={e => setCategoryForm({ ...categoryForm, display_order: parseInt(e.target.value) })} className="w-full mb-4 p-2 bg-gray-800 border border-gray-700 rounded" />
             <div className="flex gap-2"><button onClick={saveCategory} className="flex-1 py-2 bg-teal-600 rounded">Save</button><button onClick={() => setShowCategoryModal(false)} className="flex-1 py-2 bg-gray-700 rounded">Cancel</button></div>
           </div>
@@ -756,7 +793,7 @@ export default function AdminPage() {
               
               {contentForm.type === 'movie' ? (
                 <>
-                  {/* TMDB Search for Movies & TV Shows */}
+                  {/* TMDB Search */}
                   <div className="mb-2">
                     <button type="button" onClick={() => setShowTmdbSearch(!showTmdbSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1">
                       {showTmdbSearch ? '− Hide TMDB Search' : '+ Search on TMDB (Movies & TV Shows)'}
@@ -767,20 +804,8 @@ export default function AdminPage() {
                         <div className="flex gap-2">
                           <input type="text" placeholder="Search for a movie or TV show..." value={tmdbSearchQuery} onChange={(e) => setTmdbSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchTmdb()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm" />
                           <div className="flex gap-1">
-                            <button 
-                              onClick={() => { setTmdbSearchType('movie'); searchTmdb(); }} 
-                              disabled={searchingTmdb} 
-                              className={`px-3 py-2 rounded transition ${tmdbSearchType === 'movie' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'}`}
-                            >
-                              <Film size={16} />
-                            </button>
-                            <button 
-                              onClick={() => { setTmdbSearchType('tv'); searchTmdb(); }} 
-                              disabled={searchingTmdb} 
-                              className={`px-3 py-2 rounded transition ${tmdbSearchType === 'tv' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'}`}
-                            >
-                              <Tv size={16} />
-                            </button>
+                            <button onClick={() => { setTmdbSearchType('movie'); searchTmdb(); }} disabled={searchingTmdb} className={`px-3 py-2 rounded transition ${tmdbSearchType === 'movie' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'}`}><Film size={16} /></button>
+                            <button onClick={() => { setTmdbSearchType('tv'); searchTmdb(); }} disabled={searchingTmdb} className={`px-3 py-2 rounded transition ${tmdbSearchType === 'tv' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'}`}><Tv size={16} /></button>
                           </div>
                         </div>
                         
@@ -791,14 +816,10 @@ export default function AdminPage() {
                                 <img src={item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : '/api/placeholder/92/138'} alt={tmdbSearchType === 'movie' ? item.title : item.name} className="w-12 h-16 rounded object-cover" />
                                 <div className="flex-1 min-w-0">
                                   <p className="font-medium text-sm truncate">{tmdbSearchType === 'movie' ? item.title : item.name}</p>
-                                  <p className="text-xs text-gray-400 truncate">
-                                    {tmdbSearchType === 'movie' 
-                                      ? (item.release_date?.split('-')[0] || 'Unknown year')
-                                      : (item.first_air_date?.split('-')[0] || 'Unknown year')}
-                                  </p>
+                                  <p className="text-xs text-gray-400 truncate">{tmdbSearchType === 'movie' ? (item.release_date?.split('-')[0] || 'Unknown') : (item.first_air_date?.split('-')[0] || 'Unknown')}</p>
                                   <p className="text-xs text-gray-500">{tmdbSearchType === 'movie' ? '🎬 Movie' : '📺 TV Show'}</p>
                                 </div>
-                                <button className="text-teal-400 text-sm whitespace-nowrap">Import →</button>
+                                <button className="text-teal-400 text-sm">Import →</button>
                               </div>
                             ))}
                           </div>
@@ -810,13 +831,10 @@ export default function AdminPage() {
                   <input type="text" placeholder="Director / Creator" value={contentForm.director} onChange={e => setContentForm({ ...contentForm, director: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                   <input type="text" placeholder="Cast (comma separated)" value={contentForm.actors} onChange={e => setContentForm({ ...contentForm, actors: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                   <input type="text" placeholder="Runtime" value={contentForm.runtime} onChange={e => setContentForm({ ...contentForm, runtime: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-                  {contentForm.trailer_url && (
-                    <div className="text-xs text-teal-400">✅ Trailer URL fetched: {contentForm.trailer_url.substring(0, 50)}...</div>
-                  )}
                 </>
               ) : (
                 <>
-                  {/* Deezer Search for Music */}
+                  {/* Deezer Search */}
                   <div className="mb-2">
                     <button type="button" onClick={() => setShowDeezerSearch(!showDeezerSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1">
                       {showDeezerSearch ? '− Hide Deezer Search' : '+ Search on Deezer (Music)'}
@@ -826,9 +844,7 @@ export default function AdminPage() {
                       <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
                         <div className="flex gap-2">
                           <input type="text" placeholder="Search for a song or artist..." value={deezerSearchQuery} onChange={(e) => setDeezerSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchDeezerForMusic()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm" />
-                          <button onClick={searchDeezerForMusic} disabled={searchingDeezer} className="px-4 py-2 bg-teal-600 rounded hover:bg-teal-700 transition disabled:opacity-50">
-                            {searchingDeezer ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
-                          </button>
+                          <button onClick={searchDeezerForMusic} disabled={searchingDeezer} className="px-4 py-2 bg-teal-600 rounded hover:bg-teal-700 transition disabled:opacity-50">{searchingDeezer ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}</button>
                         </div>
                         
                         {deezerSearchResults.length > 0 && (
@@ -836,11 +852,8 @@ export default function AdminPage() {
                             {deezerSearchResults.map((track) => (
                               <div key={track.id} onClick={() => importFromDeezer(track)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition">
                                 <img src={track.album.cover_small} alt={track.title} className="w-12 h-12 rounded" />
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-medium text-sm truncate">{track.title}</p>
-                                  <p className="text-xs text-gray-400 truncate">{track.artist.name}</p>
-                                </div>
-                                <button className="text-teal-400 text-sm whitespace-nowrap">Import →</button>
+                                <div className="flex-1 min-w-0"><p className="font-medium text-sm truncate">{track.title}</p><p className="text-xs text-gray-400 truncate">{track.artist.name}</p></div>
+                                <button className="text-teal-400 text-sm">Import →</button>
                               </div>
                             ))}
                           </div>
@@ -869,13 +882,7 @@ export default function AdminPage() {
                 <div className="space-y-2 max-h-40 overflow-y-auto">
                   {categories.filter(c => c.type === contentForm.type).map(cat => (
                     <label key={cat.id} className="flex items-center gap-2">
-                      <input type="checkbox" checked={contentForm.category_ids.includes(cat.id)} onChange={e => { 
-                        if (e.target.checked) {
-                          setContentForm({ ...contentForm, category_ids: [...contentForm.category_ids, cat.id] })
-                        } else {
-                          setContentForm({ ...contentForm, category_ids: contentForm.category_ids.filter(id => id !== cat.id) })
-                        }
-                      }} />
+                      <input type="checkbox" checked={contentForm.category_ids.includes(cat.id)} onChange={e => { if (e.target.checked) setContentForm({ ...contentForm, category_ids: [...contentForm.category_ids, cat.id] }); else setContentForm({ ...contentForm, category_ids: contentForm.category_ids.filter(id => id !== cat.id) }) }} />
                       {cat.name} (Order: {cat.display_order})
                     </label>
                   ))}
