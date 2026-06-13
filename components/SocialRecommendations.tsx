@@ -52,69 +52,70 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
   const loadRecommendations = async () => {
     setLoading(true)
     try {
-      // Fetch recommendations
+      // Simple query first to test
       const { data, error } = await supabase
         .from('recommendations')
-        .select(`
-          id,
-          user_id,
-          content_id,
-          content_type,
-          recommendation_tier,
-          comment,
-          created_at,
-          updated_at,
-          profiles!user_id (
-            id,
-            username,
-            avatar_url
-          )
-        `)
+        .select('*')
         .eq('content_type', activeTab)
         .order('created_at', { ascending: false })
         .limit(20)
       
-      if (error) throw error
-      
-      if (data && data.length > 0) {
-        // Fetch content details separately
-        const contentIds = data.map(rec => rec.content_id)
-        const { data: contentData } = await supabase
-          .from('content')
-          .select('id, title, image_url, type, artist')
-          .in('id', contentIds)
-        
-        // Merge the data with proper null handling
-        const merged: Recommendation[] = data.map(rec => {
-          const content = contentData?.find(c => c.id === rec.content_id)
-          return {
-            id: rec.id,
-            user_id: rec.user_id,
-            content_id: rec.content_id,
-            content_type: rec.content_type,
-            recommendation_tier: rec.recommendation_tier,
-            comment: rec.comment || '',
-            created_at: rec.created_at,
-            updated_at: rec.updated_at,
-            profiles: {
-              id: rec.profiles?.[0]?.id || '',
-              username: rec.profiles?.[0]?.username || 'Anonymous',
-              avatar_url: rec.profiles?.[0]?.avatar_url || null
-            },
-            content: {
-              id: content?.id || '',
-              title: content?.title || 'Unknown Content',
-              image_url: content?.image_url || '',
-              type: content?.type || rec.content_type,
-              artist: content?.artist || ''
-            }
-          }
-        })
-        
-        setRecommendations(merged)
-      } else {
+      if (error) {
+        console.error('Error loading recommendations:', error)
         setRecommendations([])
+        setLoading(false)
+        return
       }
+      
+      if (!data || data.length === 0) {
+        setRecommendations([])
+        setLoading(false)
+        return
+      }
+      
+      // Get user profiles
+      const userIds = [...new Set(data.map(rec => rec.user_id))]
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url')
+        .in('id', userIds)
+      
+      // Get content details
+      const contentIds = [...new Set(data.map(rec => rec.content_id))]
+      const { data: contents } = await supabase
+        .from('content')
+        .select('id, title, image_url, type, artist')
+        .in('id', contentIds)
+      
+      // Merge all data
+      const merged: Recommendation[] = data.map(rec => {
+        const profile = profiles?.find(p => p.id === rec.user_id)
+        const content = contents?.find(c => c.id === rec.content_id)
+        return {
+          id: rec.id,
+          user_id: rec.user_id,
+          content_id: rec.content_id,
+          content_type: rec.content_type,
+          recommendation_tier: rec.recommendation_tier,
+          comment: rec.comment || '',
+          created_at: rec.created_at,
+          updated_at: rec.updated_at,
+          profiles: {
+            id: profile?.id || '',
+            username: profile?.username || 'Anonymous',
+            avatar_url: profile?.avatar_url || null
+          },
+          content: {
+            id: content?.id || '',
+            title: content?.title || 'Unknown Content',
+            image_url: content?.image_url || '',
+            type: content?.type || rec.content_type,
+            artist: content?.artist || ''
+          }
+        }
+      })
+      
+      setRecommendations(merged)
     } catch (error) {
       console.error('Error loading recommendations:', error)
       setRecommendations([])
@@ -159,6 +160,15 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
           <MessageCircle size={48} className="mx-auto mb-3 opacity-50" />
           <p className="text-sm">No recommendations yet.</p>
           <p className="text-xs text-gray-600 mt-1">Be the first to recommend something!</p>
+          <button 
+            onClick={() => {
+              // Scroll to first content item
+              document.querySelector('.group\\/item')?.scrollIntoView({ behavior: 'smooth' })
+            }}
+            className="mt-4 px-4 py-2 bg-teal-600 rounded-lg text-sm hover:bg-teal-700 transition"
+          >
+            Browse Content to Recommend
+          </button>
         </div>
       </div>
     )
@@ -179,7 +189,6 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
           const username = rec.profiles?.username || 'Anonymous'
           const avatarUrl = rec.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`
           const isCurrentUser = user?.id === rec.user_id
-          const isUpdated = rec.updated_at && rec.updated_at !== rec.created_at
           
           return (
             <div 
@@ -202,9 +211,6 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
                       <span className="text-[10px] px-1.5 py-0.5 bg-teal-600/30 text-teal-400 rounded-full ml-1">You</span>
                     )}
                     <span className="text-xs text-gray-500">• {new Date(rec.created_at).toLocaleDateString()}</span>
-                    {isUpdated && (
-                      <span className="text-[10px] text-gray-500">(updated)</span>
-                    )}
                     <span className={`text-xs px-2 py-0.5 rounded-full ${tier.color}`}>
                       {tier.emoji} {tier.label}
                     </span>
