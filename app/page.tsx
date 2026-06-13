@@ -972,17 +972,18 @@ export default function HomePage() {
       )}
 
       <MobileNav 
-        activeTab={activeTab} 
-        onTabChange={(tab) => {
-          if (tab === 'movie') handleMoviesClick()
-          else handleMusicClick()
-        }} 
-        onViewDetails={handleViewDetails}
-        onHomeClick={handleHomeClick}
-        onProfileClick={toggleProfile}
-        onWatchlistClick={toggleWatchlist}
-        items={filteredContent} 
-      />
+  activeTab={activeTab} 
+  onTabChange={(tab) => {
+    if (tab === 'movie') handleMoviesClick()
+    else handleMusicClick()
+  }} 
+  onViewDetails={handleViewDetails}
+  onHomeClick={handleHomeClick}
+  onProfileClick={toggleProfile}
+  onWatchlistClick={toggleWatchlist}
+  items={filteredContent}
+  currentPage={currentPage}
+/>
     </div>
   )
 }
