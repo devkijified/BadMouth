@@ -17,6 +17,7 @@ import TrendingBar from '@/components/TrendingBar'
 import QuickStats from '@/components/QuickStats'
 import WatchlistBasedRecommendations from '@/components/WatchlistBasedRecommendations'
 import { ContentItem, Category } from '@/types/content'
+import toast from 'react-hot-toast'
 
 export default function HomePage() {
   const router = useRouter()
@@ -88,96 +89,111 @@ export default function HomePage() {
     }
   }
 
-  // Load watchlist from Supabase
-  useEffect(() => {
-    if (user) {
-      loadWatchlistFromSupabase()
-    } else {
-      const saved = localStorage.getItem('badmouth_watchlist')
-      if (saved) {
-        try {
-          const items = JSON.parse(saved)
-          setWatchlist(items)
-          setWatchlistIds(new Set(items.map((i: ContentItem) => i.id)))
-        } catch (e) {
-          console.error('Failed to parse watchlist', e)
-        }
-      }
-    }
-  }, [user])
-
+  // Load watchlist from Supabase (not localStorage)
   const loadWatchlistFromSupabase = async () => {
-    const { data } = await supabase
-      .from('watchlist')
-      .select('*, content(*)')
-      .eq('user_id', user?.id)
+    if (!user) return
     
-    if (data) {
-      const items = data.map((item: any) => item.content)
-      setWatchlist(items)
-      setWatchlistIds(new Set(items.map((i: ContentItem) => i.id)))
+    const { data, error } = await supabase
+      .from('watchlist')
+      .select('content_id')
+      .eq('user_id', user.id)
+    
+    if (error) {
+      console.error('Error loading watchlist:', error)
+      return
+    }
+    
+    if (data && data.length > 0) {
+      const contentIds = data.map(item => item.content_id)
+      const { data: contentData } = await supabase
+        .from('content')
+        .select('*')
+        .in('id', contentIds)
+      
+      if (contentData) {
+        setWatchlist(contentData)
+        setWatchlistIds(new Set(contentData.map(item => item.id)))
+      }
+    } else {
+      setWatchlist([])
+      setWatchlistIds(new Set())
     }
   }
 
+  // Add to watchlist (save to Supabase)
   const addToWatchlist = async (item: ContentItem) => {
-    if (watchlistIds.has(item.id)) {
-      const newWatchlist = watchlist.filter(i => i.id !== item.id)
-      setWatchlist(newWatchlist)
-      setWatchlistIds(new Set(newWatchlist.map(i => i.id)))
-      
-      if (user) {
-        await supabase
-          .from('watchlist')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('content_id', item.id)
-      } else {
-        localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
-      }
-      setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
-    } else {
-      const newWatchlist = [...watchlist, item]
-      setWatchlist(newWatchlist)
-      setWatchlistIds(new Set(newWatchlist.map(i => i.id)))
-      
-      if (user) {
-        await supabase
-          .from('watchlist')
-          .insert({
-            user_id: user.id,
-            content_id: item.id,
-            content_type: item.type
-          })
-      } else {
-        localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
-      }
-      setNotifications([`✨ "${item.title}" added to watchlist!`, ...notifications.slice(0, 4)])
+    if (!user) {
+      toast.error('Please sign in to add to watchlist')
+      return
     }
-    setTimeout(() => setNotifications(prev => prev.slice(1)), 3000)
+    
+    if (watchlistIds.has(item.id)) {
+      // Remove from watchlist
+      const { error } = await supabase
+        .from('watchlist')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('content_id', item.id)
+      
+      if (error) {
+        toast.error('Failed to remove from watchlist')
+        return
+      }
+      
+      setWatchlist(prev => prev.filter(i => i.id !== item.id))
+      setWatchlistIds(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(item.id)
+        return newSet
+      })
+      toast.success(`Removed "${item.title}" from watchlist`)
+    } else {
+      // Add to watchlist
+      const { error } = await supabase
+        .from('watchlist')
+        .insert({
+          user_id: user.id,
+          content_id: item.id,
+          content_type: item.type
+        })
+      
+      if (error) {
+        toast.error('Failed to add to watchlist')
+        return
+      }
+      
+      setWatchlist(prev => [...prev, item])
+      setWatchlistIds(prev => new Set([...prev, item.id]))
+      toast.success(`✨ "${item.title}" added to watchlist!`)
+    }
   }
 
   const removeFromWatchlist = async (id: string) => {
-    const item = watchlist.find(i => i.id === id)
-    if (item) {
-      const newWatchlist = watchlist.filter(i => i.id !== id)
-      setWatchlist(newWatchlist)
-      setWatchlistIds(new Set(newWatchlist.map(i => i.id)))
-      
-      if (user) {
-        await supabase
-          .from('watchlist')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('content_id', id)
-      } else {
-        localStorage.setItem('badmouth_watchlist', JSON.stringify(newWatchlist))
-      }
-      setNotifications([`Removed "${item.title}" from watchlist`, ...notifications.slice(0, 4)])
-      setTimeout(() => setNotifications(prev => prev.slice(1)), 3000)
+    if (!user) return
+    
+    const { error } = await supabase
+      .from('watchlist')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('content_id', id)
+    
+    if (!error) {
+      setWatchlist(prev => prev.filter(i => i.id !== id))
+      setWatchlistIds(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(id)
+        return newSet
+      })
     }
   }
 
   const isInWatchlist = (id: string) => watchlistIds.has(id)
+
+  useEffect(() => {
+    if (user) {
+      loadWatchlistFromSupabase()
+    }
+  }, [user])
 
   // Load data for Movies tab
   const loadMoviesData = async () => {
@@ -233,26 +249,15 @@ export default function HomePage() {
     setLoading(true)
     
     try {
-      // Load music categories (excluding duplicates)
-      const { data: categoriesData, error: categoriesError } = await supabase
+      const { data: categoriesData } = await supabase
         .from('categories')
         .select('*')
         .eq('type', 'music')
         .eq('is_active', true)
         .order('display_order')
       
-      if (categoriesError) {
-        console.error('Error loading music categories:', categoriesError)
-      }
+      setCategories(categoriesData || [])
       
-      // Filter out duplicate categories (if any have same name pattern)
-      const uniqueCategories = categoriesData?.filter((cat, index, self) => 
-        index === self.findIndex((c) => c.name.includes(cat.name.split(' ').pop() || cat.name))
-      ) || []
-      
-      setCategories(uniqueCategories)
-      
-      // Load music content
       let contentQuery = supabase
         .from('content')
         .select('*')
@@ -262,11 +267,7 @@ export default function HomePage() {
         contentQuery = contentQuery.eq('genre', selectedGenre)
       }
       
-      const { data: contentData, error: contentError } = await contentQuery
-      
-      if (contentError) {
-        console.error('Error loading music content:', contentError)
-      }
+      const { data: contentData } = await contentQuery
       
       const contentWithImages = (contentData || []).map(item => ({
         ...item,
@@ -275,18 +276,12 @@ export default function HomePage() {
       
       setAllContent(contentWithImages)
       
-      // Load content-category relations
-      const { data: relations, error: relationsError } = await supabase
+      const { data: relations } = await supabase
         .from('content_categories')
         .select('*')
       
-      if (relationsError) {
-        console.error('Error loading relations:', relationsError)
-      }
-      
-      // Organize content by category
       const byCategory: Record<string, ContentItem[]> = {}
-      for (const category of uniqueCategories) {
+      for (const category of categoriesData || []) {
         const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
         byCategory[category.name] = contentWithImages.filter(c => contentIds.includes(c.id))
       }
@@ -303,7 +298,6 @@ export default function HomePage() {
     setHomeLoading(true)
     
     try {
-      // Load trending movies
       const { data: moviesData } = await supabase
         .from('content')
         .select('*')
@@ -311,7 +305,6 @@ export default function HomePage() {
         .order('stats_highly', { ascending: false })
         .limit(10)
       
-      // Load trending music
       const { data: musicData } = await supabase
         .from('content')
         .select('*')
@@ -780,7 +773,7 @@ export default function HomePage() {
             </div>
           </>
         ) : (
-          // MUSIC TAB - Show all music categories
+          // MUSIC TAB
           <>
             <HeroCarousel 
               items={allContent.slice(0, 3)} 
@@ -789,7 +782,6 @@ export default function HomePage() {
               activeTab={activeTab} 
             />
             <div className="container mx-auto px-4">
-              {/* Show categories if they exist */}
               {categories.length > 0 ? (
                 categories.map((category) => (
                   <ContentRow 
@@ -807,11 +799,10 @@ export default function HomePage() {
               ) : (
                 <div className="text-center py-12 text-gray-500">
                   <Music size={48} className="mx-auto mb-4 opacity-50" />
-                  <p>No music categories found. Please run the SQL to add categories.</p>
+                  <p>No music categories found</p>
                 </div>
               )}
               
-              {/* Show message if no music content */}
               {allContent.length === 0 && categories.length > 0 && (
                 <div className="text-center py-12 text-gray-500">
                   <p>No music content yet. Check back later!</p>
@@ -839,7 +830,6 @@ export default function HomePage() {
               {selectedContent.artist && <p className="text-gray-400 mb-3">{selectedContent.artist}</p>}
               <p className="text-gray-300 mb-4 text-sm leading-relaxed">{selectedContent.long_description || selectedContent.description}</p>
               
-              {/* Rating Display */}
               <div className="flex items-center gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg">
                 <Star size={20} className="text-yellow-400 fill-yellow-400" />
                 <span className="text-2xl font-bold">{getRating(selectedContent)}</span>
@@ -865,7 +855,6 @@ export default function HomePage() {
                 </div>
               </div>
               
-              {/* Where to Watch / Listen - Platform Icons */}
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
                 <div className="flex flex-wrap gap-3">
@@ -888,7 +877,6 @@ export default function HomePage() {
                 </div>
               </div>
               
-              {/* Movie Details */}
               {selectedContent.type === 'movie' && selectedContent.director && (
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
                   <div><span className="text-gray-400">🎬 Director:</span> {selectedContent.director}</div>
@@ -898,7 +886,6 @@ export default function HomePage() {
                 </div>
               )}
               
-              {/* Music Details with Clickable Artist */}
               {selectedContent.type === 'music' && selectedContent.artist && (
                 <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
                   <div className="col-span-2">
@@ -919,7 +906,6 @@ export default function HomePage() {
                 </div>
               )}
               
-              {/* Clickable Cast Section for Movies */}
               {selectedContent.type === 'movie' && selectedContent.actors && selectedContent.actors.length > 0 && (
                 <div className="mb-4">
                   <h3 className="text-md font-semibold mb-2">⭐ Cast</h3>
@@ -940,7 +926,6 @@ export default function HomePage() {
                 </div>
               )}
               
-              {/* Trailer */}
               {selectedContent.trailer_url && (
                 <div className="mb-4">
                   <h3 className="text-md font-semibold mb-2">▶️ Watch Trailer</h3>
