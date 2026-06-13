@@ -52,7 +52,7 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
   const loadRecommendations = async () => {
     setLoading(true)
     try {
-      // Fetch recommendations with proper joins
+      // Fetch recommendations
       const { data, error } = await supabase
         .from('recommendations')
         .select(`
@@ -84,12 +84,32 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
           .select('id, title, image_url, type, artist')
           .in('id', contentIds)
         
-        // Merge the data
-        const merged = data.map(rec => ({
-          ...rec,
-          profiles: Array.isArray(rec.profiles) ? rec.profiles[0] : rec.profiles,
-          content: contentData?.find(c => c.id === rec.content_id)
-        }))
+        // Merge the data with proper null handling
+        const merged: Recommendation[] = data.map(rec => {
+          const content = contentData?.find(c => c.id === rec.content_id)
+          return {
+            id: rec.id,
+            user_id: rec.user_id,
+            content_id: rec.content_id,
+            content_type: rec.content_type,
+            recommendation_tier: rec.recommendation_tier,
+            comment: rec.comment || '',
+            created_at: rec.created_at,
+            updated_at: rec.updated_at,
+            profiles: {
+              id: rec.profiles?.[0]?.id || '',
+              username: rec.profiles?.[0]?.username || 'Anonymous',
+              avatar_url: rec.profiles?.[0]?.avatar_url || null
+            },
+            content: {
+              id: content?.id || '',
+              title: content?.title || 'Unknown Content',
+              image_url: content?.image_url || '',
+              type: content?.type || rec.content_type,
+              artist: content?.artist || ''
+            }
+          }
+        })
         
         setRecommendations(merged)
       } else {
