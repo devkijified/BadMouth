@@ -66,17 +66,11 @@ export default function AdminPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | 'movie' | 'music'>('all')
   
-  // Deezer search states (for Music)
+  // Deezer search states
   const [deezerSearchResults, setDeezerSearchResults] = useState<any[]>([])
   const [showDeezerSearch, setShowDeezerSearch] = useState(false)
   const [deezerSearchQuery, setDeezerSearchQuery] = useState('')
   const [searchingDeezer, setSearchingDeezer] = useState(false)
-  
-  // Free Movie API states (using OMDb with demo key)
-  const [movieSearchResults, setMovieSearchResults] = useState<any[]>([])
-  const [showMovieSearch, setShowMovieSearch] = useState(false)
-  const [movieSearchQuery, setMovieSearchQuery] = useState('')
-  const [searchingMovies, setSearchingMovies] = useState(false)
 
   // Category form state
   const [categoryForm, setCategoryForm] = useState({
@@ -173,9 +167,6 @@ export default function AdminPage() {
     setRecommendations(data || [])
   }
 
-  // ============================================
-  // DEEZER API (for Music) - WORKING
-  // ============================================
   const searchDeezerForMusic = async () => {
     if (!deezerSearchQuery.trim()) {
       toast.error('Please enter a song or artist name')
@@ -183,12 +174,18 @@ export default function AdminPage() {
     }
     setSearchingDeezer(true)
     try {
-      const response = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(deezerSearchQuery)}&limit=20`)
+      // Use our proxy API instead of calling Deezer directly
+      const response = await fetch(`/api/deezer?q=${encodeURIComponent(deezerSearchQuery)}`)
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      
       const data = await response.json()
       
       if (data.data && data.data.length > 0) {
         setDeezerSearchResults(data.data)
-        toast.success(`Found ${data.data.length} results on Deezer`)
+        toast.success(`Found ${data.data.length} results`)
       } else {
         setDeezerSearchResults([])
         toast.error('No results found. Try different search terms.')
@@ -220,10 +217,10 @@ export default function AdminPage() {
       year: track.release_date ? new Date(track.release_date).getFullYear() : new Date().getFullYear(),
       duration: formatDuration(track.duration),
       genre: track.artist.name.split(' ')[0],
-      platforms: 'Spotify, Apple Music, Deezer, YouTube Music',
+      platforms: 'Spotify, Apple Music, Deezer',
       trailer_url: track.preview,
-      stats_highly: track.rank ? Math.floor(track.rank / 10000) : Math.floor(Math.random() * 1000) + 500,
-      stats_recommended: track.rank ? Math.floor(track.rank / 20000) : Math.floor(Math.random() * 500) + 200,
+      stats_highly: track.rank ? Math.floor(track.rank / 10000) : 0,
+      stats_recommended: track.rank ? Math.floor(track.rank / 20000) : 0,
       stats_not: 0,
       category_ids: []
     })
@@ -231,81 +228,6 @@ export default function AdminPage() {
     setDeezerSearchQuery('')
     setDeezerSearchResults([])
     toast.success(`Imported "${track.title}" from Deezer!`)
-  }
-
-  // ============================================
-  // FREE MOVIE API (Using a working free API)
-  // ============================================
-  const searchFreeMovies = async () => {
-    if (!movieSearchQuery.trim()) {
-      toast.error('Please enter a movie title')
-      return
-    }
-    setSearchingMovies(true)
-    try {
-      // Using a free movie API that works without key (limited but functional)
-      const response = await fetch(`https://movies-api14.p.rapidapi.com/movie/${encodeURIComponent(movieSearchQuery)}`, {
-        headers: {
-          'x-rapidapi-host': 'movies-api14.p.rapidapi.com',
-          'x-rapidapi-key': 'YOUR_RAPIDAPI_KEY' // You'd need a key
-        }
-      })
-      
-      // Fallback to a simpler approach - using sample movie data for demonstration
-      // For actual implementation, you can use the OMDB API with a free key
-      // Get a free key at: https://www.omdbapi.com/apikey.aspx
-      
-      // For now, let's use a fallback with sample movies
-      const sampleMovies = [
-        { imdbID: 'tt0468569', Title: 'The Dark Knight', Year: '2008', Poster: 'https://image.tmdb.org/t/p/w500/qJ2tW6WMUDux911r6m7haRef0WH.jpg', Plot: 'Batman faces the Joker in Gotham City.' },
-        { imdbID: 'tt1375666', Title: 'Inception', Year: '2010', Poster: 'https://image.tmdb.org/t/p/w500/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg', Plot: 'A thief who steals secrets through dream-sharing.' },
-        { imdbID: 'tt0816692', Title: 'Interstellar', Year: '2014', Poster: 'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg', Plot: 'A team of explorers travel through a wormhole in space.' },
-      ]
-      
-      const filtered = sampleMovies.filter(m => 
-        m.Title.toLowerCase().includes(movieSearchQuery.toLowerCase())
-      )
-      
-      if (filtered.length > 0) {
-        setMovieSearchResults(filtered)
-        toast.success(`Found ${filtered.length} results`)
-      } else {
-        setMovieSearchResults([])
-        toast.error('No results found. Try a different title.')
-      }
-    } catch (error) {
-      console.error('Movie search error:', error)
-      toast.error('Failed to search movies')
-    } finally {
-      setSearchingMovies(false)
-    }
-  }
-
-  const importFromMovieAPI = (movie: any) => {
-    const title = movie.Title
-    const year = parseInt(movie.Year) || new Date().getFullYear()
-    const imageUrl = movie.Poster !== 'N/A' ? movie.Poster : `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(title)}`
-    
-    setContentForm({
-      ...contentForm,
-      title: title,
-      description: movie.Plot || `"${title}" is a great movie worth watching.`,
-      long_description: movie.Plot || `"${title}" is a cinematic masterpiece.`,
-      image_url: imageUrl,
-      backdrop_url: imageUrl,
-      type: 'movie',
-      year: year,
-      platforms: 'Netflix, Prime Video, Max, Apple TV+',
-      genre: 'Action',
-      stats_highly: Math.floor(Math.random() * 1000) + 500,
-      stats_recommended: Math.floor(Math.random() * 500) + 200,
-      stats_not: Math.floor(Math.random() * 100),
-      category_ids: []
-    })
-    setShowMovieSearch(false)
-    setMovieSearchQuery('')
-    setMovieSearchResults([])
-    toast.success(`Imported "${title}"!`)
   }
 
   const saveCategory = async () => {
@@ -333,17 +255,29 @@ export default function AdminPage() {
     setShowContentModal(false)
     setEditingItem(null)
     setContentForm({
-      title: '', description: '', long_description: '', image_url: '', backdrop_url: '',
-      type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '',
-      platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', 
-      stats_highly: 0, stats_recommended: 0, stats_not: 0, category_ids: []
+      title: '',
+      description: '',
+      long_description: '',
+      image_url: '',
+      backdrop_url: '',
+      type: 'movie',
+      year: new Date().getFullYear(),
+      director: '',
+      artist: '',
+      actors: '',
+      platforms: '',
+      trailer_url: '',
+      runtime: '',
+      duration: '',
+      genre: '',
+      stats_highly: 0,
+      stats_recommended: 0,
+      stats_not: 0,
+      category_ids: []
     })
     setShowDeezerSearch(false)
     setDeezerSearchQuery('')
     setDeezerSearchResults([])
-    setShowMovieSearch(false)
-    setMovieSearchQuery('')
-    setMovieSearchResults([])
   }
 
   const saveContent = async () => {
@@ -412,38 +346,6 @@ export default function AdminPage() {
     await supabase.from('profiles').update({ role: newRole }).eq('id', userId)
     loadUsers()
     toast.success('User role updated')
-  }
-
-  const createDefaultCategories = async () => {
-    const { data: existing } = await supabase.from('categories').select('id').limit(1)
-    
-    if (existing && existing.length === 0) {
-      const defaultCategories = [
-        { name: '🍿 Trending Now', description: 'Most popular movies this week', type: 'movie', display_order: 1 },
-        { name: '🎬 Action Packed', description: 'High-octane action movies', type: 'movie', display_order: 2 },
-        { name: '😂 Comedy', description: 'Movies that will make you laugh', type: 'movie', display_order: 3 },
-        { name: '🎭 Drama', description: 'Emotional and powerful stories', type: 'movie', display_order: 4 },
-        { name: '👻 Horror', description: 'Scary movies for thrill seekers', type: 'movie', display_order: 5 },
-        { name: '🚀 Sci-Fi', description: 'Mind-bending science fiction', type: 'movie', display_order: 6 },
-        { name: '❤️ Romance', description: 'Love stories and romantic comedies', type: 'movie', display_order: 7 },
-        { name: '🇰🇷 Korean Dramas', description: 'Best Korean movies and series', type: 'movie', display_order: 8 },
-        { name: '🔥 Trending Music', description: 'Hottest tracks right now', type: 'music', display_order: 10 },
-        { name: '🎤 Top Artists', description: 'Most recommended artists', type: 'music', display_order: 11 },
-        { name: '✨ New Releases', description: 'Fresh music just added', type: 'music', display_order: 12 },
-        { name: '🎵 Pop Hits', description: 'Best pop music', type: 'music', display_order: 13 },
-        { name: '🎸 Rock Classics', description: 'Timeless rock anthems', type: 'music', display_order: 14 },
-        { name: '🎧 Electronic', description: 'Best EDM and electronic music', type: 'music', display_order: 15 },
-        { name: '🎹 R&B & Soul', description: 'Smooth R&B and soul tracks', type: 'music', display_order: 16 },
-        { name: '🎤 Hip Hop', description: 'Top hip hop tracks', type: 'music', display_order: 17 },
-      ]
-      
-      for (const cat of defaultCategories) {
-        await supabase.from('categories').insert([cat])
-      }
-      
-      loadCategories()
-      toast.success('Default categories created!')
-    }
   }
 
   const filteredContent = content.filter(item => {
@@ -615,10 +517,9 @@ export default function AdminPage() {
           <div>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold">Categories</h2>
-              <div className="flex gap-2">
-                <button onClick={createDefaultCategories} className="px-4 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition text-sm">Reset Defaults</button>
-                <button onClick={() => { setShowCategoryModal(true); setEditingItem(null); setCategoryForm({ name: '', description: '', type: 'movie', is_active: true, display_order: 0 }) }} className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"><Plus size={16} /> Add Category</button>
-              </div>
+              <button onClick={() => { setShowCategoryModal(true); setEditingItem(null); setCategoryForm({ name: '', description: '', type: 'movie', is_active: true, display_order: 0 }) }} className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2">
+                <Plus size={16} /> Add Category
+              </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {categories.map(cat => (
@@ -730,10 +631,6 @@ export default function AdminPage() {
                 <p className="text-sm text-gray-400">When adding music, use the "Search on Deezer" button to automatically fetch song details, album art, and preview URLs.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
-                <h3 className="font-semibold mb-2">Movie Import</h3>
-                <p className="text-sm text-gray-400">Search and import movies from the movie database. You can also manually enter movie details.</p>
-              </div>
-              <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Recommendation Tiers</h3>
                 <p className="text-sm text-gray-400">🔥 HIGHLY RECOMMENDED - Best content that users love. 👍 RECOMMENDED - Good content worth watching. 👎 NOT RECOMMENDED - Content users suggest to skip.</p>
               </div>
@@ -779,79 +676,31 @@ export default function AdminPage() {
               <textarea placeholder="Long Description" value={contentForm.long_description} onChange={e => setContentForm({ ...contentForm, long_description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" rows={3} />
               <input type="text" placeholder="Image URL" value={contentForm.image_url} onChange={e => setContentForm({ ...contentForm, image_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               <input type="text" placeholder="Backdrop URL" value={contentForm.backdrop_url} onChange={e => setContentForm({ ...contentForm, backdrop_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-              
               <select value={contentForm.type} onChange={e => setContentForm({ ...contentForm, type: e.target.value as 'movie' | 'music' })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded">
                 <option value="movie">Movie</option>
                 <option value="music">Music</option>
               </select>
-              
               <input type="number" placeholder="Year" value={contentForm.year} onChange={e => setContentForm({ ...contentForm, year: parseInt(e.target.value) })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-              
               {contentForm.type === 'movie' ? (
                 <>
-                  {/* Movie Search */}
-                  <div className="mb-2">
-                    <button type="button" onClick={() => setShowMovieSearch(!showMovieSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1">
-                      {showMovieSearch ? '− Hide Movie Search' : '+ Search for Movies'}
-                    </button>
-                    
-                    {showMovieSearch && (
-                      <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
-                        <div className="flex gap-2">
-                          <input type="text" placeholder="Search for a movie..." value={movieSearchQuery} onChange={(e) => setMovieSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchFreeMovies()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm" />
-                          <button onClick={searchFreeMovies} disabled={searchingMovies} className="px-4 py-2 bg-teal-600 rounded hover:bg-teal-700 transition disabled:opacity-50">
-                            {searchingMovies ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
-                          </button>
-                        </div>
-                        
-                        {movieSearchResults.length > 0 && (
-                          <div className="space-y-2 max-h-64 overflow-y-auto">
-                            {movieSearchResults.map((movie, idx) => (
-                              <div key={idx} onClick={() => importFromMovieAPI(movie)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition">
-                                {movie.Poster && movie.Poster !== 'N/A' ? (
-                                  <img src={movie.Poster} alt={movie.Title} className="w-12 h-16 rounded object-cover" />
-                                ) : (
-                                  <div className="w-12 h-16 rounded bg-gray-600 flex items-center justify-center text-2xl">🎬</div>
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-medium text-sm truncate">{movie.Title}</p>
-                                  <p className="text-xs text-gray-400 truncate">{movie.Year || 'Unknown year'}</p>
-                                  {movie.Plot && <p className="text-xs text-gray-500 line-clamp-1">{movie.Plot.substring(0, 60)}</p>}
-                                </div>
-                                <button className="text-teal-400 text-sm whitespace-nowrap">Import →</button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        
-                        {movieSearchResults.length === 0 && movieSearchQuery && !searchingMovies && (
-                          <p className="text-center text-gray-500 text-sm py-2">No results found. Try a different title.</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  
                   <input type="text" placeholder="Director" value={contentForm.director} onChange={e => setContentForm({ ...contentForm, director: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                   <input type="text" placeholder="Cast (comma separated)" value={contentForm.actors} onChange={e => setContentForm({ ...contentForm, actors: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                   <input type="text" placeholder="Runtime (e.g., 2h 30min)" value={contentForm.runtime} onChange={e => setContentForm({ ...contentForm, runtime: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                 </>
               ) : (
                 <>
-                  {/* Deezer Search for Music */}
                   <div className="mb-2">
                     <button type="button" onClick={() => setShowDeezerSearch(!showDeezerSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1">
-                      {showDeezerSearch ? '− Hide Deezer Search' : '+ Search on Deezer (Music)'}
+                      {showDeezerSearch ? '− Hide Deezer Search' : '+ Search on Deezer'}
                     </button>
-                    
                     {showDeezerSearch && (
                       <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
                         <div className="flex gap-2">
-                          <input type="text" placeholder="Search for a song or artist..." value={deezerSearchQuery} onChange={(e) => setDeezerSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchDeezerForMusic()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm" />
+                          <input type="text" placeholder="Search for a song on Deezer..." value={deezerSearchQuery} onChange={(e) => setDeezerSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchDeezerForMusic()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm" />
                           <button onClick={searchDeezerForMusic} disabled={searchingDeezer} className="px-4 py-2 bg-teal-600 rounded hover:bg-teal-700 transition disabled:opacity-50">
                             {searchingDeezer ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
                           </button>
                         </div>
-                        
                         {deezerSearchResults.length > 0 && (
                           <div className="space-y-2 max-h-64 overflow-y-auto">
                             {deezerSearchResults.map((track) => (
@@ -869,22 +718,18 @@ export default function AdminPage() {
                       </div>
                     )}
                   </div>
-                  
                   <input type="text" placeholder="Artist" value={contentForm.artist} onChange={e => setContentForm({ ...contentForm, artist: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                   <input type="text" placeholder="Duration (e.g., 3:45)" value={contentForm.duration} onChange={e => setContentForm({ ...contentForm, duration: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                 </>
               )}
-              
               <input type="text" placeholder="Platforms (comma separated)" value={contentForm.platforms} onChange={e => setContentForm({ ...contentForm, platforms: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               <input type="text" placeholder="Trailer/Video URL" value={contentForm.trailer_url} onChange={e => setContentForm({ ...contentForm, trailer_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               <input type="text" placeholder="Genre" value={contentForm.genre} onChange={e => setContentForm({ ...contentForm, genre: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-              
               <div className="grid grid-cols-3 gap-2">
                 <input type="number" placeholder="🔥 Highly" value={contentForm.stats_highly} onChange={e => setContentForm({ ...contentForm, stats_highly: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
                 <input type="number" placeholder="👍 Recommended" value={contentForm.stats_recommended} onChange={e => setContentForm({ ...contentForm, stats_recommended: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
                 <input type="number" placeholder="👎 Not" value={contentForm.stats_not} onChange={e => setContentForm({ ...contentForm, stats_not: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
               </div>
-              
               <div>
                 <label className="text-sm text-gray-400 mb-2 block">Assign to Categories</label>
                 <div className="space-y-2 max-h-40 overflow-y-auto">
