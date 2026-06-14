@@ -10,7 +10,7 @@ export default function AuthPage() {
   const router = useRouter()
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState('')
-  const [password, setPassword] useState('')
+  const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
