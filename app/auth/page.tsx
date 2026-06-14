@@ -97,23 +97,6 @@ export default function AuthPage() {
       }
 
       if (data.user) {
-        const { data: existingProfile } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', data.user.id)
-          .single()
-
-        if (!existingProfile) {
-          await supabase.from('profiles').insert([{
-            id: data.user.id,
-            username: finalUsername,
-            email: email,
-            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${finalUsername}`,
-            role: 'user',
-            is_active: true
-          }])
-        }
-
         toast.success('Account created! You can now sign in.')
         setIsLogin(true)
         setEmail('')
@@ -148,29 +131,24 @@ export default function AuthPage() {
     setIsResetting(true)
     
     try {
-      console.log('Checking email:', resetEmail)
-      
-      // Direct query to profiles table
-      const { data: profile, error } = await supabase
+      // FIRST: Check if user exists in profiles table
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('username, email')
         .eq('email', resetEmail)
-        .maybeSingle()  // Use maybeSingle instead of single to avoid errors
+        .single()
 
-      console.log('Profile found:', profile)
-      console.log('Error:', error)
-
-      if (!profile) {
+      if (profileError || !profile) {
         toast.error('No account found with this email address')
         setIsResetting(false)
         return
       }
 
-      // Generate reset token
+      // SECOND: Generate reset token
       const resetToken = crypto.randomUUID()
       const resetExpires = new Date(Date.now() + 60 * 60 * 1000).toISOString()
 
-      // Save token to database
+      // THIRD: Save token to database
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ 
@@ -186,7 +164,7 @@ export default function AuthPage() {
         return
       }
 
-      // Send email
+      // FOURTH: Send reset email via Resend
       const resetUrl = `${window.location.origin}/reset-password?token=${resetToken}`
       
       const emailHtml = `
@@ -199,12 +177,13 @@ export default function AuthPage() {
             .header { background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 20px; text-align: center; }
             .content { background: #f9f9f9; padding: 30px; }
             .button { display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+            .code { background: #e0e0e0; padding: 10px; font-family: monospace; font-size: 18px; text-align: center; }
           </style>
         </head>
         <body>
           <div class="container">
             <div class="header">
-              <h1>Reset Your Password</h1>
+              <h1>🔐 Reset Your Password</h1>
             </div>
             <div class="content">
               <h2>Hello ${profile.username}!</h2>
@@ -212,8 +191,10 @@ export default function AuthPage() {
               <div style="text-align: center;">
                 <a href="${resetUrl}" class="button">Reset Password</a>
               </div>
+              <p>Or copy this link: <br/><span class="code">${resetUrl}</span></p>
               <p>This link will expire in 1 hour.</p>
-              <p>If you didn't request this, ignore this email.</p>
+              <p>If you didn't request this, please ignore this email.</p>
+              <p>- The BADMOUTH Team</p>
             </div>
           </div>
         </body>
@@ -239,7 +220,7 @@ export default function AuthPage() {
       }
     } catch (error) {
       console.error('Reset error:', error)
-      toast.error('Something went wrong. Please try again.')
+      toast.error('Something went wrong')
     } finally {
       setIsResetting(false)
     }
@@ -258,7 +239,6 @@ export default function AuthPage() {
           <p className="text-gray-400 text-sm mt-2">Your AI-powered recommendation engine</p>
         </div>
 
-        {/* Reset Password Modal */}
         {showResetPassword && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
             <div className="bg-gray-900 rounded-xl max-w-md w-full p-6">
@@ -269,10 +249,6 @@ export default function AuthPage() {
                 </button>
               </div>
               
-              <p className="text-sm text-gray-400 mb-4">
-                Enter your email address and we'll send you a link to reset your password.
-              </p>
-              
               <form onSubmit={handleResetPassword} className="space-y-4">
                 <input
                   type="email"
@@ -282,7 +258,6 @@ export default function AuthPage() {
                   className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
                   required
                 />
-                
                 <button
                   type="submit"
                   disabled={isResetting}
@@ -291,10 +266,6 @@ export default function AuthPage() {
                   {isResetting ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Send Reset Email'}
                 </button>
               </form>
-              
-              <p className="text-xs text-gray-500 text-center mt-4">
-                For demo, try: kijified@gmail.com
-              </p>
             </div>
           </div>
         )}
@@ -302,19 +273,13 @@ export default function AuthPage() {
         <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6 border border-gray-700">
           <div className="flex gap-2 mb-6">
             <button
-              onClick={() => {
-                setIsLogin(true)
-                setShowResetPassword(false)
-              }}
+              onClick={() => setIsLogin(true)}
               className={`flex-1 py-2.5 rounded-xl font-medium transition ${isLogin ? 'bg-gradient-to-r from-teal-600 to-blue-600' : 'bg-gray-700 text-gray-400'}`}
             >
               Sign In
             </button>
             <button
-              onClick={() => {
-                setIsLogin(false)
-                setShowResetPassword(false)
-              }}
+              onClick={() => setIsLogin(false)}
               className={`flex-1 py-2.5 rounded-xl font-medium transition ${!isLogin ? 'bg-gradient-to-r from-teal-600 to-blue-600' : 'bg-gray-700 text-gray-400'}`}
             >
               Create Account
@@ -333,10 +298,8 @@ export default function AuthPage() {
                     onChange={handleUsernameChange}
                     className="w-full pl-10 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
                     required
-                    minLength={3}
                   />
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Letters, numbers, and underscores only</p>
               </div>
             )}
             
@@ -361,7 +324,6 @@ export default function AuthPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full pl-10 pr-12 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
                 required
-                minLength={6}
               />
               <button
                 type="button"
