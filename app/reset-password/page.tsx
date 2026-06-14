@@ -21,40 +21,36 @@ function ResetPasswordContent() {
 
   useEffect(() => {
     const validateToken = async () => {
-      console.log('=== VALIDATING RESET TOKEN ===')
+      console.log('=== VALIDATING TOKEN ===')
       console.log('Token from URL:', token)
       
       if (!token) {
-        toast.error('Invalid reset link')
+        toast.error('No reset token found')
         router.push('/auth')
         return
       }
 
-      // Find user with this token
+      // Query using ilike for case-insensitive match
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('id, username, reset_expires')
-        .eq('reset_token', token)
+        .ilike('reset_token', token)  // Using ilike instead of eq
         .single()
 
       console.log('Profile found:', profile)
       console.log('Error:', error)
 
       if (error || !profile) {
-        toast.error('Invalid or expired reset link')
+        toast.error('Invalid reset link. Please request a new one.')
         router.push('/auth')
         return
       }
 
       // Check expiration
-      const expires = new Date(profile.reset_expires)
+      const expiresDate = new Date(profile.reset_expires)
       const now = new Date()
       
-      console.log('Expires:', expires)
-      console.log('Now:', now)
-      console.log('Is valid:', expires > now)
-
-      if (expires < now) {
+      if (expiresDate < now) {
         toast.error('Reset link has expired. Please request a new one.')
         router.push('/auth')
         return
@@ -63,7 +59,6 @@ function ResetPasswordContent() {
       setUserId(profile.id)
       setUsername(profile.username)
       setIsValid(true)
-      console.log('Token is valid for:', profile.username)
     }
 
     validateToken()
@@ -85,31 +80,25 @@ function ResetPasswordContent() {
     setIsLoading(true)
     
     try {
-      console.log('Updating password for user ID:', userId)
-      
       // Update password in Supabase Auth
       const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword
       })
 
       if (updateError) {
-        console.error('Auth update error:', updateError)
+        console.error('Update error:', updateError)
         toast.error(updateError.message)
         setIsLoading(false)
         return
       }
       
       // Clear the reset token
-      const { error: clearError } = await supabase
+      await supabase
         .from('profiles')
         .update({ reset_token: null, reset_expires: null })
         .eq('id', userId)
       
-      if (clearError) {
-        console.error('Clear token error:', clearError)
-      }
-      
-      toast.success('Password updated! Please sign in.')
+      toast.success('Password updated successfully! Please sign in.')
       router.push('/auth')
     } catch (error) {
       console.error('Reset error:', error)
@@ -132,8 +121,12 @@ function ResetPasswordContent() {
       <div className="w-full max-w-md">
         <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6 border border-gray-700">
           <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold">Create New Password</h1>
-            <p className="text-gray-400">Hello {username}!</p>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-teal-600 to-blue-600 bg-clip-text text-transparent">
+              Create New Password
+            </h1>
+            <p className="text-gray-400 text-sm mt-2">
+              Hello {username}, enter your new password below
+            </p>
           </div>
 
           <form onSubmit={handleResetPassword} className="space-y-4">
@@ -146,31 +139,36 @@ function ResetPasswordContent() {
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="w-full pl-10 pr-12 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
                 required
+                minLength={6}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
 
-            <input
-              type="password"
-              placeholder="Confirm New Password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
-              required
-            />
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="password"
+                placeholder="Confirm New Password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
+                required
+              />
+            </div>
 
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-xl font-medium"
+              className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-xl font-medium hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {isLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Update Password'}
+              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle size={18} />}
+              {isLoading ? 'Updating...' : 'Update Password'}
             </button>
           </form>
         </div>
@@ -181,7 +179,11 @@ function ResetPasswordContent() {
 
 export default function ResetPasswordPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-teal-500" /></div>}>
+    <Suspense fallback={
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-teal-500" />
+      </div>
+    }>
       <ResetPasswordContent />
     </Suspense>
   )
