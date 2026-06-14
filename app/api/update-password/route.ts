@@ -13,7 +13,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
     }
 
-    // Create Supabase admin client with service_role key
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -25,7 +24,6 @@ export async function POST(request: Request) {
       }
     )
 
-    // First, verify the token exists and get the user ID
     const { data: profile, error: findError } = await supabaseAdmin
       .from('profiles')
       .select('id, reset_expires')
@@ -33,19 +31,16 @@ export async function POST(request: Request) {
       .single()
 
     if (findError || !profile) {
-      console.error('Find error:', findError)
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 })
     }
 
-    // Check expiration
     const expiresUTC = new Date(profile.reset_expires)
     const nowUTC = new Date()
     
     if (expiresUTC < nowUTC) {
-      return NextResponse.json({ error: 'Reset link has expired. Please request a new one.' }, { status: 400 })
+      return NextResponse.json({ error: 'Reset link has expired' }, { status: 400 })
     }
 
-    // Update password using Supabase Auth Admin API
     const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
       profile.id,
       { password: newPassword }
@@ -56,7 +51,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: updateError.message }, { status: 500 })
     }
 
-    // Clear the reset token
     await supabaseAdmin
       .from('profiles')
       .update({ reset_token: null, reset_expires: null })
