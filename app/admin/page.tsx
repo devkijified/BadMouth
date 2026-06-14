@@ -93,7 +93,7 @@ export default function AdminPage() {
     display_order: 0
   })
 
-  // Content form state - ADDED is_tv_show
+  // Content form state
   const [contentForm, setContentForm] = useState({
     title: '',
     description: '',
@@ -113,7 +113,7 @@ export default function AdminPage() {
     stats_highly: 0,
     stats_recommended: 0,
     stats_not: 0,
-    is_tv_show: false,  // 👈 ADD THIS
+    is_tv_show: false,
     category_ids: [] as string[]
   })
 
@@ -303,8 +303,42 @@ export default function AdminPage() {
       const data = await response.json()
       
       if (data.results && data.results.length > 0) {
-        setTmdbSearchResults(data.results)
-        toast.success(`Found ${data.results.length} ${tmdbSearchType === 'movie' ? 'movies' : 'TV shows'} on TMDB`)
+        // Fetch full details for each result to get more metadata
+        const enrichedResults = await Promise.all(
+          data.results.slice(0, 10).map(async (result: any) => {
+            if (tmdbSearchType === 'tv') {
+              // Fetch TV show details
+              const detailUrl = `https://api.themoviedb.org/3/tv/${result.id}?api_key=${TMDB_API_KEY}&language=en-US`
+              const detailResponse = await fetch(detailUrl)
+              const details = await detailResponse.json()
+              return {
+                ...result,
+                name: result.name,
+                first_air_date: details.first_air_date || result.first_air_date,
+                overview: details.overview || result.overview,
+                poster_path: details.poster_path || result.poster_path,
+                backdrop_path: details.backdrop_path || result.backdrop_path,
+                genres: details.genres
+              }
+            } else {
+              // Fetch movie details
+              const detailUrl = `https://api.themoviedb.org/3/movie/${result.id}?api_key=${TMDB_API_KEY}&language=en-US`
+              const detailResponse = await fetch(detailUrl)
+              const details = await detailResponse.json()
+              return {
+                ...result,
+                title: result.title,
+                release_date: details.release_date || result.release_date,
+                overview: details.overview || result.overview,
+                poster_path: details.poster_path || result.poster_path,
+                backdrop_path: details.backdrop_path || result.backdrop_path,
+                genres: details.genres
+              }
+            }
+          })
+        )
+        setTmdbSearchResults(enrichedResults)
+        toast.success(`Found ${enrichedResults.length} ${tmdbSearchType === 'movie' ? 'movies' : 'TV shows'} on TMDB`)
       } else {
         setTmdbSearchResults([])
         toast.error('No results found. Try a different title.')
@@ -367,9 +401,13 @@ export default function AdminPage() {
   const importFromTmdb = async (item: any, type: 'movie' | 'tv') => {
     setSearchingTmdb(true)
     try {
+      // Fetch trailer
       const trailerUrl = await fetchTrailerFromTmdb(item.id, type)
+      
+      // Fetch watch providers
       const platforms = await fetchWatchProviders(item.id, type)
       
+      // Fetch full details
       const detailsUrl = `https://api.themoviedb.org/3/${type}/${item.id}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits`
       const detailsResponse = await fetch(detailsUrl)
       const details = await detailsResponse.json()
@@ -380,37 +418,53 @@ export default function AdminPage() {
       let year = new Date().getFullYear()
       let genre = type === 'movie' ? 'Movie' : 'TV Series'
       let runtime = ''
-      let isTVShow = type === 'tv'  // 👈 SET TV SHOW FLAG
+      let isTVShow = type === 'tv'
+      let description = ''
+      let longDescription = ''
       
       if (type === 'movie') {
-        title = item.title
-        year = new Date(item.release_date).getFullYear() || new Date().getFullYear()
+        // MOVIE import
+        title = item.title || details.title || ''
+        year = item.release_date 
+          ? new Date(item.release_date).getFullYear() 
+          : details.release_date 
+            ? new Date(details.release_date).getFullYear() 
+            : new Date().getFullYear()
         director = details?.credits?.crew?.find((person: any) => person.job === 'Director')?.name || ''
         cast = details?.credits?.cast?.slice(0, 5).map((actor: any) => actor.name) || []
         runtime = details?.runtime ? `${Math.floor(details.runtime / 60)}h ${details.runtime % 60}min` : ''
         genre = details?.genres?.[0]?.name || 'Movie'
+        description = item.overview || details.overview || `"${title}" is a great movie worth watching.`
+        longDescription = item.overview || details.overview || `"${title}" is a cinematic masterpiece.`
       } else {
-        title = item.name
-        year = new Date(item.first_air_date).getFullYear() || new Date().getFullYear()
+        // TV SHOW import - FIXED
+        title = item.name || details.name || ''
+        year = item.first_air_date 
+          ? new Date(item.first_air_date).getFullYear() 
+          : details.first_air_date 
+            ? new Date(details.first_air_date).getFullYear() 
+            : new Date().getFullYear()
         director = details?.created_by?.map((creator: any) => creator.name).join(', ') || ''
         cast = details?.credits?.cast?.slice(0, 5).map((actor: any) => actor.name) || []
-        runtime = details?.episode_run_time?.[0] ? `${details.episode_run_time[0]} min per episode` : ''
+        runtime = details?.episode_run_time?.[0] ? `${details.episode_run_time[0]} min per episode` : 'TV Series'
         genre = details?.genres?.[0]?.name || 'TV Series'
+        description = item.overview || details.overview || `"${title}" is a great TV series worth watching.`
+        longDescription = item.overview || details.overview || `"${title}" is a must-watch series.`
       }
       
-      const posterUrl = item.poster_path 
-        ? `https://image.tmdb.org/t/p/w500${item.poster_path}` 
+      const posterUrl = item.poster_path || details.poster_path
+        ? `https://image.tmdb.org/t/p/w500${item.poster_path || details.poster_path}` 
         : `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(title)}`
       
-      const backdropUrl = item.backdrop_path 
-        ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` 
+      const backdropUrl = item.backdrop_path || details.backdrop_path
+        ? `https://image.tmdb.org/t/p/original${item.backdrop_path || details.backdrop_path}` 
         : posterUrl
       
       setContentForm({
         ...contentForm,
         title: title,
-        description: item.overview || `"${title}" is a great ${type === 'movie' ? 'movie' : 'TV series'} worth watching.`,
-        long_description: item.overview || `"${title}" is a ${type === 'movie' ? 'cinematic masterpiece' : 'must-watch series'}.`,
+        description: description,
+        long_description: longDescription,
         image_url: posterUrl,
         backdrop_url: backdropUrl,
         type: 'movie',
@@ -424,13 +478,14 @@ export default function AdminPage() {
         stats_highly: Math.floor(Math.random() * 1000) + 500,
         stats_recommended: Math.floor(Math.random() * 500) + 200,
         stats_not: 0,
-        is_tv_show: isTVShow,  // 👈 SAVE TV SHOW FLAG
+        is_tv_show: isTVShow,
         category_ids: []
       })
+      
       setShowTmdbSearch(false)
       setTmdbSearchQuery('')
       setTmdbSearchResults([])
-      toast.success(`Imported "${title}" with ${trailerUrl ? 'trailer' : 'no trailer'}!`)
+      toast.success(`Imported "${title}" as ${isTVShow ? 'TV Show' : 'Movie'} with ${trailerUrl ? 'trailer' : 'no trailer'}!`)
     } catch (error) {
       console.error('Import error:', error)
       toast.error('Failed to import details')
@@ -492,7 +547,7 @@ export default function AdminPage() {
       stats_highly: contentForm.stats_highly,
       stats_recommended: contentForm.stats_recommended,
       stats_not: contentForm.stats_not,
-      is_tv_show: contentForm.is_tv_show || false,  // 👈 SAVE TV SHOW FLAG
+      is_tv_show: contentForm.is_tv_show || false,
     }
     
     if (contentForm.type === 'movie') {
@@ -804,7 +859,7 @@ export default function AdminPage() {
               
               {contentForm.type === 'movie' ? (
                 <>
-                  {/* TV Show Checkbox - 👈 ADD THIS */}
+                  {/* TV Show Checkbox */}
                   <div className="mb-2 p-3 bg-gray-800/50 rounded-lg">
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input
@@ -840,17 +895,41 @@ export default function AdminPage() {
                           </div>
                         </div>
                         
-                        {tmdbSearchResults.length > 0 && (
+                        {searchingTmdb && (
+                          <div className="flex justify-center py-4">
+                            <Loader2 className="h-6 w-6 animate-spin text-teal-500" />
+                          </div>
+                        )}
+                        
+                        {tmdbSearchResults.length > 0 && !searchingTmdb && (
                           <div className="space-y-2 max-h-64 overflow-y-auto">
-                            {tmdbSearchResults.map((item) => (
-                              <div key={item.id} onClick={() => importFromTmdb(item, tmdbSearchType)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition">
-                                <img src={item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : '/api/placeholder/92/138'} alt={tmdbSearchType === 'movie' ? item.title : item.name} className="w-12 h-16 rounded object-cover" />
+                            {tmdbSearchResults.map((result) => (
+                              <div key={result.id} onClick={() => importFromTmdb(result, tmdbSearchType)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition">
+                                <img src={result.poster_path ? `https://image.tmdb.org/t/p/w92${result.poster_path}` : '/api/placeholder/92/138'} alt={tmdbSearchType === 'movie' ? result.title : result.name} className="w-12 h-16 rounded object-cover" />
                                 <div className="flex-1 min-w-0">
-                                  <p className="font-medium text-sm truncate">{tmdbSearchType === 'movie' ? item.title : item.name}</p>
-                                  <p className="text-xs text-gray-400 truncate">{tmdbSearchType === 'movie' ? (item.release_date?.split('-')[0] || 'Unknown') : (item.first_air_date?.split('-')[0] || 'Unknown')}</p>
-                                  <p className="text-xs text-gray-500">{tmdbSearchType === 'movie' ? '🎬 Movie' : '📺 TV Show'}</p>
+                                  <p className="font-medium text-sm truncate">
+                                    {tmdbSearchType === 'movie' ? result.title : result.name}
+                                  </p>
+                                  <p className="text-xs text-gray-400 truncate">
+                                    {tmdbSearchType === 'movie' 
+                                      ? (result.release_date?.split('-')[0] || 'Unknown Year')
+                                      : (result.first_air_date?.split('-')[0] || 'Unknown Year')}
+                                  </p>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-600/20 text-purple-400">
+                                      {tmdbSearchType === 'movie' ? '🎬 Movie' : '📺 TV Series'}
+                                    </span>
+                                    {result.genres && result.genres[0] && (
+                                      <span className="text-[10px] text-gray-500 truncate max-w-[100px]">
+                                        {result.genres[0].name}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-gray-500 truncate mt-1 max-w-[200px]">
+                                    {result.overview?.substring(0, 60)}...
+                                  </p>
                                 </div>
-                                <button className="text-teal-400 text-sm">Import →</button>
+                                <button className="text-teal-400 text-sm whitespace-nowrap">Import →</button>
                               </div>
                             ))}
                           </div>
