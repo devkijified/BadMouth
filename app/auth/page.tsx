@@ -51,6 +51,61 @@ export default function AuthPage() {
     setUsername(value)
   }
 
+  // Send welcome email
+  const sendWelcomeEmail = async (email: string, username: string) => {
+    const emailHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; background: #14b8a6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🎬 Welcome to BADMOUTH!</h1>
+          </div>
+          <div class="content">
+            <h2>Hello ${username}!</h2>
+            <p>Thank you for joining BADMOUTH - your AI-powered movie and music recommendation engine!</p>
+            <p>With BADMOUTH, you can:</p>
+            <ul>
+              <li>🎬 Discover personalized movie and music recommendations</li>
+              <li>❤️ Create your watchlist</li>
+              <li>👍 Recommend content to the community</li>
+              <li>⭐ Rate and review movies and music</li>
+            </ul>
+            <div style="text-align: center;">
+              <a href="https://badmouth.vercel.app" class="button">Start Exploring</a>
+            </div>
+            <p>Happy exploring!</p>
+            <p>- The BADMOUTH Team</p>
+          </div>
+          <div class="footer">
+            <p>&copy; 2024 BADMOUTH. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+
+    await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        to: email, 
+        subject: 'Welcome to BADMOUTH! 🎬', 
+        html: emailHtml 
+      })
+    }).catch(console.error)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
@@ -125,7 +180,10 @@ export default function AuthPage() {
           }])
         }
 
-        toast.success('Account created! You can now sign in.')
+        // Send welcome email
+        await sendWelcomeEmail(email, finalUsername)
+
+        toast.success('Account created! Welcome to BADMOUTH! Check your email for a welcome message.')
         setIsLogin(true)
         setEmail('')
         setPassword('')
@@ -176,21 +234,14 @@ export default function AuthPage() {
         return
       }
 
-      // Generate token - using simpler format
+      // Generate token
       const resetToken = Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
-      // Set expiration to 24 hours from now in UTC
       const resetExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
-      console.log('Reset token generated:', resetToken)
-      console.log('Expires at:', resetExpires)
-
-      // Update database with token
+      // Update database
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({ 
-          reset_token: resetToken, 
-          reset_expires: resetExpires 
-        })
+        .update({ reset_token: resetToken, reset_expires: resetExpires })
         .eq('id', profile.id)
 
       if (updateError) {
@@ -199,15 +250,6 @@ export default function AuthPage() {
         setIsResetting(false)
         return
       }
-
-      // Verify token was saved
-      const { data: verify } = await supabase
-        .from('profiles')
-        .select('reset_token')
-        .eq('id', profile.id)
-        .single()
-      
-      console.log('Token saved, verified:', verify?.reset_token === resetToken)
 
       // Send reset email
       const resetUrl = `${window.location.origin}/reset-password?token=${resetToken}`
@@ -252,7 +294,7 @@ export default function AuthPage() {
         </html>
       `
 
-      const response = await fetch('/api/send-email', {
+      await fetch('/api/send-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -262,18 +304,12 @@ export default function AuthPage() {
         })
       })
 
-      if (response.ok) {
-        toast.success('Password reset link sent! Check your email (and spam folder).')
-        setShowResetPassword(false)
-        setResetEmail('')
-      } else {
-        const error = await response.json()
-        console.error('Email send error:', error)
-        toast.error('Failed to send email. Please try again.')
-      }
+      toast.success('Password reset link sent! Check your email.')
+      setShowResetPassword(false)
+      setResetEmail('')
     } catch (error) {
       console.error('Reset error:', error)
-      toast.error('Something went wrong. Please try again.')
+      toast.error('Something went wrong')
     } finally {
       setIsResetting(false)
     }
@@ -325,10 +361,6 @@ export default function AuthPage() {
                   {isResetting ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Send Reset Email'}
                 </button>
               </form>
-              
-              <p className="text-xs text-gray-500 text-center mt-4">
-                Check your spam folder if you don't see the email within a few minutes.
-              </p>
             </div>
           </div>
         )}
