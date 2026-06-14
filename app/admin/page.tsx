@@ -7,12 +7,11 @@ import { useRouter } from 'next/navigation'
 import { 
   Plus, Edit, Trash2, Film, Music, Layers, Shield, X, 
   Users, TrendingUp, Settings, Heart, Star, Search as SearchIcon,
-  Loader2, Tv, AlertTriangle
+  Loader2, Tv, AlertTriangle, RefreshCw
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 
-// Define types
 interface Category {
   id: string
   name: string
@@ -50,7 +49,7 @@ export default function AdminPage() {
   const router = useRouter()
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'categories' | 'content' | 'users' | 'analytics' | 'settings'>('categories')
+  const [activeTab, setActiveTab] = useState<'categories' | 'content' | 'users' | 'analytics' | 'settings'>('users')
   
   // Data states
   const [categories, setCategories] = useState<Category[]>([])
@@ -68,23 +67,21 @@ export default function AdminPage() {
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | 'movie' | 'music'>('all')
   const [categoryTypeFilter, setCategoryTypeFilter] = useState<'all' | 'movie' | 'music'>('all')
   
-  // Deezer search states (for Music)
+  // Deezer search states
   const [deezerSearchResults, setDeezerSearchResults] = useState<any[]>([])
   const [showDeezerSearch, setShowDeezerSearch] = useState(false)
   const [deezerSearchQuery, setDeezerSearchQuery] = useState('')
   const [searchingDeezer, setSearchingDeezer] = useState(false)
   
-  // TMDB search states (for Movies & TV Shows)
+  // TMDB search states
   const [tmdbSearchResults, setTmdbSearchResults] = useState<any[]>([])
   const [showTmdbSearch, setShowTmdbSearch] = useState(false)
   const [tmdbSearchQuery, setTmdbSearchQuery] = useState('')
   const [searchingTmdb, setSearchingTmdb] = useState(false)
   const [tmdbSearchType, setTmdbSearchType] = useState<'movie' | 'tv'>('movie')
   
-  // YOUR TMDB API CREDENTIALS
   const TMDB_API_KEY = 'e40a2dd7da8c15d302e6790211dd958f'
 
-  // Category form state
   const [categoryForm, setCategoryForm] = useState({
     name: '',
     description: '',
@@ -93,7 +90,6 @@ export default function AdminPage() {
     display_order: 0
   })
 
-  // Content form state
   const [contentForm, setContentForm] = useState({
     title: '',
     description: '',
@@ -133,6 +129,7 @@ export default function AdminPage() {
         loadRecommendations()
       ])
       setLoading(false)
+      setupRealtimeSubscriptions()
       return
     }
     
@@ -150,10 +147,70 @@ export default function AdminPage() {
         loadUsers(),
         loadRecommendations()
       ])
+      setLoading(false)
+      setupRealtimeSubscriptions()
     } else {
       router.push('/')
     }
     setLoading(false)
+  }
+
+  const setupRealtimeSubscriptions = () => {
+    // Subscribe to profiles changes
+    const profilesSubscription = supabase
+      .channel('profiles-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'profiles' }, 
+        () => {
+          console.log('Profiles changed, reloading...')
+          loadUsers()
+        }
+      )
+      .subscribe()
+
+    // Subscribe to recommendations changes
+    const recsSubscription = supabase
+      .channel('recommendations-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'recommendations' }, 
+        () => {
+          console.log('Recommendations changed, reloading...')
+          loadRecommendations()
+          loadUsers()
+        }
+      )
+      .subscribe()
+
+    // Subscribe to watchlist changes
+    const watchlistSubscription = supabase
+      .channel('watchlist-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'watchlist' }, 
+        () => {
+          console.log('Watchlist changed, reloading...')
+          loadUsers()
+        }
+      )
+      .subscribe()
+
+    // Subscribe to content changes
+    const contentSubscription = supabase
+      .channel('content-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'content' }, 
+        () => {
+          console.log('Content changed, reloading...')
+          loadContent()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      profilesSubscription.unsubscribe()
+      recsSubscription.unsubscribe()
+      watchlistSubscription.unsubscribe()
+      contentSubscription.unsubscribe()
+    }
   }
 
   const loadCategories = async () => {
@@ -171,8 +228,33 @@ export default function AdminPage() {
   }
 
   const loadUsers = async () => {
-    const { data: profiles } = await supabase.from('profiles').select('*')
-    setUsers(profiles || [])
+    try {
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (profilesError) throw profilesError
+
+      const usersWithStats = await Promise.all(
+        (profiles || []).map(async (profile) => {
+          const [{ count: watchlistCount }, { count: recommendationsCount }] = await Promise.all([
+            supabase.from('watchlist').select('*', { count: 'exact', head: true }).eq('user_id', profile.id),
+            supabase.from('recommendations').select('*', { count: 'exact', head: true }).eq('user_id', profile.id)
+          ])
+
+          return {
+            ...profile,
+            watchlist_count: watchlistCount || 0,
+            recommendations_count: recommendationsCount || 0
+          }
+        })
+      )
+
+      setUsers(usersWithStats)
+    } catch (error) {
+      console.error('Error loading users:', error)
+    }
   }
 
   const loadRecommendations = async () => {
@@ -184,16 +266,12 @@ export default function AdminPage() {
     setRecommendations(data || [])
   }
 
-  // Delete all content
   const deleteAllContent = async () => {
-    if (!confirm('⚠️ WARNING: This will delete ALL movies, music, and recommendations. This action cannot be undone. Are you absolutely sure?')) {
-      return
-    }
+    if (!confirm('⚠️ WARNING: This will delete ALL content. This action cannot be undone. Are you absolutely sure?')) return
     
     try {
       await supabase.from('recommendations').delete().neq('id', '')
       await supabase.from('content').delete().neq('id', '')
-      
       toast.success('All content deleted successfully!')
       loadContent()
       loadRecommendations()
@@ -203,15 +281,11 @@ export default function AdminPage() {
     }
   }
 
-  // Delete all users (except admin)
   const deleteAllUsers = async () => {
-    if (!confirm('⚠️ WARNING: This will delete ALL users except you. This action cannot be undone. Are you absolutely sure?')) {
-      return
-    }
+    if (!confirm('⚠️ WARNING: This will delete ALL users except you. This action cannot be undone. Are you absolutely sure?')) return
     
     try {
       await supabase.from('profiles').delete().neq('id', user?.id)
-      
       toast.success('All users deleted successfully!')
       loadUsers()
     } catch (error) {
@@ -220,9 +294,6 @@ export default function AdminPage() {
     }
   }
 
-  // ============================================
-  // DEEZER API (for Music)
-  // ============================================
   const searchDeezerForMusic = async () => {
     if (!deezerSearchQuery.trim()) {
       toast.error('Please enter a song or artist name')
@@ -238,7 +309,7 @@ export default function AdminPage() {
         toast.success(`Found ${data.data.length} results on Deezer`)
       } else {
         setDeezerSearchResults([])
-        toast.error('No results found. Try different search terms.')
+        toast.error('No results found')
       }
     } catch (error) {
       console.error('Deezer search error:', error)
@@ -260,7 +331,7 @@ export default function AdminPage() {
       title: track.title,
       artist: track.artist.name,
       description: `By ${track.artist.name} - ${track.album.title}`,
-      long_description: `"${track.title}" by ${track.artist.name} from the album "${track.album.title}". ${track.rank ? `Popularity rank: ${track.rank.toLocaleString()}.` : ''}`,
+      long_description: `"${track.title}" by ${track.artist.name} from the album "${track.album.title}".`,
       image_url: track.album.cover_xl,
       backdrop_url: track.album.cover_xl,
       type: 'music',
@@ -269,8 +340,8 @@ export default function AdminPage() {
       genre: track.artist.name.split(' ')[0],
       platforms: 'Spotify, Apple Music, Deezer, YouTube Music',
       trailer_url: track.preview,
-      stats_highly: track.rank ? Math.floor(track.rank / 10000) : Math.floor(Math.random() * 1000) + 500,
-      stats_recommended: track.rank ? Math.floor(track.rank / 20000) : Math.floor(Math.random() * 500) + 200,
+      stats_highly: Math.floor(Math.random() * 1000) + 500,
+      stats_recommended: Math.floor(Math.random() * 500) + 200,
       stats_not: 0,
       is_tv_show: false,
       category_ids: []
@@ -281,9 +352,6 @@ export default function AdminPage() {
     toast.success(`Imported "${track.title}" from Deezer!`)
   }
 
-  // ============================================
-  // TMDB API (for Movies & TV Shows with Trailers)
-  // ============================================
   const searchTmdb = async () => {
     if (!tmdbSearchQuery.trim()) {
       toast.error('Please enter a title to search')
@@ -292,60 +360,33 @@ export default function AdminPage() {
     
     setSearchingTmdb(true)
     try {
-      let url = ''
-      if (tmdbSearchType === 'movie') {
-        url = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(tmdbSearchQuery)}&language=en-US&page=1`
-      } else {
-        url = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(tmdbSearchQuery)}&language=en-US&page=1`
-      }
+      const url = tmdbSearchType === 'movie'
+        ? `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(tmdbSearchQuery)}&language=en-US&page=1`
+        : `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(tmdbSearchQuery)}&language=en-US&page=1`
       
       const response = await fetch(url)
       const data = await response.json()
       
       if (data.results && data.results.length > 0) {
-        // Fetch full details for each result to get more metadata
         const enrichedResults = await Promise.all(
           data.results.slice(0, 10).map(async (result: any) => {
-            if (tmdbSearchType === 'tv') {
-              // Fetch TV show details
-              const detailUrl = `https://api.themoviedb.org/3/tv/${result.id}?api_key=${TMDB_API_KEY}&language=en-US`
-              const detailResponse = await fetch(detailUrl)
-              const details = await detailResponse.json()
-              return {
-                ...result,
-                name: result.name,
-                first_air_date: details.first_air_date || result.first_air_date,
-                overview: details.overview || result.overview,
-                poster_path: details.poster_path || result.poster_path,
-                backdrop_path: details.backdrop_path || result.backdrop_path,
-                genres: details.genres
-              }
-            } else {
-              // Fetch movie details
-              const detailUrl = `https://api.themoviedb.org/3/movie/${result.id}?api_key=${TMDB_API_KEY}&language=en-US`
-              const detailResponse = await fetch(detailUrl)
-              const details = await detailResponse.json()
-              return {
-                ...result,
-                title: result.title,
-                release_date: details.release_date || result.release_date,
-                overview: details.overview || result.overview,
-                poster_path: details.poster_path || result.poster_path,
-                backdrop_path: details.backdrop_path || result.backdrop_path,
-                genres: details.genres
-              }
-            }
+            const detailUrl = tmdbSearchType === 'movie'
+              ? `https://api.themoviedb.org/3/movie/${result.id}?api_key=${TMDB_API_KEY}&language=en-US`
+              : `https://api.themoviedb.org/3/tv/${result.id}?api_key=${TMDB_API_KEY}&language=en-US`
+            const detailResponse = await fetch(detailUrl)
+            const details = await detailResponse.json()
+            return { ...result, ...details }
           })
         )
         setTmdbSearchResults(enrichedResults)
-        toast.success(`Found ${enrichedResults.length} ${tmdbSearchType === 'movie' ? 'movies' : 'TV shows'} on TMDB`)
+        toast.success(`Found ${enrichedResults.length} results on TMDB`)
       } else {
         setTmdbSearchResults([])
-        toast.error('No results found. Try a different title.')
+        toast.error('No results found')
       }
     } catch (error) {
       console.error('TMDB search error:', error)
-      toast.error('Failed to search. Check your API key.')
+      toast.error('Failed to search TMDB')
     } finally {
       setSearchingTmdb(false)
     }
@@ -356,17 +397,9 @@ export default function AdminPage() {
       const url = `https://api.themoviedb.org/3/${type}/${id}/videos?api_key=${TMDB_API_KEY}&language=en-US`
       const response = await fetch(url)
       const data = await response.json()
-      
-      const trailer = data.results?.find(
-        (video: any) => video.type === 'Trailer' && video.site === 'YouTube'
-      )
-      
-      if (trailer) {
-        return `https://www.youtube.com/embed/${trailer.key}`
-      }
-      return null
+      const trailer = data.results?.find((video: any) => video.type === 'Trailer' && video.site === 'YouTube')
+      return trailer ? `https://www.youtube.com/embed/${trailer.key}` : null
     } catch (error) {
-      console.error('Error fetching trailer:', error)
       return null
     }
   }
@@ -376,24 +409,13 @@ export default function AdminPage() {
       const url = `https://api.themoviedb.org/3/${type}/${id}/watch/providers?api_key=${TMDB_API_KEY}`
       const response = await fetch(url)
       const data = await response.json()
-      
       const usProviders = data.results?.US?.flatrate || []
-      const providerNames = usProviders.map((provider: any) => {
-        const providerMap: Record<number, string> = {
-          8: 'Netflix',
-          9: 'Prime Video',
-          337: 'Disney+',
-          384: 'Max',
-          15: 'Hulu',
-          2: 'Apple TV+',
-          20: 'Paramount+',
-        }
-        return providerMap[provider.provider_id]
-      }).filter(Boolean)
-      
+      const providerMap: Record<number, string> = {
+        8: 'Netflix', 9: 'Prime Video', 337: 'Disney+', 384: 'Max', 15: 'Hulu', 2: 'Apple TV+', 20: 'Paramount+'
+      }
+      const providerNames = usProviders.map((provider: any) => providerMap[provider.provider_id]).filter(Boolean)
       return providerNames.length > 0 ? providerNames : ['Prime Video', 'Netflix', 'Apple TV+']
     } catch (error) {
-      console.error('Error fetching providers:', error)
       return ['Prime Video', 'Netflix', 'Apple TV+']
     }
   }
@@ -401,16 +423,8 @@ export default function AdminPage() {
   const importFromTmdb = async (item: any, type: 'movie' | 'tv') => {
     setSearchingTmdb(true)
     try {
-      // Fetch trailer
       const trailerUrl = await fetchTrailerFromTmdb(item.id, type)
-      
-      // Fetch watch providers
       const platforms = await fetchWatchProviders(item.id, type)
-      
-      // Fetch full details
-      const detailsUrl = `https://api.themoviedb.org/3/${type}/${item.id}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits`
-      const detailsResponse = await fetch(detailsUrl)
-      const details = await detailsResponse.json()
       
       let director = ''
       let cast: string[] = []
@@ -419,52 +433,36 @@ export default function AdminPage() {
       let genre = type === 'movie' ? 'Movie' : 'TV Series'
       let runtime = ''
       let isTVShow = type === 'tv'
-      let description = ''
-      let longDescription = ''
       
       if (type === 'movie') {
-        // MOVIE import
-        title = item.title || details.title || ''
-        year = item.release_date 
-          ? new Date(item.release_date).getFullYear() 
-          : details.release_date 
-            ? new Date(details.release_date).getFullYear() 
-            : new Date().getFullYear()
-        director = details?.credits?.crew?.find((person: any) => person.job === 'Director')?.name || ''
-        cast = details?.credits?.cast?.slice(0, 5).map((actor: any) => actor.name) || []
-        runtime = details?.runtime ? `${Math.floor(details.runtime / 60)}h ${details.runtime % 60}min` : ''
-        genre = details?.genres?.[0]?.name || 'Movie'
-        description = item.overview || details.overview || `"${title}" is a great movie worth watching.`
-        longDescription = item.overview || details.overview || `"${title}" is a cinematic masterpiece.`
+        title = item.title || item.original_title || ''
+        year = item.release_date ? new Date(item.release_date).getFullYear() : new Date().getFullYear()
+        director = item.credits?.crew?.find((person: any) => person.job === 'Director')?.name || ''
+        cast = item.credits?.cast?.slice(0, 5).map((actor: any) => actor.name) || []
+        runtime = item.runtime ? `${Math.floor(item.runtime / 60)}h ${item.runtime % 60}min` : ''
+        genre = item.genres?.[0]?.name || 'Movie'
       } else {
-        // TV SHOW import - FIXED
-        title = item.name || details.name || ''
-        year = item.first_air_date 
-          ? new Date(item.first_air_date).getFullYear() 
-          : details.first_air_date 
-            ? new Date(details.first_air_date).getFullYear() 
-            : new Date().getFullYear()
-        director = details?.created_by?.map((creator: any) => creator.name).join(', ') || ''
-        cast = details?.credits?.cast?.slice(0, 5).map((actor: any) => actor.name) || []
-        runtime = details?.episode_run_time?.[0] ? `${details.episode_run_time[0]} min per episode` : 'TV Series'
-        genre = details?.genres?.[0]?.name || 'TV Series'
-        description = item.overview || details.overview || `"${title}" is a great TV series worth watching.`
-        longDescription = item.overview || details.overview || `"${title}" is a must-watch series.`
+        title = item.name || item.original_name || ''
+        year = item.first_air_date ? new Date(item.first_air_date).getFullYear() : new Date().getFullYear()
+        director = item.created_by?.map((creator: any) => creator.name).join(', ') || ''
+        cast = item.credits?.cast?.slice(0, 5).map((actor: any) => actor.name) || []
+        runtime = item.episode_run_time?.[0] ? `${item.episode_run_time[0]} min per episode` : 'TV Series'
+        genre = item.genres?.[0]?.name || 'TV Series'
       }
       
-      const posterUrl = item.poster_path || details.poster_path
-        ? `https://image.tmdb.org/t/p/w500${item.poster_path || details.poster_path}` 
+      const posterUrl = item.poster_path 
+        ? `https://image.tmdb.org/t/p/w500${item.poster_path}` 
         : `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=400&name=${encodeURIComponent(title)}`
       
-      const backdropUrl = item.backdrop_path || details.backdrop_path
-        ? `https://image.tmdb.org/t/p/original${item.backdrop_path || details.backdrop_path}` 
+      const backdropUrl = item.backdrop_path 
+        ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` 
         : posterUrl
       
       setContentForm({
         ...contentForm,
         title: title,
-        description: description,
-        long_description: longDescription,
+        description: item.overview || `${title} is a great ${type === 'movie' ? 'movie' : 'TV series'}.`,
+        long_description: item.overview || '',
         image_url: posterUrl,
         backdrop_url: backdropUrl,
         type: 'movie',
@@ -481,11 +479,10 @@ export default function AdminPage() {
         is_tv_show: isTVShow,
         category_ids: []
       })
-      
       setShowTmdbSearch(false)
       setTmdbSearchQuery('')
       setTmdbSearchResults([])
-      toast.success(`Imported "${title}" as ${isTVShow ? 'TV Show' : 'Movie'} with ${trailerUrl ? 'trailer' : 'no trailer'}!`)
+      toast.success(`Imported "${title}" as ${isTVShow ? 'TV Show' : 'Movie'}!`)
     } catch (error) {
       console.error('Import error:', error)
       toast.error('Failed to import details')
@@ -643,7 +640,6 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-black">
-      {/* Admin Header */}
       <div className="bg-gray-900 border-b border-gray-800 sticky top-0 z-50">
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
@@ -653,9 +649,12 @@ export default function AdminPage() {
               </Link>
               <span className="text-xs bg-teal-600 px-2 py-1 rounded-full">Admin Panel</span>
             </div>
-            <Link href="/" className="text-gray-400 hover:text-white transition">
-              ← Back to Site
-            </Link>
+            <div className="flex items-center gap-4">
+              <button onClick={() => { loadUsers(); loadContent(); loadCategories(); loadRecommendations(); }} className="text-gray-400 hover:text-white transition">
+                <RefreshCw size={18} />
+              </button>
+              <Link href="/" className="text-gray-400 hover:text-white transition">← Back to Site</Link>
+            </div>
           </div>
         </div>
       </div>
@@ -663,15 +662,33 @@ export default function AdminPage() {
       <div className="container mx-auto px-4 py-8">
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
-          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Users size={20} /> Users</div><p className="text-2xl font-bold">{totalUsers}</p></div>
-          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Film size={20} /> Movies & TV</div><p className="text-2xl font-bold">{totalMovies}</p></div>
-          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Music size={20} /> Music</div><p className="text-2xl font-bold">{totalMusic}</p></div>
-          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Layers size={20} /> Categories</div><p className="text-2xl font-bold">{totalCategories}</p></div>
-          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Heart size={20} /> Recs</div><p className="text-2xl font-bold">{totalRecommendations}</p></div>
-          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Star size={20} /> Content</div><p className="text-2xl font-bold">{totalContent}</p></div>
+          <div className="bg-gray-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-teal-500 mb-2"><Users size={20} /> Users</div>
+            <p className="text-2xl font-bold">{totalUsers}</p>
+          </div>
+          <div className="bg-gray-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-teal-500 mb-2"><Film size={20} /> Movies & TV</div>
+            <p className="text-2xl font-bold">{totalMovies}</p>
+          </div>
+          <div className="bg-gray-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-teal-500 mb-2"><Music size={20} /> Music</div>
+            <p className="text-2xl font-bold">{totalMusic}</p>
+          </div>
+          <div className="bg-gray-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-teal-500 mb-2"><Layers size={20} /> Categories</div>
+            <p className="text-2xl font-bold">{totalCategories}</p>
+          </div>
+          <div className="bg-gray-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-teal-500 mb-2"><Heart size={20} /> Recs</div>
+            <p className="text-2xl font-bold">{totalRecommendations}</p>
+          </div>
+          <div className="bg-gray-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-teal-500 mb-2"><Star size={20} /> Content</div>
+            <p className="text-2xl font-bold">{totalContent}</p>
+          </div>
         </div>
 
-        {/* Danger Zone Actions */}
+        {/* Danger Zone */}
         <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-4 mb-8">
           <div className="flex items-center gap-2 mb-3">
             <AlertTriangle className="text-red-500" size={20} />
@@ -690,29 +707,22 @@ export default function AdminPage() {
 
         {/* Navigation Tabs */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-800">
-          <button onClick={() => setActiveTab('analytics')} className={`px-4 py-2 transition ${activeTab === 'analytics' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><TrendingUp size={16} className="inline mr-1" /> Analytics</button>
-          <button onClick={() => setActiveTab('users')} className={`px-4 py-2 transition ${activeTab === 'users' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><Users size={16} className="inline mr-1" /> Users</button>
-          <button onClick={() => setActiveTab('categories')} className={`px-4 py-2 transition ${activeTab === 'categories' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><Layers size={16} className="inline mr-1" /> Categories</button>
-          <button onClick={() => setActiveTab('content')} className={`px-4 py-2 transition ${activeTab === 'content' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><Film size={16} className="inline mr-1" /> Content</button>
-          <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 transition ${activeTab === 'settings' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><Settings size={16} className="inline mr-1" /> Settings</button>
+          <button onClick={() => setActiveTab('users')} className={`px-4 py-2 transition ${activeTab === 'users' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
+            <Users size={16} className="inline mr-1" /> Users
+          </button>
+          <button onClick={() => setActiveTab('analytics')} className={`px-4 py-2 transition ${activeTab === 'analytics' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
+            <TrendingUp size={16} className="inline mr-1" /> Analytics
+          </button>
+          <button onClick={() => setActiveTab('categories')} className={`px-4 py-2 transition ${activeTab === 'categories' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
+            <Layers size={16} className="inline mr-1" /> Categories
+          </button>
+          <button onClick={() => setActiveTab('content')} className={`px-4 py-2 transition ${activeTab === 'content' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
+            <Film size={16} className="inline mr-1" /> Content
+          </button>
+          <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 transition ${activeTab === 'settings' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
+            <Settings size={16} className="inline mr-1" /> Settings
+          </button>
         </div>
-
-        {/* Analytics Tab */}
-        {activeTab === 'analytics' && (
-          <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-xl font-bold mb-4">Recent Recommendations</h2>
-            <div className="space-y-3">
-              {recommendations.slice(0, 10).map(rec => (
-                <div key={rec.id} className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg">
-                  <div><p className="font-medium">{rec.profiles?.username || 'Anonymous'}</p><p className="text-sm text-gray-400">Recommended: {rec.content?.title || 'Unknown'}</p></div>
-                  <span className={`px-2 py-1 rounded-full text-xs ${rec.recommendation_tier === 'highly' ? 'bg-teal-600/20 text-teal-400' : rec.recommendation_tier === 'recommended' ? 'bg-blue-600/20 text-blue-400' : 'bg-gray-600/20 text-gray-400'}`}>
-                    {rec.recommendation_tier === 'highly' ? '🔥 HIGHLY' : rec.recommendation_tier === 'recommended' ? '👍 RECOMMENDED' : '👎 NOT'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Users Tab */}
         {activeTab === 'users' && (
@@ -720,20 +730,70 @@ export default function AdminPage() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-700">
-                  <tr><th className="px-4 py-3 text-left">User</th><th className="px-4 py-3 text-left">Username</th><th className="px-4 py-3 text-left">Role</th><th className="px-4 py-3 text-left">Joined</th><th className="px-4 py-3 text-left">Actions</th></tr>
+                  <tr>
+                    <th className="px-4 py-3 text-left">User</th>
+                    <th className="px-4 py-3 text-left">Username</th>
+                    <th className="px-4 py-3 text-left">Email</th>
+                    <th className="px-4 py-3 text-left">Role</th>
+                    <th className="px-4 py-3 text-left">Watchlist</th>
+                    <th className="px-4 py-3 text-left">Recs</th>
+                    <th className="px-4 py-3 text-left">Joined</th>
+                    <th className="px-4 py-3 text-left">Actions</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {users.map(userItem => (
                     <tr key={userItem.id} className="border-b border-gray-700">
-                      <td className="px-4 py-3"><div className="flex items-center gap-2"><img src={userItem.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userItem.username}`} className="w-8 h-8 rounded-full" /><span className="text-sm">{userItem.id?.slice(0, 8)}...</span></div></td>
-                      <td className="px-4 py-3">{userItem.username || 'No username'}</td>
-                      <td className="px-4 py-3"><select value={userItem.role || 'user'} onChange={(e) => updateUserRole(userItem.id, e.target.value)} className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm"><option value="user">User</option><option value="moderator">Moderator</option><option value="admin">Admin</option></select></td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <img src={userItem.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userItem.username}`} className="w-8 h-8 rounded-full" alt="" />
+                          <span className="text-sm">{userItem.id?.slice(0, 8)}...</span>
+                        </div>
+                       </td>
+                      <td className="px-4 py-3 font-medium">{userItem.username || 'No username'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-300">{userItem.email || 'No email'}</td>
+                      <td className="px-4 py-3">
+                        <select value={userItem.role || 'user'} onChange={(e) => updateUserRole(userItem.id, e.target.value)} className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm">
+                          <option value="user">User</option>
+                          <option value="moderator">Moderator</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                       </td>
+                      <td className="px-4 py-3"><span className="text-teal-400">❤️ {userItem.watchlist_count || 0}</span></td>
+                      <td className="px-4 py-3"><span className="text-blue-400">👍 {userItem.recommendations_count || 0}</span></td>
                       <td className="px-4 py-3 text-sm">{new Date(userItem.created_at).toLocaleDateString()}</td>
-                      <td className="px-4 py-3"><button onClick={() => updateUserRole(userItem.id, userItem.role === 'admin' ? 'user' : 'admin')} className="text-teal-500 hover:text-teal-400 text-sm">Toggle Admin</button></td>
+                      <td className="px-4 py-3">
+                        <button onClick={() => updateUserRole(userItem.id, userItem.role === 'admin' ? 'user' : 'admin')} className="text-teal-500 hover:text-teal-400 text-sm">
+                          Toggle Admin
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* Analytics Tab */}
+        {activeTab === 'analytics' && (
+          <div className="bg-gray-800 rounded-xl p-6">
+            <h2 className="text-xl font-bold mb-4">Recent Recommendations</h2>
+            <div className="space-y-3">
+              {recommendations.slice(0, 20).map(rec => (
+                <div key={rec.id} className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg">
+                  <div>
+                    <p className="font-medium">{rec.profiles?.username || 'Anonymous'}</p>
+                    <p className="text-sm text-gray-400">Recommended: {rec.content?.title || 'Unknown'}</p>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-xs ${rec.recommendation_tier === 'highly' ? 'bg-teal-600/20 text-teal-400' : rec.recommendation_tier === 'recommended' ? 'bg-blue-600/20 text-blue-400' : 'bg-gray-600/20 text-gray-400'}`}>
+                    {rec.recommendation_tier === 'highly' ? '🔥 HIGHLY' : rec.recommendation_tier === 'recommended' ? '👍 RECOMMENDED' : '👎 NOT'}
+                  </span>
+                </div>
+              ))}
+              {recommendations.length === 0 && (
+                <p className="text-center text-gray-500 py-8">No recommendations yet</p>
+              )}
             </div>
           </div>
         )}
@@ -754,7 +814,10 @@ export default function AdminPage() {
                 <div key={cat.id} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
                   <div className="flex justify-between items-start mb-2">
                     <div><h3 className="font-bold text-lg">{cat.name}</h3><p className="text-xs text-gray-400">{cat.type}</p></div>
-                    <div className="flex gap-2"><button onClick={() => { setEditingItem(cat); setCategoryForm(cat); setShowCategoryModal(true); }} className="p-1 hover:bg-gray-700 rounded"><Edit size={16} /></button><button onClick={() => deleteCategory(cat.id)} className="p-1 hover:bg-gray-700 rounded text-red-500"><Trash2 size={16} /></button></div>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setEditingItem(cat); setCategoryForm(cat); setShowCategoryModal(true); }} className="p-1 hover:bg-gray-700 rounded"><Edit size={16} /></button>
+                      <button onClick={() => deleteCategory(cat.id)} className="p-1 hover:bg-gray-700 rounded text-red-500"><Trash2 size={16} /></button>
+                    </div>
                   </div>
                   <p className="text-sm text-gray-300">{cat.description}</p>
                   <p className="text-xs text-gray-500 mt-2">Order: {cat.display_order}</p>
@@ -770,28 +833,30 @@ export default function AdminPage() {
             <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
               <h2 className="text-xl font-semibold">Content Management</h2>
               <div className="flex gap-2">
-                <div className="relative"><SearchIcon size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" /><input type="text" placeholder="Search content..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500" /></div>
-                <select value={contentTypeFilter} onChange={(e) => setContentTypeFilter(e.target.value as any)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg"><option value="all">All Types</option><option value="movie">Movies & TV</option><option value="music">Music</option></select>
+                <div className="relative">
+                  <SearchIcon size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <input type="text" placeholder="Search content..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500" />
+                </div>
+                <select value={contentTypeFilter} onChange={(e) => setContentTypeFilter(e.target.value as any)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg">
+                  <option value="all">All Types</option>
+                  <option value="movie">Movies & TV</option>
+                  <option value="music">Music</option>
+                </select>
                 <button onClick={() => { setShowContentModal(true); setEditingItem(null); setContentForm({ title: '', description: '', long_description: '', image_url: '', backdrop_url: '', type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '', platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', stats_highly: 0, stats_recommended: 0, stats_not: 0, is_tv_show: false, category_ids: [] }); }} className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"><Plus size={16} /> Add Content</button>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredContent.map(item => (
                 <div key={item.id} className="bg-gray-800 rounded-xl overflow-hidden border border-gray-700 relative">
-                  {/* TV Show Badge in Admin */}
                   {item.is_tv_show && (
                     <div className="absolute top-2 left-2 z-10">
-                      <div className="bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <Tv size={10} /> TV Series
-                      </div>
+                      <div className="bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"><Tv size={10} /> TV Series</div>
                     </div>
                   )}
                   <img src={item.image_url} alt={item.title} className="w-full h-40 object-cover" />
                   <div className="p-4">
                     <h3 className="font-bold">{item.title}</h3>
-                    <p className="text-xs text-gray-400 mb-2">
-                      {item.is_tv_show ? '📺 TV Show' : (item.type === 'movie' ? '🎬 Movie' : '🎵 Music')} • {item.year}
-                    </p>
+                    <p className="text-xs text-gray-400 mb-2">{item.is_tv_show ? '📺 TV Show' : (item.type === 'movie' ? '🎬 Movie' : '🎵 Music')} • {item.year}</p>
                     <p className="text-sm text-gray-300 line-clamp-2">{item.description}</p>
                     <div className="flex justify-between mt-3">
                       <span className="text-xs flex gap-2"><span className="text-teal-400">🔥 {item.stats_highly}</span><span className="text-blue-400">👍 {item.stats_recommended}</span><span className="text-gray-400">👎 {item.stats_not}</span></span>
@@ -812,10 +877,9 @@ export default function AdminPage() {
           <div className="bg-gray-800 rounded-xl p-6">
             <h2 className="text-xl font-bold mb-4">System Settings</h2>
             <div className="space-y-4">
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">About Display Order</h3><p className="text-sm text-gray-400">The "Order" field in categories determines how they appear on the main page. Lower numbers appear first (higher priority).</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TV Shows vs Movies</h3><p className="text-sm text-gray-400">When importing from TMDB, TV shows are automatically marked with a TV badge. You can also manually check the "This is a TV Show" checkbox when adding/editing content.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Category Filter</h3><p className="text-sm text-gray-400">You can now filter categories by type (Movies or Music) to easily manage them.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Danger Zone Actions</h3><p className="text-sm text-gray-400">Delete all content or all users in one click. These actions cannot be undone.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Real-time Updates</h3><p className="text-sm text-gray-400">User stats, watchlist counts, and recommendations update automatically in real-time.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TV Shows vs Movies</h3><p className="text-sm text-gray-400">TV shows are automatically marked with a TV badge when imported from TMDB.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Email Notifications</h3><p className="text-sm text-gray-400">Welcome emails and password reset emails are sent via Resend.</p></div>
             </div>
           </div>
         )}
@@ -829,7 +893,7 @@ export default function AdminPage() {
             <input type="text" placeholder="Name" value={categoryForm.name} onChange={e => setCategoryForm({ ...categoryForm, name: e.target.value })} className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded" />
             <input type="text" placeholder="Description" value={categoryForm.description} onChange={e => setCategoryForm({ ...categoryForm, description: e.target.value })} className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded" />
             <select value={categoryForm.type} onChange={e => setCategoryForm({ ...categoryForm, type: e.target.value as 'movie' | 'music' })} className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded"><option value="movie">Movies & TV Shows</option><option value="music">Music</option></select>
-            <input type="number" placeholder="Display Order (lower = higher priority)" value={categoryForm.display_order} onChange={e => setCategoryForm({ ...categoryForm, display_order: parseInt(e.target.value) })} className="w-full mb-4 p-2 bg-gray-800 border border-gray-700 rounded" />
+            <input type="number" placeholder="Display Order" value={categoryForm.display_order} onChange={e => setCategoryForm({ ...categoryForm, display_order: parseInt(e.target.value) })} className="w-full mb-4 p-2 bg-gray-800 border border-gray-700 rounded" />
             <div className="flex gap-2"><button onClick={saveCategory} className="flex-1 py-2 bg-teal-600 rounded">Save</button><button onClick={() => setShowCategoryModal(false)} className="flex-1 py-2 bg-gray-700 rounded">Cancel</button></div>
           </div>
         </div>
@@ -839,10 +903,7 @@ export default function AdminPage() {
       {showContentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 overflow-y-auto">
           <div className="bg-gray-900 rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Content</h2>
-              <button onClick={closeContentModal} className="p-1 hover:bg-gray-800 rounded"><X size={20} /></button>
-            </div>
+            <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Content</h2><button onClick={closeContentModal} className="p-1 hover:bg-gray-800 rounded"><X size={20} /></button></div>
             <div className="space-y-3">
               <input type="text" placeholder="Title" value={contentForm.title} onChange={e => setContentForm({ ...contentForm, title: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               <textarea placeholder="Description" value={contentForm.description} onChange={e => setContentForm({ ...contentForm, description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" rows={2} />
@@ -859,77 +920,36 @@ export default function AdminPage() {
               
               {contentForm.type === 'movie' ? (
                 <>
-                  {/* TV Show Checkbox */}
                   <div className="mb-2 p-3 bg-gray-800/50 rounded-lg">
                     <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={contentForm.is_tv_show}
-                        onChange={(e) => setContentForm({ ...contentForm, is_tv_show: e.target.checked })}
-                        className="w-5 h-5 rounded border-gray-700 bg-gray-800 text-teal-500 focus:ring-teal-500"
-                      />
-                      <div>
-                        <span className="text-sm text-gray-300 font-medium">This is a TV Show (not a movie)</span>
-                        {contentForm.is_tv_show && (
-                          <p className="text-xs text-purple-400 mt-1">
-                            📺 TV Show badge will appear on the content card
-                          </p>
-                        )}
-                      </div>
+                      <input type="checkbox" checked={contentForm.is_tv_show} onChange={(e) => setContentForm({ ...contentForm, is_tv_show: e.target.checked })} className="w-5 h-5 rounded border-gray-700 bg-gray-800 text-teal-500" />
+                      <div><span className="text-sm text-gray-300 font-medium">This is a TV Show</span>{contentForm.is_tv_show && <p className="text-xs text-purple-400 mt-1">📺 TV Show badge will appear</p>}</div>
                     </label>
                   </div>
 
-                  {/* TMDB Search */}
                   <div className="mb-2">
-                    <button type="button" onClick={() => setShowTmdbSearch(!showTmdbSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1">
-                      {showTmdbSearch ? '− Hide TMDB Search' : '+ Search on TMDB (Movies & TV Shows)'}
-                    </button>
-                    
+                    <button type="button" onClick={() => setShowTmdbSearch(!showTmdbSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2">+ Search on TMDB</button>
                     {showTmdbSearch && (
                       <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
                         <div className="flex gap-2">
-                          <input type="text" placeholder="Search for a movie or TV show..." value={tmdbSearchQuery} onChange={(e) => setTmdbSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchTmdb()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm" />
+                          <input type="text" placeholder="Search for a movie or TV show..." value={tmdbSearchQuery} onChange={(e) => setTmdbSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchTmdb()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded text-sm" />
                           <div className="flex gap-1">
-                            <button onClick={() => { setTmdbSearchType('movie'); searchTmdb(); }} disabled={searchingTmdb} className={`px-3 py-2 rounded transition ${tmdbSearchType === 'movie' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'}`}><Film size={16} /></button>
-                            <button onClick={() => { setTmdbSearchType('tv'); searchTmdb(); }} disabled={searchingTmdb} className={`px-3 py-2 rounded transition ${tmdbSearchType === 'tv' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'}`}><Tv size={16} /></button>
+                            <button onClick={() => { setTmdbSearchType('movie'); searchTmdb(); }} className={`px-3 py-2 rounded ${tmdbSearchType === 'movie' ? 'bg-teal-600' : 'bg-gray-700'}`}><Film size={16} /></button>
+                            <button onClick={() => { setTmdbSearchType('tv'); searchTmdb(); }} className={`px-3 py-2 rounded ${tmdbSearchType === 'tv' ? 'bg-teal-600' : 'bg-gray-700'}`}><Tv size={16} /></button>
                           </div>
                         </div>
-                        
-                        {searchingTmdb && (
-                          <div className="flex justify-center py-4">
-                            <Loader2 className="h-6 w-6 animate-spin text-teal-500" />
-                          </div>
-                        )}
-                        
+                        {searchingTmdb && <div className="flex justify-center py-4"><Loader2 className="h-6 w-6 animate-spin text-teal-500" /></div>}
                         {tmdbSearchResults.length > 0 && !searchingTmdb && (
                           <div className="space-y-2 max-h-64 overflow-y-auto">
                             {tmdbSearchResults.map((result) => (
-                              <div key={result.id} onClick={() => importFromTmdb(result, tmdbSearchType)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition">
-                                <img src={result.poster_path ? `https://image.tmdb.org/t/p/w92${result.poster_path}` : '/api/placeholder/92/138'} alt={tmdbSearchType === 'movie' ? result.title : result.name} className="w-12 h-16 rounded object-cover" />
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-medium text-sm truncate">
-                                    {tmdbSearchType === 'movie' ? result.title : result.name}
-                                  </p>
-                                  <p className="text-xs text-gray-400 truncate">
-                                    {tmdbSearchType === 'movie' 
-                                      ? (result.release_date?.split('-')[0] || 'Unknown Year')
-                                      : (result.first_air_date?.split('-')[0] || 'Unknown Year')}
-                                  </p>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-600/20 text-purple-400">
-                                      {tmdbSearchType === 'movie' ? '🎬 Movie' : '📺 TV Series'}
-                                    </span>
-                                    {result.genres && result.genres[0] && (
-                                      <span className="text-[10px] text-gray-500 truncate max-w-[100px]">
-                                        {result.genres[0].name}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-[10px] text-gray-500 truncate mt-1 max-w-[200px]">
-                                    {result.overview?.substring(0, 60)}...
-                                  </p>
+                              <div key={result.id} onClick={() => importFromTmdb(result, tmdbSearchType)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600">
+                                <img src={result.poster_path ? `https://image.tmdb.org/t/p/w92${result.poster_path}` : '/api/placeholder/92/138'} className="w-12 h-16 rounded object-cover" />
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">{tmdbSearchType === 'movie' ? result.title : result.name}</p>
+                                  <p className="text-xs text-gray-400">{tmdbSearchType === 'movie' ? result.release_date?.split('-')[0] : result.first_air_date?.split('-')[0]}</p>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-600/20 text-purple-400">{tmdbSearchType === 'movie' ? '🎬 Movie' : '📺 TV Series'}</span>
                                 </div>
-                                <button className="text-teal-400 text-sm whitespace-nowrap">Import →</button>
+                                <button className="text-teal-400 text-sm">Import →</button>
                               </div>
                             ))}
                           </div>
@@ -944,26 +964,21 @@ export default function AdminPage() {
                 </>
               ) : (
                 <>
-                  {/* Deezer Search */}
                   <div className="mb-2">
-                    <button type="button" onClick={() => setShowDeezerSearch(!showDeezerSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1">
-                      {showDeezerSearch ? '− Hide Deezer Search' : '+ Search on Deezer (Music)'}
-                    </button>
-                    
+                    <button type="button" onClick={() => setShowDeezerSearch(!showDeezerSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2">+ Search on Deezer</button>
                     {showDeezerSearch && (
                       <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
                         <div className="flex gap-2">
-                          <input type="text" placeholder="Search for a song or artist..." value={deezerSearchQuery} onChange={(e) => setDeezerSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchDeezerForMusic()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm" />
-                          <button onClick={searchDeezerForMusic} disabled={searchingDeezer} className="px-4 py-2 bg-teal-600 rounded hover:bg-teal-700 transition disabled:opacity-50">{searchingDeezer ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}</button>
+                          <input type="text" placeholder="Search for a song or artist..." value={deezerSearchQuery} onChange={(e) => setDeezerSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchDeezerForMusic()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded text-sm" />
+                          <button onClick={searchDeezerForMusic} disabled={searchingDeezer} className="px-4 py-2 bg-teal-600 rounded">{searchingDeezer ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}</button>
                         </div>
-                        
                         {deezerSearchResults.length > 0 && (
                           <div className="space-y-2 max-h-64 overflow-y-auto">
                             {deezerSearchResults.map((track) => (
-                              <div key={track.id} onClick={() => importFromDeezer(track)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition">
-                                <img src={track.album.cover_small} alt={track.title} className="w-12 h-12 rounded" />
-                                <div className="flex-1 min-w-0"><p className="font-medium text-sm truncate">{track.title}</p><p className="text-xs text-gray-400 truncate">{track.artist.name}</p></div>
-                                <button className="text-teal-400 text-sm">Import →</button>
+                              <div key={track.id} onClick={() => importFromDeezer(track)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600">
+                                <img src={track.album.cover_small} className="w-12 h-12 rounded" />
+                                <div><p className="font-medium text-sm">{track.title}</p><p className="text-xs text-gray-400">{track.artist.name}</p></div>
+                                <button className="text-teal-400 text-sm ml-auto">Import →</button>
                               </div>
                             ))}
                           </div>
@@ -971,14 +986,13 @@ export default function AdminPage() {
                       </div>
                     )}
                   </div>
-                  
                   <input type="text" placeholder="Artist" value={contentForm.artist} onChange={e => setContentForm({ ...contentForm, artist: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-                  <input type="text" placeholder="Duration (e.g., 3:45)" value={contentForm.duration} onChange={e => setContentForm({ ...contentForm, duration: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                  <input type="text" placeholder="Duration" value={contentForm.duration} onChange={e => setContentForm({ ...contentForm, duration: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                 </>
               )}
               
               <input type="text" placeholder="Platforms (comma separated)" value={contentForm.platforms} onChange={e => setContentForm({ ...contentForm, platforms: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-              <input type="text" placeholder="Trailer/Video URL" value={contentForm.trailer_url} onChange={e => setContentForm({ ...contentForm, trailer_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              <input type="text" placeholder="Trailer URL" value={contentForm.trailer_url} onChange={e => setContentForm({ ...contentForm, trailer_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               <input type="text" placeholder="Genre" value={contentForm.genre} onChange={e => setContentForm({ ...contentForm, genre: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               
               <div className="grid grid-cols-3 gap-2">
