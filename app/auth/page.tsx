@@ -148,124 +148,77 @@ export default function AuthPage() {
   setIsResetting(true)
   
   try {
-    console.log('=== STARTING PASSWORD RESET ===')
-    console.log('Email:', resetEmail)
-    
-    // Step 1: Find the user
+    // Find user
     const { data: profile, error: findError } = await supabase
       .from('profiles')
-      .select('id, username, email')
+      .select('id, username')
       .eq('email', resetEmail)
       .single()
 
     if (findError || !profile) {
-      console.error('Find error:', findError)
       toast.error('No account found with this email address')
       setIsResetting(false)
       return
     }
 
-    console.log('Found user:', profile.id, profile.username)
-
-    // Step 2: Generate a simple token
+    // Generate token
     const resetToken = Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
     const resetExpires = new Date(Date.now() + 60 * 60 * 1000).toISOString()
 
-    console.log('Generated token:', resetToken)
-    console.log('Expires:', resetExpires)
-
-    // Step 3: Update using direct ID match
-    const { data: updateData, error: updateError } = await supabase
+    // Update database
+    const { error: updateError } = await supabase
       .from('profiles')
-      .update({ 
-        reset_token: resetToken, 
-        reset_expires: resetExpires 
-      })
-      .eq('id', profile.id)  // Using ID instead of email for reliability
-      .select()  // This will return the updated record
-
-    console.log('Update result:', { updateData, updateError })
+      .update({ reset_token: resetToken, reset_expires: resetExpires })
+      .eq('id', profile.id)
 
     if (updateError) {
-      console.error('Update error details:', updateError)
-      toast.error('Failed to save reset token: ' + updateError.message)
-      setIsResetting(false)
-      return
-    }
-
-    // Step 4: Verify the token was saved
-    const { data: verify } = await supabase
-      .from('profiles')
-      .select('reset_token, reset_expires')
-      .eq('id', profile.id)
-      .single()
-
-    console.log('Verified token in DB:', verify)
-
-    if (!verify?.reset_token) {
-      console.error('Token not found after update!')
+      console.error('Update error:', updateError)
       toast.error('Failed to save reset token')
       setIsResetting(false)
       return
     }
 
-    // Step 5: Send email
+    // Send email
     const resetUrl = `${window.location.origin}/reset-password?token=${resetToken}`
-    console.log('Reset URL:', resetUrl)
-
+    
     const emailHtml = `
       <!DOCTYPE html>
       <html>
       <head>
         <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; }
+          body { font-family: Arial, sans-serif; }
           .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 20px; text-align: center; }
-          .content { background: #f9f9f9; padding: 30px; }
-          .button { display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-          .token { background: #e0e0e0; padding: 10px; font-family: monospace; word-break: break-all; }
+          .button { background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; }
         </style>
       </head>
       <body>
         <div class="container">
-          <div class="header">
-            <h1>Reset Your Password</h1>
+          <h1>Reset Your Password</h1>
+          <p>Hello ${profile.username}!</p>
+          <p>Click the button below to reset your password:</p>
+          <div style="text-align: center;">
+            <a href="${resetUrl}" class="button">Reset Password</a>
           </div>
-          <div class="content">
-            <h2>Hello ${profile.username}!</h2>
-            <p>Click the button below to reset your password:</p>
-            <div style="text-align: center;">
-              <a href="${resetUrl}" class="button">Reset Password</a>
-            </div>
-            <p>Or copy this link:</p>
-            <div class="token">${resetUrl}</div>
-            <p>This link will expire in 1 hour.</p>
-            <p>If you didn't request this, ignore this email.</p>
-          </div>
+          <p>This link will expire in 1 hour.</p>
+          <p>If you didn't request this, ignore this email.</p>
         </div>
       </body>
       </html>
     `
 
-    const response = await fetch('/api/send-email', {
+    await fetch('/api/send-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         to: resetEmail, 
-        subject: 'Reset Your BADMOUTH Password', 
+        subject: 'Reset Your Password', 
         html: emailHtml 
       })
     })
 
-    if (response.ok) {
-      toast.success('Password reset link sent! Check your email.')
-      setShowResetPassword(false)
-      setResetEmail('')
-    } else {
-      const error = await response.json()
-      console.error('Email error:', error)
-      toast.error('Failed to send email')
-    }
+    toast.success('Password reset link sent! Check your email.')
+    setShowResetPassword(false)
+    setResetEmail('')
   } catch (error) {
     console.error('Reset error:', error)
     toast.error('Something went wrong')
