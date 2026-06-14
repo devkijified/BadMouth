@@ -148,31 +148,33 @@ export default function AuthPage() {
     setIsResetting(true)
     
     try {
-      console.log('Looking for email:', resetEmail)
+      console.log('1. Searching for email:', resetEmail)
       
-      // Check if user exists in profiles table
-      const { data: profile, error: profileError } = await supabase
+      // First, check if user exists
+      const { data: profile, error: selectError } = await supabase
         .from('profiles')
-        .select('username, email')
+        .select('username, email, id')
         .eq('email', resetEmail)
         .single()
 
-      console.log('Profile found:', profile)
-      console.log('Error:', profileError)
+      console.log('2. Profile found:', profile)
+      console.log('3. Error:', selectError)
 
-      if (profileError || !profile) {
-        toast.error('No account found with this email address')
+      if (selectError || !profile) {
+        toast.error(`No account found with email: ${resetEmail}`)
         setIsResetting(false)
         return
       }
 
-      // Generate a unique reset token
+      console.log('4. User found:', profile.username)
+
+      // Generate reset token
       const resetToken = crypto.randomUUID()
       const resetExpires = new Date(Date.now() + 60 * 60 * 1000).toISOString()
 
-      console.log('Generated token:', resetToken)
+      console.log('5. Generated token:', resetToken)
 
-      // Save token to database
+      // Update the profile with reset token
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ 
@@ -181,16 +183,18 @@ export default function AuthPage() {
         })
         .eq('email', resetEmail)
 
+      console.log('6. Update error:', updateError)
+
       if (updateError) {
-        console.error('Update error:', updateError)
-        toast.error('Failed to process reset request')
+        console.error('Update failed:', updateError)
+        toast.error('Failed to save reset token')
         setIsResetting(false)
         return
       }
 
-      console.log('Token saved successfully')
+      console.log('7. Token saved successfully')
 
-      // Send reset email via Resend
+      // Send reset email
       const resetUrl = `${window.location.origin}/reset-password?token=${resetToken}`
       
       const emailHtml = `
@@ -233,6 +237,8 @@ export default function AuthPage() {
         </html>
       `
 
+      console.log('8. Sending email to:', resetEmail)
+
       const response = await fetch('/api/send-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -243,13 +249,15 @@ export default function AuthPage() {
         })
       })
 
+      console.log('9. Email response status:', response.status)
+
       if (response.ok) {
         toast.success('Password reset link sent! Check your email.')
         setShowResetPassword(false)
         setResetEmail('')
       } else {
-        const error = await response.json()
-        console.error('Email send error:', error)
+        const errorData = await response.json()
+        console.error('Email send failed:', errorData)
         toast.error('Failed to send email. Please try again.')
       }
     } catch (error) {
