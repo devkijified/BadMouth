@@ -97,6 +97,23 @@ export default function AuthPage() {
       }
 
       if (data.user) {
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', data.user.id)
+          .single()
+
+        if (!existingProfile) {
+          await supabase.from('profiles').insert([{
+            id: data.user.id,
+            username: finalUsername,
+            email: email,
+            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${finalUsername}`,
+            role: 'user',
+            is_active: true
+          }])
+        }
+
         toast.success('Account created! You can now sign in.')
         setIsLogin(true)
         setEmail('')
@@ -131,12 +148,17 @@ export default function AuthPage() {
     setIsResetting(true)
     
     try {
-      // FIRST: Check if user exists in profiles table
+      console.log('Looking for email:', resetEmail)
+      
+      // Check if user exists in profiles table
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('username, email')
         .eq('email', resetEmail)
         .single()
+
+      console.log('Profile found:', profile)
+      console.log('Error:', profileError)
 
       if (profileError || !profile) {
         toast.error('No account found with this email address')
@@ -144,11 +166,13 @@ export default function AuthPage() {
         return
       }
 
-      // SECOND: Generate reset token
+      // Generate a unique reset token
       const resetToken = crypto.randomUUID()
       const resetExpires = new Date(Date.now() + 60 * 60 * 1000).toISOString()
 
-      // THIRD: Save token to database
+      console.log('Generated token:', resetToken)
+
+      // Save token to database
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ 
@@ -164,7 +188,9 @@ export default function AuthPage() {
         return
       }
 
-      // FOURTH: Send reset email via Resend
+      console.log('Token saved successfully')
+
+      // Send reset email via Resend
       const resetUrl = `${window.location.origin}/reset-password?token=${resetToken}`
       
       const emailHtml = `
@@ -174,10 +200,11 @@ export default function AuthPage() {
           <style>
             body { font-family: Arial, sans-serif; line-height: 1.6; }
             .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 20px; text-align: center; }
-            .content { background: #f9f9f9; padding: 30px; }
+            .header { background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+            .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
             .button { display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-            .code { background: #e0e0e0; padding: 10px; font-family: monospace; font-size: 18px; text-align: center; }
+            .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
+            .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
           </style>
         </head>
         <body>
@@ -187,14 +214,19 @@ export default function AuthPage() {
             </div>
             <div class="content">
               <h2>Hello ${profile.username}!</h2>
-              <p>Click the button below to reset your password:</p>
+              <p>We received a request to reset your password for your BADMOUTH account.</p>
               <div style="text-align: center;">
                 <a href="${resetUrl}" class="button">Reset Password</a>
               </div>
-              <p>Or copy this link: <br/><span class="code">${resetUrl}</span></p>
-              <p>This link will expire in 1 hour.</p>
-              <p>If you didn't request this, please ignore this email.</p>
+              <p>Or copy this link: <a href="${resetUrl}">${resetUrl}</a></p>
+              <div class="warning">
+                <p><strong>⚠️ This link will expire in 1 hour.</strong></p>
+                <p>If you didn't request this, you can safely ignore this email.</p>
+              </div>
               <p>- The BADMOUTH Team</p>
+            </div>
+            <div class="footer">
+              <p>&copy; 2024 BADMOUTH. All rights reserved.</p>
             </div>
           </div>
         </body>
@@ -216,11 +248,13 @@ export default function AuthPage() {
         setShowResetPassword(false)
         setResetEmail('')
       } else {
+        const error = await response.json()
+        console.error('Email send error:', error)
         toast.error('Failed to send email. Please try again.')
       }
     } catch (error) {
       console.error('Reset error:', error)
-      toast.error('Something went wrong')
+      toast.error('Something went wrong. Please try again.')
     } finally {
       setIsResetting(false)
     }
@@ -239,6 +273,7 @@ export default function AuthPage() {
           <p className="text-gray-400 text-sm mt-2">Your AI-powered recommendation engine</p>
         </div>
 
+        {/* Reset Password Modal */}
         {showResetPassword && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
             <div className="bg-gray-900 rounded-xl max-w-md w-full p-6">
@@ -249,6 +284,10 @@ export default function AuthPage() {
                 </button>
               </div>
               
+              <p className="text-sm text-gray-400 mb-4">
+                Enter your email address and we'll send you a link to reset your password.
+              </p>
+              
               <form onSubmit={handleResetPassword} className="space-y-4">
                 <input
                   type="email"
@@ -258,6 +297,7 @@ export default function AuthPage() {
                   className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
                   required
                 />
+                
                 <button
                   type="submit"
                   disabled={isResetting}
@@ -266,6 +306,10 @@ export default function AuthPage() {
                   {isResetting ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Send Reset Email'}
                 </button>
               </form>
+              
+              <p className="text-xs text-gray-500 text-center mt-4">
+                Try: kijified@gmail.com
+              </p>
             </div>
           </div>
         )}
@@ -273,13 +317,19 @@ export default function AuthPage() {
         <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6 border border-gray-700">
           <div className="flex gap-2 mb-6">
             <button
-              onClick={() => setIsLogin(true)}
+              onClick={() => {
+                setIsLogin(true)
+                setShowResetPassword(false)
+              }}
               className={`flex-1 py-2.5 rounded-xl font-medium transition ${isLogin ? 'bg-gradient-to-r from-teal-600 to-blue-600' : 'bg-gray-700 text-gray-400'}`}
             >
               Sign In
             </button>
             <button
-              onClick={() => setIsLogin(false)}
+              onClick={() => {
+                setIsLogin(false)
+                setShowResetPassword(false)
+              }}
               className={`flex-1 py-2.5 rounded-xl font-medium transition ${!isLogin ? 'bg-gradient-to-r from-teal-600 to-blue-600' : 'bg-gray-700 text-gray-400'}`}
             >
               Create Account
@@ -298,8 +348,10 @@ export default function AuthPage() {
                     onChange={handleUsernameChange}
                     className="w-full pl-10 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
                     required
+                    minLength={3}
                   />
                 </div>
+                <p className="text-xs text-gray-500 mt-1">Letters, numbers, and underscores only</p>
               </div>
             )}
             
@@ -324,6 +376,7 @@ export default function AuthPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full pl-10 pr-12 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
                 required
+                minLength={6}
               />
               <button
                 type="button"
