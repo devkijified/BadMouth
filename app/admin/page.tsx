@@ -42,6 +42,7 @@ interface ContentItem {
   stats_highly: number
   stats_recommended: number
   stats_not: number
+  is_tv_show?: boolean
 }
 
 export default function AdminPage() {
@@ -92,7 +93,7 @@ export default function AdminPage() {
     display_order: 0
   })
 
-  // Content form state
+  // Content form state - ADDED is_tv_show
   const [contentForm, setContentForm] = useState({
     title: '',
     description: '',
@@ -112,6 +113,7 @@ export default function AdminPage() {
     stats_highly: 0,
     stats_recommended: 0,
     stats_not: 0,
+    is_tv_show: false,  // 👈 ADD THIS
     category_ids: [] as string[]
   })
 
@@ -189,9 +191,7 @@ export default function AdminPage() {
     }
     
     try {
-      // Delete all recommendations first (foreign key constraint)
       await supabase.from('recommendations').delete().neq('id', '')
-      // Delete all content
       await supabase.from('content').delete().neq('id', '')
       
       toast.success('All content deleted successfully!')
@@ -210,7 +210,6 @@ export default function AdminPage() {
     }
     
     try {
-      // First delete user data from profiles table
       await supabase.from('profiles').delete().neq('id', user?.id)
       
       toast.success('All users deleted successfully!')
@@ -273,6 +272,7 @@ export default function AdminPage() {
       stats_highly: track.rank ? Math.floor(track.rank / 10000) : Math.floor(Math.random() * 1000) + 500,
       stats_recommended: track.rank ? Math.floor(track.rank / 20000) : Math.floor(Math.random() * 500) + 200,
       stats_not: 0,
+      is_tv_show: false,
       category_ids: []
     })
     setShowDeezerSearch(false)
@@ -367,13 +367,9 @@ export default function AdminPage() {
   const importFromTmdb = async (item: any, type: 'movie' | 'tv') => {
     setSearchingTmdb(true)
     try {
-      // Fetch trailer
       const trailerUrl = await fetchTrailerFromTmdb(item.id, type)
-      
-      // Fetch watch providers
       const platforms = await fetchWatchProviders(item.id, type)
       
-      // Fetch full details
       const detailsUrl = `https://api.themoviedb.org/3/${type}/${item.id}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits`
       const detailsResponse = await fetch(detailsUrl)
       const details = await detailsResponse.json()
@@ -384,6 +380,7 @@ export default function AdminPage() {
       let year = new Date().getFullYear()
       let genre = type === 'movie' ? 'Movie' : 'TV Series'
       let runtime = ''
+      let isTVShow = type === 'tv'  // 👈 SET TV SHOW FLAG
       
       if (type === 'movie') {
         title = item.title
@@ -427,6 +424,7 @@ export default function AdminPage() {
         stats_highly: Math.floor(Math.random() * 1000) + 500,
         stats_recommended: Math.floor(Math.random() * 500) + 200,
         stats_not: 0,
+        is_tv_show: isTVShow,  // 👈 SAVE TV SHOW FLAG
         category_ids: []
       })
       setShowTmdbSearch(false)
@@ -469,7 +467,7 @@ export default function AdminPage() {
       title: '', description: '', long_description: '', image_url: '', backdrop_url: '',
       type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '',
       platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', 
-      stats_highly: 0, stats_recommended: 0, stats_not: 0, category_ids: []
+      stats_highly: 0, stats_recommended: 0, stats_not: 0, is_tv_show: false, category_ids: []
     })
     setShowDeezerSearch(false)
     setDeezerSearchQuery('')
@@ -494,6 +492,7 @@ export default function AdminPage() {
       stats_highly: contentForm.stats_highly,
       stats_recommended: contentForm.stats_recommended,
       stats_not: contentForm.stats_not,
+      is_tv_show: contentForm.is_tv_show || false,  // 👈 SAVE TV SHOW FLAG
     }
     
     if (contentForm.type === 'movie') {
@@ -508,6 +507,7 @@ export default function AdminPage() {
       dataToSave.director = null
       dataToSave.actors = null
       dataToSave.runtime = null
+      dataToSave.is_tv_show = false
     }
     
     let contentId = editingItem?.id
@@ -665,7 +665,8 @@ export default function AdminPage() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-700">
-                  <tr><th className="px-4 py-3 text-left">User</th><th className="px-4 py-3 text-left">Username</th><th className="px-4 py-3 text-left">Role</th><th className="px-4 py-3 text-left">Joined</th><th className="px-4 py-3 text-left">Actions</th></tr></thead>
+                  <tr><th className="px-4 py-3 text-left">User</th><th className="px-4 py-3 text-left">Username</th><th className="px-4 py-3 text-left">Role</th><th className="px-4 py-3 text-left">Joined</th><th className="px-4 py-3 text-left">Actions</th></tr>
+                </thead>
                 <tbody>
                   {users.map(userItem => (
                     <tr key={userItem.id} className="border-b border-gray-700">
@@ -682,7 +683,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Categories Tab with Filter */}
+        {/* Categories Tab */}
         {activeTab === 'categories' && (
           <div>
             <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
@@ -716,21 +717,31 @@ export default function AdminPage() {
               <div className="flex gap-2">
                 <div className="relative"><SearchIcon size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" /><input type="text" placeholder="Search content..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500" /></div>
                 <select value={contentTypeFilter} onChange={(e) => setContentTypeFilter(e.target.value as any)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg"><option value="all">All Types</option><option value="movie">Movies & TV</option><option value="music">Music</option></select>
-                <button onClick={() => { setShowContentModal(true); setEditingItem(null); setContentForm({ title: '', description: '', long_description: '', image_url: '', backdrop_url: '', type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '', platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', stats_highly: 0, stats_recommended: 0, stats_not: 0, category_ids: [] }); }} className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"><Plus size={16} /> Add Content</button>
+                <button onClick={() => { setShowContentModal(true); setEditingItem(null); setContentForm({ title: '', description: '', long_description: '', image_url: '', backdrop_url: '', type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '', platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', stats_highly: 0, stats_recommended: 0, stats_not: 0, is_tv_show: false, category_ids: [] }); }} className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"><Plus size={16} /> Add Content</button>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredContent.map(item => (
-                <div key={item.id} className="bg-gray-800 rounded-xl overflow-hidden border border-gray-700">
+                <div key={item.id} className="bg-gray-800 rounded-xl overflow-hidden border border-gray-700 relative">
+                  {/* TV Show Badge in Admin */}
+                  {item.is_tv_show && (
+                    <div className="absolute top-2 left-2 z-10">
+                      <div className="bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Tv size={10} /> TV Series
+                      </div>
+                    </div>
+                  )}
                   <img src={item.image_url} alt={item.title} className="w-full h-40 object-cover" />
                   <div className="p-4">
                     <h3 className="font-bold">{item.title}</h3>
-                    <p className="text-xs text-gray-400 mb-2">{item.type === 'movie' ? '🎬 Movie/TV' : '🎵 Music'} • {item.year}</p>
+                    <p className="text-xs text-gray-400 mb-2">
+                      {item.is_tv_show ? '📺 TV Show' : (item.type === 'movie' ? '🎬 Movie' : '🎵 Music')} • {item.year}
+                    </p>
                     <p className="text-sm text-gray-300 line-clamp-2">{item.description}</p>
                     <div className="flex justify-between mt-3">
                       <span className="text-xs flex gap-2"><span className="text-teal-400">🔥 {item.stats_highly}</span><span className="text-blue-400">👍 {item.stats_recommended}</span><span className="text-gray-400">👎 {item.stats_not}</span></span>
                       <div className="flex gap-2">
-                        <button onClick={() => { setEditingItem(item); setContentForm({ ...item, long_description: item.long_description || '', backdrop_url: item.backdrop_url || '', director: item.director || '', artist: item.artist || '', actors: item.actors?.join(', ') || '', platforms: item.platforms?.join(', ') || '', trailer_url: item.trailer_url || '', runtime: item.runtime || '', duration: item.duration || '', category_ids: [] }); setShowContentModal(true); }} className="text-gray-400 hover:text-white"><Edit size={16} /></button>
+                        <button onClick={() => { setEditingItem(item); setContentForm({ ...item, long_description: item.long_description || '', backdrop_url: item.backdrop_url || '', director: item.director || '', artist: item.artist || '', actors: item.actors?.join(', ') || '', platforms: item.platforms?.join(', ') || '', trailer_url: item.trailer_url || '', runtime: item.runtime || '', duration: item.duration || '', is_tv_show: item.is_tv_show || false, category_ids: [] }); setShowContentModal(true); }} className="text-gray-400 hover:text-white"><Edit size={16} /></button>
                         <button onClick={() => deleteContent(item.id)} className="text-red-500 hover:text-red-400"><Trash2 size={16} /></button>
                       </div>
                     </div>
@@ -747,9 +758,9 @@ export default function AdminPage() {
             <h2 className="text-xl font-bold mb-4">System Settings</h2>
             <div className="space-y-4">
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">About Display Order</h3><p className="text-sm text-gray-400">The "Order" field in categories determines how they appear on the main page. Lower numbers appear first (higher priority).</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TV Shows vs Movies</h3><p className="text-sm text-gray-400">When importing from TMDB, TV shows are automatically marked with a TV badge. You can also manually check the "This is a TV Show" checkbox when adding/editing content.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Category Filter</h3><p className="text-sm text-gray-400">You can now filter categories by type (Movies or Music) to easily manage them.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Danger Zone Actions</h3><p className="text-sm text-gray-400">Delete all content or all users in one click. These actions cannot be undone.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TV Shows</h3><p className="text-sm text-gray-400">TV shows are imported and displayed under Movies for users. They include series metadata, episode runtime, and creators.</p></div>
             </div>
           </div>
         )}
@@ -793,6 +804,26 @@ export default function AdminPage() {
               
               {contentForm.type === 'movie' ? (
                 <>
+                  {/* TV Show Checkbox - 👈 ADD THIS */}
+                  <div className="mb-2 p-3 bg-gray-800/50 rounded-lg">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={contentForm.is_tv_show}
+                        onChange={(e) => setContentForm({ ...contentForm, is_tv_show: e.target.checked })}
+                        className="w-5 h-5 rounded border-gray-700 bg-gray-800 text-teal-500 focus:ring-teal-500"
+                      />
+                      <div>
+                        <span className="text-sm text-gray-300 font-medium">This is a TV Show (not a movie)</span>
+                        {contentForm.is_tv_show && (
+                          <p className="text-xs text-purple-400 mt-1">
+                            📺 TV Show badge will appear on the content card
+                          </p>
+                        )}
+                      </div>
+                    </label>
+                  </div>
+
                   {/* TMDB Search */}
                   <div className="mb-2">
                     <button type="button" onClick={() => setShowTmdbSearch(!showTmdbSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1">
