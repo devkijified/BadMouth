@@ -18,14 +18,12 @@ export default function AuthPage() {
   const [resetEmail, setResetEmail] = useState('')
   const [isResetting, setIsResetting] = useState(false)
 
-  // Format username: remove spaces, replace with underscore
   const formatUsername = (input: string): string => {
     let formatted = input.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')
     formatted = formatted.toLowerCase()
     return formatted
   }
 
-  // Check if username already exists
   const checkUsernameExists = async (username: string): Promise<boolean> => {
     const { data } = await supabase
       .from('profiles')
@@ -35,7 +33,6 @@ export default function AuthPage() {
     return !!data
   }
 
-  // Generate unique username
   const generateUniqueUsername = async (baseUsername: string): Promise<string> => {
     let uniqueUsername = baseUsername
     let counter = 1
@@ -78,13 +75,6 @@ export default function AuthPage() {
         return
       }
 
-      if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-        toast.error('Please enter a valid email address')
-        setIsLoading(false)
-        return
-      }
-
-      // Format and check username
       let finalUsername = formatUsername(username)
       const exists = await checkUsernameExists(finalUsername)
       if (exists) {
@@ -92,7 +82,6 @@ export default function AuthPage() {
         toast.success(`Username "${username}" was taken. Using "${finalUsername}" instead.`)
       }
 
-      // Sign up with Supabase
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -102,18 +91,12 @@ export default function AuthPage() {
       })
 
       if (error) {
-        if (error.message.includes('already registered')) {
-          toast.error('Email already registered. Please sign in instead.')
-          setIsLogin(true)
-        } else {
-          toast.error(error.message)
-        }
+        toast.error(error.message)
         setIsLoading(false)
         return
       }
 
       if (data.user) {
-        // Check if profile already exists (might have been created by trigger)
         const { data: existingProfile } = await supabase
           .from('profiles')
           .select('id')
@@ -121,7 +104,6 @@ export default function AuthPage() {
           .single()
 
         if (!existingProfile) {
-          // Create profile in profiles table
           await supabase.from('profiles').insert([{
             id: data.user.id,
             username: finalUsername,
@@ -132,7 +114,7 @@ export default function AuthPage() {
           }])
         }
 
-        toast.success('Account created! Please check your email to verify your account.')
+        toast.success('Account created! You can now sign in.')
         setIsLogin(true)
         setEmail('')
         setPassword('')
@@ -146,11 +128,7 @@ export default function AuthPage() {
       })
 
       if (error) {
-        if (error.message.includes('Email not confirmed')) {
-          toast.error('Please verify your email before signing in. Check your inbox!')
-        } else {
-          toast.error('Invalid email or password')
-        }
+        toast.error('Invalid email or password')
       } else {
         toast.success('Welcome back!')
         router.push('/')
@@ -160,6 +138,7 @@ export default function AuthPage() {
     setIsLoading(false)
   }
 
+  // Custom password reset using Resend
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!resetEmail.trim()) {
@@ -170,7 +149,7 @@ export default function AuthPage() {
     setIsResetting(true)
     
     try {
-      // First check if user exists in profiles table
+      // Check if user exists in profiles table
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('username, email')
@@ -183,19 +162,89 @@ export default function AuthPage() {
         return
       }
 
-      // Use Supabase's built-in password reset
-      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-        redirectTo: `${window.location.origin}/update-password`,
+      // Generate a unique reset token
+      const resetToken = Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
+      const resetExpires = new Date(Date.now() + 3600000).toISOString() // 1 hour
+
+      // Store the reset token in profiles table
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ 
+          reset_token: resetToken, 
+          reset_expires: resetExpires 
+        })
+        .eq('email', resetEmail)
+
+      if (updateError) {
+        console.error('Error saving token:', updateError)
+        toast.error('Failed to process reset request')
+        setIsResetting(false)
+        return
+      }
+
+      // Send reset email via Resend
+      const resetUrl = `${window.location.origin}/reset-password?token=${resetToken}`
+      
+      const emailHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+            .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+            .button { display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+            .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
+            .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🔐 Reset Your Password</h1>
+            </div>
+            <div class="content">
+              <h2>Hello ${profile.username}!</h2>
+              <p>We received a request to reset your password for your BADMOUTH account.</p>
+              <div style="text-align: center;">
+                <a href="${resetUrl}" class="button">Reset Password</a>
+              </div>
+              <p>Or copy this link: <a href="${resetUrl}">${resetUrl}</a></p>
+              <div class="warning">
+                <p><strong>⚠️ This link will expire in 1 hour.</strong></p>
+                <p>If you didn't request this, you can safely ignore this email.</p>
+              </div>
+              <p>- The BADMOUTH Team</p>
+            </div>
+            <div class="footer">
+              <p>&copy; 2024 BADMOUTH. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `
+
+      const emailResponse = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          to: resetEmail, 
+          subject: 'Reset Your BADMOUTH Password', 
+          html: emailHtml 
+        })
       })
 
-      if (error) throw error
-
-      toast.success('Password reset email sent! Check your inbox (including spam folder).')
-      setShowResetPassword(false)
-      setResetEmail('')
-    } catch (error: any) {
+      if (emailResponse.ok) {
+        toast.success('Password reset link sent! Check your email.')
+        setShowResetPassword(false)
+        setResetEmail('')
+      } else {
+        toast.error('Failed to send email. Please try again.')
+      }
+    } catch (error) {
       console.error('Reset password error:', error)
-      toast.error(error.message || 'Failed to send reset email')
+      toast.error('Failed to send reset email. Please try again.')
     } finally {
       setIsResetting(false)
     }
