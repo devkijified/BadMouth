@@ -75,6 +75,12 @@ export default function AuthPage() {
         return
       }
 
+      if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+        toast.error('Please enter a valid email address')
+        setIsLoading(false)
+        return
+      }
+
       let finalUsername = formatUsername(username)
       const exists = await checkUsernameExists(finalUsername)
       if (exists) {
@@ -91,7 +97,12 @@ export default function AuthPage() {
       })
 
       if (error) {
-        toast.error(error.message)
+        if (error.message.includes('already registered')) {
+          toast.error('Email already registered. Please sign in instead.')
+          setIsLogin(true)
+        } else {
+          toast.error(error.message)
+        }
         setIsLoading(false)
         return
       }
@@ -128,7 +139,11 @@ export default function AuthPage() {
       })
 
       if (error) {
-        toast.error('Invalid email or password')
+        if (error.message.includes('Email not confirmed')) {
+          toast.error('Please verify your email before signing in. Check your inbox!')
+        } else {
+          toast.error('Invalid email or password')
+        }
       } else {
         toast.success('Welcome back!')
         router.push('/')
@@ -138,94 +153,132 @@ export default function AuthPage() {
     setIsLoading(false)
   }
 
- const handleResetPassword = async (e: React.FormEvent) => {
-  e.preventDefault()
-  if (!resetEmail.trim()) {
-    toast.error('Please enter your email address')
-    return
-  }
-
-  setIsResetting(true)
-  
-  try {
-    // Find user
-    const { data: profile, error: findError } = await supabase
-      .from('profiles')
-      .select('id, username')
-      .eq('email', resetEmail)
-      .single()
-
-    if (findError || !profile) {
-      toast.error('No account found with this email address')
-      setIsResetting(false)
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!resetEmail.trim()) {
+      toast.error('Please enter your email address')
       return
     }
 
-    // Generate token
-    const resetToken = Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
-    const resetExpires = new Date(Date.now() + 60 * 60 * 1000).toISOString()
-
-    // Update database
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({ reset_token: resetToken, reset_expires: resetExpires })
-      .eq('id', profile.id)
-
-    if (updateError) {
-      console.error('Update error:', updateError)
-      toast.error('Failed to save reset token')
-      setIsResetting(false)
-      return
-    }
-
-    // Send email
-    const resetUrl = `${window.location.origin}/reset-password?token=${resetToken}`
+    setIsResetting(true)
     
-    const emailHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .button { background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <h1>Reset Your Password</h1>
-          <p>Hello ${profile.username}!</p>
-          <p>Click the button below to reset your password:</p>
-          <div style="text-align: center;">
-            <a href="${resetUrl}" class="button">Reset Password</a>
+    try {
+      // Find user
+      const { data: profile, error: findError } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .eq('email', resetEmail)
+        .single()
+
+      if (findError || !profile) {
+        toast.error('No account found with this email address')
+        setIsResetting(false)
+        return
+      }
+
+      // Generate token - using simpler format
+      const resetToken = Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
+      // Set expiration to 24 hours from now in UTC
+      const resetExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+      console.log('Reset token generated:', resetToken)
+      console.log('Expires at:', resetExpires)
+
+      // Update database with token
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ 
+          reset_token: resetToken, 
+          reset_expires: resetExpires 
+        })
+        .eq('id', profile.id)
+
+      if (updateError) {
+        console.error('Update error:', updateError)
+        toast.error('Failed to save reset token')
+        setIsResetting(false)
+        return
+      }
+
+      // Verify token was saved
+      const { data: verify } = await supabase
+        .from('profiles')
+        .select('reset_token')
+        .eq('id', profile.id)
+        .single()
+      
+      console.log('Token saved, verified:', verify?.reset_token === resetToken)
+
+      // Send reset email
+      const resetUrl = `${window.location.origin}/reset-password?token=${resetToken}`
+      
+      const emailHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+            .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+            .button { display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+            .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
+            .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🔐 Reset Your Password</h1>
+            </div>
+            <div class="content">
+              <h2>Hello ${profile.username}!</h2>
+              <p>We received a request to reset your password for your BADMOUTH account.</p>
+              <div style="text-align: center;">
+                <a href="${resetUrl}" class="button">Reset Password</a>
+              </div>
+              <p>Or copy this link: <a href="${resetUrl}">${resetUrl}</a></p>
+              <div class="warning">
+                <p><strong>⚠️ This link will expire in 24 hours.</strong></p>
+                <p>If you didn't request this, you can safely ignore this email.</p>
+              </div>
+              <p>- The BADMOUTH Team</p>
+            </div>
+            <div class="footer">
+              <p>&copy; 2024 BADMOUTH. All rights reserved.</p>
+            </div>
           </div>
-          <p>This link will expire in 1 hour.</p>
-          <p>If you didn't request this, ignore this email.</p>
-        </div>
-      </body>
-      </html>
-    `
+        </body>
+        </html>
+      `
 
-    await fetch('/api/send-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        to: resetEmail, 
-        subject: 'Reset Your Password', 
-        html: emailHtml 
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          to: resetEmail, 
+          subject: 'Reset Your BADMOUTH Password', 
+          html: emailHtml 
+        })
       })
-    })
 
-    toast.success('Password reset link sent! Check your email.')
-    setShowResetPassword(false)
-    setResetEmail('')
-  } catch (error) {
-    console.error('Reset error:', error)
-    toast.error('Something went wrong')
-  } finally {
-    setIsResetting(false)
+      if (response.ok) {
+        toast.success('Password reset link sent! Check your email (and spam folder).')
+        setShowResetPassword(false)
+        setResetEmail('')
+      } else {
+        const error = await response.json()
+        console.error('Email send error:', error)
+        toast.error('Failed to send email. Please try again.')
+      }
+    } catch (error) {
+      console.error('Reset error:', error)
+      toast.error('Something went wrong. Please try again.')
+    } finally {
+      setIsResetting(false)
+    }
   }
-}
+
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -274,7 +327,7 @@ export default function AuthPage() {
               </form>
               
               <p className="text-xs text-gray-500 text-center mt-4">
-                Try: kijified@gmail.com
+                Check your spam folder if you don't see the email within a few minutes.
               </p>
             </div>
           </div>
@@ -309,15 +362,18 @@ export default function AuthPage() {
                   <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
                   <input
                     type="text"
-                    placeholder="Username"
+                    placeholder="Username (letters, numbers, _ only)"
                     value={username}
                     onChange={handleUsernameChange}
                     className="w-full pl-10 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
                     required
                     minLength={3}
+                    maxLength={30}
                   />
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Letters, numbers, and underscores only</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Spaces will be replaced with _ • Only letters, numbers, and underscores
+                </p>
               </div>
             )}
             
