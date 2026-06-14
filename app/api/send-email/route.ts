@@ -1,14 +1,14 @@
 import { Resend } from 'resend';
 import { NextResponse } from 'next/server';
 
-const resend = new Resend('re_3oGxrwrj_NBP4XcMc5fqQrhqPLUPjqkMo');
+const resend = new Resend(process.env.RESEND_API_KEY || 're_3oGxrwrj_NBP4XcMc5fqQrhqPLUPjqkMo');
 
 export async function POST(request: Request) {
   try {
     const { to, subject, html, from } = await request.json();
 
     const data = await resend.emails.send({
-      from: from || 'BADMOUTH <noreply@badmouth.com>',
+      from: from || 'BADMOUTH <onboarding@resend.dev>',
       to: [to],
       subject: subject,
       html: html,
