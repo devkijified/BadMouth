@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { Loader2, Lock, Eye, EyeOff } from 'lucide-react'
+import { Loader2, Lock, Eye, EyeOff, CheckCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 function ResetPasswordContent() {
@@ -16,55 +16,42 @@ function ResetPasswordContent() {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [isValid, setIsValid] = useState(false)
-  const [userEmail, setUserEmail] = useState('')
+  const [username, setUsername] = useState('')
 
   useEffect(() => {
     const validateToken = async () => {
       console.log('Token from URL:', token)
       
       if (!token) {
-        toast.error('No reset token provided')
+        toast.error('No reset token found')
         router.push('/auth')
         return
       }
 
-      // Direct query to find user by reset_token
-      const { data, error } = await supabase
+      // Find user with this token
+      const { data: profile, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('username, reset_expires')
         .eq('reset_token', token)
+        .single()
 
-      console.log('Query result:', { data, error })
-
-      if (error) {
-        console.error('Query error:', error)
-        toast.error('Database error')
+      if (error || !profile) {
+        toast.error('Invalid reset link. Please request a new one.')
         router.push('/auth')
         return
       }
-
-      if (!data || data.length === 0) {
-        console.log('No user found with token:', token)
-        toast.error('Invalid reset link')
-        router.push('/auth')
-        return
-      }
-
-      const user = data[0]
-      console.log('Found user:', user.email, user.reset_expires)
 
       // Check expiration
-      const expires = new Date(user.reset_expires)
-      const now = new Date()
-      
-      if (expires < now) {
-        console.log('Token expired:', expires, 'Now:', now)
-        toast.error('Reset link has expired')
+      const expiresUTC = new Date(profile.reset_expires)
+      const nowUTC = new Date()
+
+      if (expiresUTC < nowUTC) {
+        toast.error('Reset link has expired. Please request a new one.')
         router.push('/auth')
         return
       }
 
-      setUserEmail(user.email)
+      setUsername(profile.username)
       setIsValid(true)
     }
 
@@ -87,41 +74,23 @@ function ResetPasswordContent() {
     setIsLoading(true)
     
     try {
-      // First, sign in the user (they have a valid reset token)
-      // Get user data
-      const { data: userData } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('email', userEmail)
-        .single()
-
-      if (!userData) {
-        toast.error('User not found')
-        return
-      }
-
-      // Update password using Supabase Auth
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: newPassword
+      const response = await fetch('/api/update-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, newPassword })
       })
 
-      if (updateError) {
-        console.error('Update error:', updateError)
-        toast.error(updateError.message)
-        return
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update password')
       }
-      
-      // Clear the reset token
-      await supabase
-        .from('profiles')
-        .update({ reset_token: null, reset_expires: null })
-        .eq('email', userEmail)
-      
-      toast.success('Password updated! Please sign in.')
+
+      toast.success('Password updated successfully! Please sign in with your new password.')
       router.push('/auth')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Reset error:', error)
-      toast.error('Something went wrong')
+      toast.error(error.message || 'Something went wrong')
     } finally {
       setIsLoading(false)
     }
@@ -144,7 +113,7 @@ function ResetPasswordContent() {
               Create New Password
             </h1>
             <p className="text-gray-400 text-sm mt-2">
-              Enter your new password below
+              Hello {username}, enter your new password below
             </p>
           </div>
 
@@ -158,31 +127,36 @@ function ResetPasswordContent() {
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="w-full pl-10 pr-12 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
                 required
+                minLength={6}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
 
-            <input
-              type="password"
-              placeholder="Confirm New Password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
-              required
-            />
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="password"
+                placeholder="Confirm New Password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
+                required
+              />
+            </div>
 
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-xl font-medium"
+              className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-xl font-medium hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {isLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Update Password'}
+              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle size={18} />}
+              {isLoading ? 'Updating...' : 'Update Password'}
             </button>
           </form>
         </div>
@@ -193,7 +167,11 @@ function ResetPasswordContent() {
 
 export default function ResetPasswordPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-teal-500" /></div>}>
+    <Suspense fallback={
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-teal-500" />
+      </div>
+    }>
       <ResetPasswordContent />
     </Suspense>
   )
