@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { Loader2, Lock, Eye, EyeOff } from 'lucide-react'
+import { Loader2, Lock, Eye, EyeOff, CheckCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const token = searchParams.get('token')
@@ -17,9 +17,9 @@ export default function ResetPasswordPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isValid, setIsValid] = useState(false)
   const [userEmail, setUserEmail] = useState('')
+  const [username, setUsername] = useState('')
 
   useEffect(() => {
-    // Validate token
     const validateToken = async () => {
       if (!token) {
         toast.error('Invalid reset link')
@@ -27,19 +27,26 @@ export default function ResetPasswordPage() {
         return
       }
 
-      const { data: profile } = await supabase
+      const { data: profile, error } = await supabase
         .from('profiles')
-        .select('email, reset_expires')
+        .select('email, username, reset_expires')
         .eq('reset_token', token)
         .single()
 
-      if (!profile || new Date(profile.reset_expires) < new Date()) {
-        toast.error('Reset link has expired or is invalid')
+      if (error || !profile) {
+        toast.error('Invalid or expired reset link')
+        router.push('/auth')
+        return
+      }
+
+      if (new Date(profile.reset_expires) < new Date()) {
+        toast.error('Reset link has expired. Please request a new one.')
         router.push('/auth')
         return
       }
 
       setUserEmail(profile.email)
+      setUsername(profile.username)
       setIsValid(true)
     }
 
@@ -61,14 +68,14 @@ export default function ResetPasswordPage() {
     
     setIsLoading(true)
     
-    // Update password in Supabase Auth
-    const { error } = await supabase.auth.updateUser({
-      password: newPassword
-    })
-    
-    if (error) {
-      toast.error(error.message)
-    } else {
+    try {
+      // Update password in Supabase Auth
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      })
+      
+      if (error) throw error
+      
       // Clear reset token
       await supabase
         .from('profiles')
@@ -77,9 +84,12 @@ export default function ResetPasswordPage() {
       
       toast.success('Password updated successfully! Please sign in.')
       router.push('/auth')
+    } catch (error: any) {
+      console.error('Reset error:', error)
+      toast.error(error.message || 'Failed to update password')
+    } finally {
+      setIsLoading(false)
     }
-    
-    setIsLoading(false)
   }
 
   if (!isValid) {
@@ -95,11 +105,14 @@ export default function ResetPasswordPage() {
       <div className="w-full max-w-md">
         <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6 border border-gray-700">
           <div className="text-center mb-6">
+            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-r from-teal-600 to-blue-600 rounded-full flex items-center justify-center">
+              <Lock className="text-white" size={28} />
+            </div>
             <h1 className="text-2xl font-bold bg-gradient-to-r from-teal-600 to-blue-600 bg-clip-text text-transparent">
               Create New Password
             </h1>
             <p className="text-gray-400 text-sm mt-2">
-              Enter your new password below
+              {username}, enter your new password below
             </p>
           </div>
 
@@ -139,13 +152,26 @@ export default function ResetPasswordPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-xl font-medium hover:opacity-90 transition disabled:opacity-50"
+              className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-xl font-medium hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {isLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Update Password'}
+              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle size={18} />}
+              {isLoading ? 'Updating...' : 'Update Password'}
             </button>
           </form>
         </div>
       </div>
     </div>
+  )
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-teal-500" />
+      </div>
+    }>
+      <ResetPasswordContent />
+    </Suspense>
   )
 }
