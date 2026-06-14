@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { Loader2, Sparkles, Mail, Lock, User, Eye, EyeOff, ArrowLeft, CheckCircle } from 'lucide-react'
+import { Loader2, Sparkles, Mail, Lock, User, Eye, EyeOff, ArrowLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function AuthPage() {
@@ -17,9 +17,6 @@ export default function AuthPage() {
   const [showResetPassword, setShowResetPassword] = useState(false)
   const [resetEmail, setResetEmail] = useState('')
   const [isResetting, setIsResetting] = useState(false)
-  const [showVerification, setShowVerification] = useState(false)
-  const [verificationCode, setVerificationCode] = useState('')
-  const [pendingUser, setPendingUser] = useState<any>(null)
 
   // Format username: remove spaces, replace with underscore
   const formatUsername = (input: string): string => {
@@ -47,111 +44,6 @@ export default function AuthPage() {
       counter++
     }
     return uniqueUsername
-  }
-
-  // Generate random verification code
-  const generateVerificationCode = () => {
-    return Math.floor(100000 + Math.random() * 900000).toString()
-  }
-
-  // Send email via Resend
-  const sendEmail = async (to: string, subject: string, html: string) => {
-    try {
-      const response = await fetch('/api/send-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, subject, html, from: 'BADMOUTH <onboarding@resend.dev>' })
-      })
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Email send error:', error)
-      return { success: false }
-    }
-  }
-
-  // Send verification email
-  const sendVerificationEmail = async (email: string, code: string, username: string) => {
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
-          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-          .code { font-size: 36px; font-weight: bold; text-align: center; padding: 20px; background: #e0e0e0; border-radius: 10px; letter-spacing: 5px; font-family: monospace; }
-          .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>🎬 Welcome to BADMOUTH!</h1>
-          </div>
-          <div class="content">
-            <h2>Hello ${username}!</h2>
-            <p>Thank you for joining BADMOUTH! Please verify your email address using the code below:</p>
-            <div class="code">${code}</div>
-            <p>Enter this code in the app to complete your registration.</p>
-            <p>This code will expire in 10 minutes.</p>
-            <p>Happy exploring!</p>
-            <p>- The BADMOUTH Team</p>
-          </div>
-          <div class="footer">
-            <p>&copy; 2024 BADMOUTH. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `
-    return sendEmail(email, 'Verify Your BADMOUTH Account', html)
-  }
-
-  // Send password reset email
-  const sendPasswordResetEmail = async (email: string, resetToken: string, username: string) => {
-    const resetUrl = `${window.location.origin}/reset-password?token=${resetToken}`
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
-          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-          .button { display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-          .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
-          .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>🔐 Reset Your Password</h1>
-          </div>
-          <div class="content">
-            <h2>Hello ${username}!</h2>
-            <p>We received a request to reset your password for your BADMOUTH account.</p>
-            <div style="text-align: center;">
-              <a href="${resetUrl}" class="button">Reset Password</a>
-            </div>
-            <p>Or copy this link: <a href="${resetUrl}">${resetUrl}</a></p>
-            <div class="warning">
-              <p><strong>⚠️ This link will expire in 1 hour.</strong></p>
-              <p>If you didn't request this, you can safely ignore this email.</p>
-            </div>
-            <p>- The BADMOUTH Team</p>
-          </div>
-          <div class="footer">
-            <p>&copy; 2024 BADMOUTH. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `
-    return sendEmail(email, 'Reset Your BADMOUTH Password', html)
   }
 
   const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -198,38 +90,68 @@ export default function AuthPage() {
       if (exists) {
         finalUsername = await generateUniqueUsername(finalUsername)
         toast.success(`Username "${username}" was taken. Using "${finalUsername}" instead.`)
-        setUsername(finalUsername)
       }
 
-      // Generate verification code
-      const code = generateVerificationCode()
-      
-      // Store registration data temporarily
-      localStorage.setItem('pendingRegistration', JSON.stringify({
+      // Sign up with Supabase
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        username: finalUsername,
-        code,
-        expires: Date.now() + 10 * 60 * 1000
-      }))
+        options: {
+          data: { username: finalUsername },
+        }
+      })
 
-      // Send verification email
-      await sendVerificationEmail(email, code, finalUsername)
-      
-      toast.success('Verification code sent! Please check your email.')
-      setPendingUser({ email, password, username: finalUsername })
-      setVerificationCode('')
-      setShowVerification(true)
+      if (error) {
+        if (error.message.includes('already registered')) {
+          toast.error('Email already registered. Please sign in instead.')
+          setIsLogin(true)
+        } else {
+          toast.error(error.message)
+        }
+        setIsLoading(false)
+        return
+      }
+
+      if (data.user) {
+        // Check if profile already exists (might have been created by trigger)
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', data.user.id)
+          .single()
+
+        if (!existingProfile) {
+          // Create profile in profiles table
+          await supabase.from('profiles').insert([{
+            id: data.user.id,
+            username: finalUsername,
+            email: email,
+            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${finalUsername}`,
+            role: 'user',
+            is_active: true
+          }])
+        }
+
+        toast.success('Account created! Please check your email to verify your account.')
+        setIsLogin(true)
+        setEmail('')
+        setPassword('')
+        setUsername('')
+      }
     } else {
       // LOGIN
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
       if (error) {
-        toast.error(error.message)
-      } else if (data.user) {
+        if (error.message.includes('Email not confirmed')) {
+          toast.error('Please verify your email before signing in. Check your inbox!')
+        } else {
+          toast.error('Invalid email or password')
+        }
+      } else {
         toast.success('Welcome back!')
         router.push('/')
       }
@@ -238,234 +160,45 @@ export default function AuthPage() {
     setIsLoading(false)
   }
 
-  const handleVerifyCode = async () => {
-    if (!verificationCode) {
-      toast.error('Please enter the verification code')
-      return
-    }
-
-    const pending = localStorage.getItem('pendingRegistration')
-    if (!pending) {
-      toast.error('Registration session expired. Please try again.')
-      setShowVerification(false)
-      return
-    }
-
-    const { email, password, username, code, expires } = JSON.parse(pending)
-
-    if (Date.now() > expires) {
-      toast.error('Verification code expired. Please register again.')
-      localStorage.removeItem('pendingRegistration')
-      setShowVerification(false)
-      return
-    }
-
-    if (verificationCode !== code) {
-      toast.error('Invalid verification code')
-      return
-    }
-
-    setIsLoading(true)
-
-    // Create account in Supabase
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { username },
-      }
-    })
-
-    if (error) {
-      toast.error(error.message)
-      setIsLoading(false)
-      return
-    }
-
-    if (data.user) {
-      // Profile will be created automatically by trigger
-      localStorage.removeItem('pendingRegistration')
-      toast.success('Account created successfully! You can now sign in.')
-      setShowVerification(false)
-      setIsLogin(true)
-      setEmail(email)
-      setPassword('')
-      setUsername('')
-    }
-
-    setIsLoading(false)
-  }
-
   const handleResetPassword = async (e: React.FormEvent) => {
-  e.preventDefault()
-  if (!resetEmail.trim()) {
-    toast.error('Please enter your email address')
-    return
-  }
+    e.preventDefault()
+    if (!resetEmail.trim()) {
+      toast.error('Please enter your email address')
+      return
+    }
 
-  setIsResetting(true)
-  
-  try {
-    // Try to find user by email in profiles first
-    let profile = null
-    let profileError = null
+    setIsResetting(true)
     
-    const { data: profileData, error: pError } = await supabase
-      .from('profiles')
-      .select('username, email')
-      .eq('email', resetEmail)
-      .maybeSingle()
-    
-    profile = profileData
-    profileError = pError
+    try {
+      // First check if user exists in profiles table
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('username, email')
+        .eq('email', resetEmail)
+        .single()
 
-    // If not found in profiles, try auth.users directly
-    if (!profile) {
-      // Check if user exists in auth.users
-      const { data: authUser, error: authError } = await supabase
-        .rpc('check_user_email', { email_addr: resetEmail })
-        .maybeSingle()
-      
-      if (authError || !authUser) {
+      if (profileError || !profile) {
         toast.error('No account found with this email address')
         setIsResetting(false)
         return
       }
-    }
 
-    // Get username from profile or use email prefix
-    const userName = profile?.username || resetEmail.split('@')[0]
-
-    // Generate reset token
-    const resetToken = Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
-    const resetExpires = new Date(Date.now() + 3600000).toISOString()
-    
-    // Store reset token - try profiles first, if no email column, just store
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({ reset_token: resetToken, reset_expires: resetExpires })
-      .eq('email', resetEmail)
-
-    if (updateError) {
-      // If email column doesn't exist, try by id
-      console.error('Error saving reset token:', updateError)
-      // Continue anyway - we'll still send email
-    }
-
-    // Send reset email
-    const resetUrl = `${window.location.origin}/reset-password?token=${resetToken}`
-    
-    const emailHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
-          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-          .button { display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-          .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
-          .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>🔐 Reset Your Password</h1>
-          </div>
-          <div class="content">
-            <h2>Hello ${userName}!</h2>
-            <p>We received a request to reset your password for your BADMOUTH account.</p>
-            <div style="text-align: center;">
-              <a href="${resetUrl}" class="button">Reset Password</a>
-            </div>
-            <p>Or copy this link: <a href="${resetUrl}">${resetUrl}</a></p>
-            <div class="warning">
-              <p><strong>⚠️ This link will expire in 1 hour.</strong></p>
-              <p>If you didn't request this, you can safely ignore this email.</p>
-            </div>
-            <p>- The BADMOUTH Team</p>
-          </div>
-          <div class="footer">
-            <p>&copy; 2024 BADMOUTH. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `
-
-    await fetch('/api/send-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        to: resetEmail, 
-        subject: 'Reset Your BADMOUTH Password', 
-        html: emailHtml 
+      // Use Supabase's built-in password reset
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+        redirectTo: `${window.location.origin}/update-password`,
       })
-    })
-    
-    toast.success('Password reset link sent! Check your email.')
-    setShowResetPassword(false)
-    setResetEmail('')
-  } catch (error) {
-    console.error('Reset password error:', error)
-    toast.error('Failed to send reset email. Please try again.')
-  } finally {
-    setIsResetting(false)
-  }
-}
 
-  // Verification Modal
-  if (showVerification) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6 border border-gray-700">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-r from-teal-600 to-blue-600 rounded-full flex items-center justify-center">
-                <Mail className="text-white" size={28} />
-              </div>
-              <h2 className="text-2xl font-bold">Verify Your Email</h2>
-              <p className="text-gray-400 text-sm mt-2">
-                We've sent a verification code to<br />
-                <span className="text-teal-400">{pendingUser?.email}</span>
-              </p>
-            </div>
+      if (error) throw error
 
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Enter 6-digit verification code"
-                value={verificationCode}
-                onChange={(e) => setVerificationCode(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500 text-center text-2xl tracking-widest"
-                maxLength={6}
-              />
-              
-              <button
-                onClick={handleVerifyCode}
-                disabled={isLoading}
-                className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-xl font-medium hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle size={18} />}
-                {isLoading ? 'Verifying...' : 'Verify & Create Account'}
-              </button>
-              
-              <button
-                onClick={() => {
-                  setShowVerification(false)
-                  localStorage.removeItem('pendingRegistration')
-                }}
-                className="w-full py-2 text-gray-400 hover:text-white transition"
-              >
-                ← Back to Sign In
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
+      toast.success('Password reset email sent! Check your inbox (including spam folder).')
+      setShowResetPassword(false)
+      setResetEmail('')
+    } catch (error: any) {
+      console.error('Reset password error:', error)
+      toast.error(error.message || 'Failed to send reset email')
+    } finally {
+      setIsResetting(false)
+    }
   }
 
   return (
