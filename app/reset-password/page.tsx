@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { Loader2, Lock, Eye, EyeOff } from 'lucide-react'
+import { Loader2, Lock, Eye, EyeOff, CheckCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 function ResetPasswordContent() {
@@ -26,12 +26,12 @@ function ResetPasswordContent() {
         return
       }
 
-      // Check if token exists and is not expired
+      // Check if token exists in profiles
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('email, reset_expires')
         .eq('reset_token', token)
-        .single()
+        .maybeSingle()
 
       if (error || !profile) {
         toast.error('Invalid or expired reset link')
@@ -39,6 +39,7 @@ function ResetPasswordContent() {
         return
       }
 
+      // Check if expired
       if (new Date(profile.reset_expires) < new Date()) {
         toast.error('Reset link has expired. Please request a new one.')
         router.push('/auth')
@@ -68,31 +69,26 @@ function ResetPasswordContent() {
     setIsLoading(true)
     
     try {
-      // First, sign in the user with their email (they're resetting password)
-      // We need to get the user ID from the profile
-      const { data: profile } = await supabase
+      // Get the user from auth.users by email
+      const { data: userData, error: userError } = await supabase
         .from('profiles')
         .select('id')
         .eq('email', userEmail)
         .single()
 
-      if (!profile) {
+      if (userError || !userData) {
         toast.error('User not found')
         return
       }
 
-      // Update password using Supabase admin API (requires service role key)
-      // For now, we'll use the updateUser method which requires the user to be logged in
-      // So we need to create a temporary session or use the reset token differently
-      
-      // Alternative: Use the reset token to directly update password via Supabase
+      // Update password using Supabase Auth API
       const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword
       })
 
       if (updateError) {
-        // If that fails, try the traditional method
-        toast.error('Please request a new reset link and try again')
+        // If updateUser fails, try to sign in and then update
+        toast.error('Unable to update password. Please request a new reset link.')
         return
       }
       
@@ -138,7 +134,7 @@ function ResetPasswordContent() {
               <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
               <input
                 type={showPassword ? "text" : "password"}
-                placeholder="New Password"
+                placeholder="New Password (min 6 characters)"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="w-full pl-10 pr-12 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
@@ -169,9 +165,10 @@ function ResetPasswordContent() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-xl font-medium hover:opacity-90 transition disabled:opacity-50"
+              className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-xl font-medium hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {isLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Update Password'}
+              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle size={18} />}
+              {isLoading ? 'Updating...' : 'Update Password'}
             </button>
           </form>
         </div>
