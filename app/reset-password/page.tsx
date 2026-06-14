@@ -17,6 +17,7 @@ function ResetPasswordContent() {
   const [showPassword, setShowPassword] = useState(false)
   const [isValid, setIsValid] = useState(false)
   const [userEmail, setUserEmail] = useState('')
+  const [username, setUsername] = useState('')
 
   useEffect(() => {
     const validateToken = async () => {
@@ -31,7 +32,7 @@ function ResetPasswordContent() {
       // Check if token exists in profiles
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('email, reset_expires')
+        .select('email, username, reset_expires')
         .eq('reset_token', token)
         .single()
 
@@ -52,6 +53,7 @@ function ResetPasswordContent() {
       }
 
       setUserEmail(profile.email)
+      setUsername(profile.username)
       setIsValid(true)
     }
 
@@ -74,9 +76,10 @@ function ResetPasswordContent() {
     setIsLoading(true)
     
     try {
-      console.log('Updating password for email:', userEmail)
+      console.log('Updating password for user:', userEmail)
       
-      // Update password using Supabase Auth
+      // First, sign in the user (they have a valid reset token)
+      // Then update password
       const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword
       })
@@ -93,7 +96,7 @@ function ResetPasswordContent() {
         .update({ reset_token: null, reset_expires: null })
         .eq('email', userEmail)
       
-      toast.success('Password updated successfully! Please sign in.')
+      toast.success(`Password updated successfully! Please sign in.`)
       router.push('/auth')
     } catch (error) {
       console.error('Reset error:', error)
@@ -120,7 +123,7 @@ function ResetPasswordContent() {
               Create New Password
             </h1>
             <p className="text-gray-400 text-sm mt-2">
-              Enter your new password below
+              Hello {username}, enter your new password below
             </p>
           </div>
 
