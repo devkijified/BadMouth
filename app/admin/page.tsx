@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { 
   Plus, Edit, Trash2, Film, Music, Layers, Shield, X, 
   Users, TrendingUp, Settings, Heart, Star, Search as SearchIcon,
-  Loader2, Tv, AlertTriangle, RefreshCw
+  Loader2, Tv, AlertTriangle, RefreshCw, Crown
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -114,45 +114,68 @@ export default function AdminPage() {
   })
 
   useEffect(() => {
+    console.log('Auth loading:', authLoading)
+    console.log('User:', user?.email)
+    
     if (!authLoading) {
-      checkAdminAndLoadData()
+      if (user) {
+        checkAdminAndLoadData()
+      } else {
+        setLoading(false)
+        router.push('/auth')
+      }
     }
   }, [authLoading, user])
 
   const checkAdminAndLoadData = async () => {
-    if (user?.email === 'kijified@gmail.com') {
-      setIsAdmin(true)
-      await Promise.all([
-        loadCategories(),
-        loadContent(),
-        loadUsers(),
-        loadRecommendations()
-      ])
-      setLoading(false)
-      setupRealtimeSubscriptions()
-      return
-    }
-    
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user?.id)
-      .single()
-    
-    if (profile?.role === 'admin') {
-      setIsAdmin(true)
-      await Promise.all([
-        loadCategories(),
-        loadContent(),
-        loadUsers(),
-        loadRecommendations()
-      ])
-      setLoading(false)
-      setupRealtimeSubscriptions()
-    } else {
+    try {
+      console.log('Checking admin status for:', user?.email)
+      
+      // First check if user email is the master admin
+      if (user?.email === 'kijified@gmail.com') {
+        console.log('Master admin detected')
+        setIsAdmin(true)
+        await loadAllData()
+        setupRealtimeSubscriptions()
+        setLoading(false)
+        return
+      }
+      
+      // Otherwise check role in profiles table
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user?.id)
+        .single()
+      
+      console.log('Profile role check:', profile, error)
+      
+      if (profile?.role === 'admin') {
+        console.log('Admin role detected')
+        setIsAdmin(true)
+        await loadAllData()
+        setupRealtimeSubscriptions()
+      } else {
+        console.log('Not admin, redirecting...')
+        router.push('/')
+      }
+    } catch (error) {
+      console.error('Admin check error:', error)
       router.push('/')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
+  }
+
+  const loadAllData = async () => {
+    console.log('Loading all data...')
+    await Promise.all([
+      loadCategories(),
+      loadContent(),
+      loadUsers(),
+      loadRecommendations()
+    ])
+    console.log('All data loaded')
   }
 
   const setupRealtimeSubscriptions = () => {
@@ -214,27 +237,49 @@ export default function AdminPage() {
   }
 
   const loadCategories = async () => {
-    let query = supabase.from('categories').select('*').order('display_order')
-    if (categoryTypeFilter !== 'all') {
-      query = query.eq('type', categoryTypeFilter)
+    try {
+      let query = supabase.from('categories').select('*').order('display_order')
+      if (categoryTypeFilter !== 'all') {
+        query = query.eq('type', categoryTypeFilter)
+      }
+      const { data, error } = await query
+      if (error) throw error
+      setCategories(data || [])
+      console.log('Categories loaded:', data?.length)
+    } catch (error) {
+      console.error('Error loading categories:', error)
     }
-    const { data } = await query
-    setCategories(data || [])
   }
 
   const loadContent = async () => {
-    const { data } = await supabase.from('content').select('*').order('created_at', { ascending: false })
-    setContent(data || [])
+    try {
+      const { data, error } = await supabase
+        .from('content')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      setContent(data || [])
+      console.log('Content loaded:', data?.length)
+    } catch (error) {
+      console.error('Error loading content:', error)
+    }
   }
 
   const loadUsers = async () => {
     try {
+      console.log('Loading users from profiles...')
+      
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false })
 
-      if (profilesError) throw profilesError
+      if (profilesError) {
+        console.error('Profiles error:', profilesError)
+        throw profilesError
+      }
+
+      console.log('Profiles data:', profiles)
 
       const usersWithStats = await Promise.all(
         (profiles || []).map(async (profile) => {
@@ -252,20 +297,29 @@ export default function AdminPage() {
       )
 
       setUsers(usersWithStats)
+      console.log('Users loaded:', usersWithStats.length)
     } catch (error) {
       console.error('Error loading users:', error)
+      toast.error('Failed to load users')
     }
   }
 
   const loadRecommendations = async () => {
-    const { data } = await supabase
-      .from('recommendations')
-      .select('*, profiles(username), content(title)')
-      .order('created_at', { ascending: false })
-      .limit(50)
-    setRecommendations(data || [])
+    try {
+      const { data, error } = await supabase
+        .from('recommendations')
+        .select('*, profiles(username), content(title)')
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (error) throw error
+      setRecommendations(data || [])
+      console.log('Recommendations loaded:', data?.length)
+    } catch (error) {
+      console.error('Error loading recommendations:', error)
+    }
   }
 
+  // Delete all content
   const deleteAllContent = async () => {
     if (!confirm('⚠️ WARNING: This will delete ALL content. This action cannot be undone. Are you absolutely sure?')) return
     
@@ -281,6 +335,7 @@ export default function AdminPage() {
     }
   }
 
+  // Delete all users (except admin)
   const deleteAllUsers = async () => {
     if (!confirm('⚠️ WARNING: This will delete ALL users except you. This action cannot be undone. Are you absolutely sure?')) return
     
@@ -294,6 +349,30 @@ export default function AdminPage() {
     }
   }
 
+  // Make user admin
+  const makeUserAdmin = async (userId: string, currentRole: string) => {
+    const newRole = currentRole === 'admin' ? 'user' : 'admin'
+    const action = newRole === 'admin' ? 'make admin' : 'remove admin'
+    
+    if (!confirm(`Are you sure you want to ${action} this user?`)) return
+    
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: newRole })
+        .eq('id', userId)
+
+      if (error) throw error
+
+      toast.success(`User role updated to ${newRole}`)
+      loadUsers() // Reload users list
+    } catch (error) {
+      console.error('Error updating user role:', error)
+      toast.error('Failed to update user role')
+    }
+  }
+
+  // Search functions
   const searchDeezerForMusic = async () => {
     if (!deezerSearchQuery.trim()) {
       toast.error('Please enter a song or artist name')
@@ -492,23 +571,33 @@ export default function AdminPage() {
   }
 
   const saveCategory = async () => {
-    if (editingItem) {
-      await supabase.from('categories').update(categoryForm).eq('id', editingItem.id)
-    } else {
-      await supabase.from('categories').insert([categoryForm])
+    try {
+      if (editingItem) {
+        await supabase.from('categories').update(categoryForm).eq('id', editingItem.id)
+      } else {
+        await supabase.from('categories').insert([categoryForm])
+      }
+      setShowCategoryModal(false)
+      setEditingItem(null)
+      setCategoryForm({ name: '', description: '', type: 'movie', is_active: true, display_order: 0 })
+      loadCategories()
+      toast.success('Category saved!')
+    } catch (error) {
+      console.error('Save category error:', error)
+      toast.error('Failed to save category')
     }
-    setShowCategoryModal(false)
-    setEditingItem(null)
-    setCategoryForm({ name: '', description: '', type: 'movie', is_active: true, display_order: 0 })
-    loadCategories()
-    toast.success('Category saved!')
   }
 
   const deleteCategory = async (id: string) => {
     if (confirm('Delete this category?')) {
-      await supabase.from('categories').delete().eq('id', id)
-      loadCategories()
-      toast.success('Category deleted')
+      try {
+        await supabase.from('categories').delete().eq('id', id)
+        loadCategories()
+        toast.success('Category deleted')
+      } catch (error) {
+        console.error('Delete category error:', error)
+        toast.error('Failed to delete category')
+      }
     }
   }
 
@@ -530,73 +619,94 @@ export default function AdminPage() {
   }
 
   const saveContent = async () => {
-    const dataToSave: any = {
-      title: contentForm.title,
-      description: contentForm.description,
-      long_description: contentForm.long_description || null,
-      image_url: contentForm.image_url,
-      backdrop_url: contentForm.backdrop_url || null,
-      type: contentForm.type,
-      year: contentForm.year,
-      platforms: contentForm.platforms.split(',').map(p => p.trim()),
-      trailer_url: contentForm.trailer_url || null,
-      genre: contentForm.genre,
-      stats_highly: contentForm.stats_highly,
-      stats_recommended: contentForm.stats_recommended,
-      stats_not: contentForm.stats_not,
-      is_tv_show: contentForm.is_tv_show || false,
+    try {
+      const dataToSave: any = {
+        title: contentForm.title,
+        description: contentForm.description,
+        long_description: contentForm.long_description || null,
+        image_url: contentForm.image_url,
+        backdrop_url: contentForm.backdrop_url || null,
+        type: contentForm.type,
+        year: contentForm.year,
+        platforms: contentForm.platforms.split(',').map(p => p.trim()),
+        trailer_url: contentForm.trailer_url || null,
+        genre: contentForm.genre,
+        stats_highly: contentForm.stats_highly,
+        stats_recommended: contentForm.stats_recommended,
+        stats_not: contentForm.stats_not,
+        is_tv_show: contentForm.is_tv_show || false,
+      }
+      
+      if (contentForm.type === 'movie') {
+        dataToSave.director = contentForm.director || null
+        dataToSave.actors = contentForm.actors.split(',').map(a => a.trim()).filter(a => a)
+        dataToSave.runtime = contentForm.runtime || null
+        dataToSave.artist = null
+        dataToSave.duration = null
+      } else {
+        dataToSave.artist = contentForm.artist || null
+        dataToSave.duration = contentForm.duration || null
+        dataToSave.director = null
+        dataToSave.actors = null
+        dataToSave.runtime = null
+        dataToSave.is_tv_show = false
+      }
+      
+      let contentId = editingItem?.id
+      if (editingItem) {
+        await supabase.from('content').update(dataToSave).eq('id', editingItem.id)
+        toast.success('Content updated!')
+      } else {
+        const { data } = await supabase.from('content').insert([dataToSave]).select()
+        contentId = data?.[0]?.id
+        toast.success('Content added!')
+      }
+      
+      if (contentId && contentForm.category_ids.length) {
+        await supabase.from('content_categories').delete().eq('content_id', contentId)
+        const links = contentForm.category_ids.map(catId => ({
+          content_id: contentId,
+          category_id: catId
+        }))
+        await supabase.from('content_categories').insert(links)
+      }
+      
+      closeContentModal()
+      loadContent()
+    } catch (error) {
+      console.error('Save content error:', error)
+      toast.error('Failed to save content')
     }
-    
-    if (contentForm.type === 'movie') {
-      dataToSave.director = contentForm.director || null
-      dataToSave.actors = contentForm.actors.split(',').map(a => a.trim()).filter(a => a)
-      dataToSave.runtime = contentForm.runtime || null
-      dataToSave.artist = null
-      dataToSave.duration = null
-    } else {
-      dataToSave.artist = contentForm.artist || null
-      dataToSave.duration = contentForm.duration || null
-      dataToSave.director = null
-      dataToSave.actors = null
-      dataToSave.runtime = null
-      dataToSave.is_tv_show = false
-    }
-    
-    let contentId = editingItem?.id
-    if (editingItem) {
-      await supabase.from('content').update(dataToSave).eq('id', editingItem.id)
-      toast.success('Content updated!')
-    } else {
-      const { data } = await supabase.from('content').insert([dataToSave]).select()
-      contentId = data?.[0]?.id
-      toast.success('Content added!')
-    }
-    
-    if (contentId && contentForm.category_ids.length) {
-      await supabase.from('content_categories').delete().eq('content_id', contentId)
-      const links = contentForm.category_ids.map(catId => ({
-        content_id: contentId,
-        category_id: catId
-      }))
-      await supabase.from('content_categories').insert(links)
-    }
-    
-    closeContentModal()
-    loadContent()
   }
 
   const deleteContent = async (id: string) => {
     if (confirm('Delete this content?')) {
-      await supabase.from('content').delete().eq('id', id)
-      loadContent()
-      toast.success('Content deleted')
+      try {
+        await supabase.from('content').delete().eq('id', id)
+        loadContent()
+        toast.success('Content deleted')
+      } catch (error) {
+        console.error('Delete content error:', error)
+        toast.error('Failed to delete content')
+      }
     }
   }
 
   const updateUserRole = async (userId: string, newRole: string) => {
-    await supabase.from('profiles').update({ role: newRole }).eq('id', userId)
-    loadUsers()
-    toast.success('User role updated')
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: newRole })
+        .eq('id', userId)
+
+      if (error) throw error
+
+      toast.success(`User role updated to ${newRole}`)
+      loadUsers()
+    } catch (error) {
+      console.error('Update role error:', error)
+      toast.error('Failed to update user role')
+    }
   }
 
   const filteredContent = content.filter(item => {
@@ -650,7 +760,7 @@ export default function AdminPage() {
               <span className="text-xs bg-teal-600 px-2 py-1 rounded-full">Admin Panel</span>
             </div>
             <div className="flex items-center gap-4">
-              <button onClick={() => { loadUsers(); loadContent(); loadCategories(); loadRecommendations(); }} className="text-gray-400 hover:text-white transition">
+              <button onClick={() => { loadUsers(); loadContent(); loadCategories(); loadRecommendations(); }} className="text-gray-400 hover:text-white transition" title="Refresh all data">
                 <RefreshCw size={18} />
               </button>
               <Link href="/" className="text-gray-400 hover:text-white transition">← Back to Site</Link>
@@ -742,33 +852,48 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map(userItem => (
-                    <tr key={userItem.id} className="border-b border-gray-700">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <img src={userItem.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userItem.username}`} className="w-8 h-8 rounded-full" alt="" />
-                          <span className="text-sm">{userItem.id?.slice(0, 8)}...</span>
-                        </div>
-                       </td>
-                      <td className="px-4 py-3 font-medium">{userItem.username || 'No username'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{userItem.email || 'No email'}</td>
-                      <td className="px-4 py-3">
-                        <select value={userItem.role || 'user'} onChange={(e) => updateUserRole(userItem.id, e.target.value)} className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm">
-                          <option value="user">User</option>
-                          <option value="moderator">Moderator</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                       </td>
-                      <td className="px-4 py-3"><span className="text-teal-400">❤️ {userItem.watchlist_count || 0}</span></td>
-                      <td className="px-4 py-3"><span className="text-blue-400">👍 {userItem.recommendations_count || 0}</span></td>
-                      <td className="px-4 py-3 text-sm">{new Date(userItem.created_at).toLocaleDateString()}</td>
-                      <td className="px-4 py-3">
-                        <button onClick={() => updateUserRole(userItem.id, userItem.role === 'admin' ? 'user' : 'admin')} className="text-teal-500 hover:text-teal-400 text-sm">
-                          Toggle Admin
-                        </button>
-                      </td>
+                  {users.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-8 text-gray-400">No users found</td>
                     </tr>
-                  ))}
+                  ) : (
+                    users.map(userItem => (
+                      <tr key={userItem.id} className="border-b border-gray-700 hover:bg-gray-700/50">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <img 
+                              src={userItem.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userItem.username}`} 
+                              className="w-8 h-8 rounded-full" 
+                              alt=""
+                            />
+                            <span className="text-sm">{userItem.id?.slice(0, 8)}...</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-medium">{userItem.username || 'No username'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-300">{userItem.email || 'No email'}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs ${userItem.role === 'admin' ? 'bg-purple-600/20 text-purple-400' : 'bg-gray-600/20 text-gray-400'}`}>
+                            {userItem.role === 'admin' ? '👑 Admin' : '👤 User'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3"><span className="text-teal-400">❤️ {userItem.watchlist_count || 0}</span></td>
+                        <td className="px-4 py-3"><span className="text-blue-400">👍 {userItem.recommendations_count || 0}</span></td>
+                        <td className="px-4 py-3 text-sm">{userItem.created_at ? new Date(userItem.created_at).toLocaleDateString() : 'N/A'}</td>
+                        <td className="px-4 py-3">
+                          <button 
+                            onClick={() => makeUserAdmin(userItem.id, userItem.role || 'user')}
+                            className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
+                              userItem.role === 'admin' 
+                                ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30' 
+                                : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'
+                            }`}
+                          >
+                            {userItem.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -780,19 +905,20 @@ export default function AdminPage() {
           <div className="bg-gray-800 rounded-xl p-6">
             <h2 className="text-xl font-bold mb-4">Recent Recommendations</h2>
             <div className="space-y-3">
-              {recommendations.slice(0, 20).map(rec => (
-                <div key={rec.id} className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg">
-                  <div>
-                    <p className="font-medium">{rec.profiles?.username || 'Anonymous'}</p>
-                    <p className="text-sm text-gray-400">Recommended: {rec.content?.title || 'Unknown'}</p>
-                  </div>
-                  <span className={`px-2 py-1 rounded-full text-xs ${rec.recommendation_tier === 'highly' ? 'bg-teal-600/20 text-teal-400' : rec.recommendation_tier === 'recommended' ? 'bg-blue-600/20 text-blue-400' : 'bg-gray-600/20 text-gray-400'}`}>
-                    {rec.recommendation_tier === 'highly' ? '🔥 HIGHLY' : rec.recommendation_tier === 'recommended' ? '👍 RECOMMENDED' : '👎 NOT'}
-                  </span>
-                </div>
-              ))}
-              {recommendations.length === 0 && (
+              {recommendations.length === 0 ? (
                 <p className="text-center text-gray-500 py-8">No recommendations yet</p>
+              ) : (
+                recommendations.slice(0, 20).map(rec => (
+                  <div key={rec.id} className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg">
+                    <div>
+                      <p className="font-medium">{rec.profiles?.username || 'Anonymous'}</p>
+                      <p className="text-sm text-gray-400">Recommended: {rec.content?.title || 'Unknown'}</p>
+                    </div>
+                    <span className={`px-2 py-1 rounded-full text-xs ${rec.recommendation_tier === 'highly' ? 'bg-teal-600/20 text-teal-400' : rec.recommendation_tier === 'recommended' ? 'bg-blue-600/20 text-blue-400' : 'bg-gray-600/20 text-gray-400'}`}>
+                      {rec.recommendation_tier === 'highly' ? '🔥 HIGHLY' : rec.recommendation_tier === 'recommended' ? '👍 RECOMMENDED' : '👎 NOT'}
+                    </span>
+                  </div>
+                ))
               )}
             </div>
           </div>
@@ -810,19 +936,23 @@ export default function AdminPage() {
               <button onClick={() => { setShowCategoryModal(true); setEditingItem(null); setCategoryForm({ name: '', description: '', type: categoryTypeFilter === 'all' ? 'movie' : categoryTypeFilter, is_active: true, display_order: 0 }) }} className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"><Plus size={16} /> Add Category</button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredCategories.map(cat => (
-                <div key={cat.id} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-                  <div className="flex justify-between items-start mb-2">
-                    <div><h3 className="font-bold text-lg">{cat.name}</h3><p className="text-xs text-gray-400">{cat.type}</p></div>
-                    <div className="flex gap-2">
-                      <button onClick={() => { setEditingItem(cat); setCategoryForm(cat); setShowCategoryModal(true); }} className="p-1 hover:bg-gray-700 rounded"><Edit size={16} /></button>
-                      <button onClick={() => deleteCategory(cat.id)} className="p-1 hover:bg-gray-700 rounded text-red-500"><Trash2 size={16} /></button>
+              {filteredCategories.length === 0 ? (
+                <p className="text-center text-gray-500 col-span-3 py-8">No categories found</p>
+              ) : (
+                filteredCategories.map(cat => (
+                  <div key={cat.id} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                    <div className="flex justify-between items-start mb-2">
+                      <div><h3 className="font-bold text-lg">{cat.name}</h3><p className="text-xs text-gray-400">{cat.type}</p></div>
+                      <div className="flex gap-2">
+                        <button onClick={() => { setEditingItem(cat); setCategoryForm(cat); setShowCategoryModal(true); }} className="p-1 hover:bg-gray-700 rounded"><Edit size={16} /></button>
+                        <button onClick={() => deleteCategory(cat.id)} className="p-1 hover:bg-gray-700 rounded text-red-500"><Trash2 size={16} /></button>
+                      </div>
                     </div>
+                    <p className="text-sm text-gray-300">{cat.description}</p>
+                    <p className="text-xs text-gray-500 mt-2">Order: {cat.display_order}</p>
                   </div>
-                  <p className="text-sm text-gray-300">{cat.description}</p>
-                  <p className="text-xs text-gray-500 mt-2">Order: {cat.display_order}</p>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         )}
@@ -846,28 +976,32 @@ export default function AdminPage() {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredContent.map(item => (
-                <div key={item.id} className="bg-gray-800 rounded-xl overflow-hidden border border-gray-700 relative">
-                  {item.is_tv_show && (
-                    <div className="absolute top-2 left-2 z-10">
-                      <div className="bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"><Tv size={10} /> TV Series</div>
-                    </div>
-                  )}
-                  <img src={item.image_url} alt={item.title} className="w-full h-40 object-cover" />
-                  <div className="p-4">
-                    <h3 className="font-bold">{item.title}</h3>
-                    <p className="text-xs text-gray-400 mb-2">{item.is_tv_show ? '📺 TV Show' : (item.type === 'movie' ? '🎬 Movie' : '🎵 Music')} • {item.year}</p>
-                    <p className="text-sm text-gray-300 line-clamp-2">{item.description}</p>
-                    <div className="flex justify-between mt-3">
-                      <span className="text-xs flex gap-2"><span className="text-teal-400">🔥 {item.stats_highly}</span><span className="text-blue-400">👍 {item.stats_recommended}</span><span className="text-gray-400">👎 {item.stats_not}</span></span>
-                      <div className="flex gap-2">
-                        <button onClick={() => { setEditingItem(item); setContentForm({ ...item, long_description: item.long_description || '', backdrop_url: item.backdrop_url || '', director: item.director || '', artist: item.artist || '', actors: item.actors?.join(', ') || '', platforms: item.platforms?.join(', ') || '', trailer_url: item.trailer_url || '', runtime: item.runtime || '', duration: item.duration || '', is_tv_show: item.is_tv_show || false, category_ids: [] }); setShowContentModal(true); }} className="text-gray-400 hover:text-white"><Edit size={16} /></button>
-                        <button onClick={() => deleteContent(item.id)} className="text-red-500 hover:text-red-400"><Trash2 size={16} /></button>
+              {filteredContent.length === 0 ? (
+                <p className="text-center text-gray-500 col-span-3 py-8">No content found</p>
+              ) : (
+                filteredContent.map(item => (
+                  <div key={item.id} className="bg-gray-800 rounded-xl overflow-hidden border border-gray-700 relative">
+                    {item.is_tv_show && (
+                      <div className="absolute top-2 left-2 z-10">
+                        <div className="bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"><Tv size={10} /> TV Series</div>
+                      </div>
+                    )}
+                    <img src={item.image_url} alt={item.title} className="w-full h-40 object-cover" />
+                    <div className="p-4">
+                      <h3 className="font-bold">{item.title}</h3>
+                      <p className="text-xs text-gray-400 mb-2">{item.is_tv_show ? '📺 TV Show' : (item.type === 'movie' ? '🎬 Movie' : '🎵 Music')} • {item.year}</p>
+                      <p className="text-sm text-gray-300 line-clamp-2">{item.description}</p>
+                      <div className="flex justify-between mt-3">
+                        <span className="text-xs flex gap-2"><span className="text-teal-400">🔥 {item.stats_highly}</span><span className="text-blue-400">👍 {item.stats_recommended}</span><span className="text-gray-400">👎 {item.stats_not}</span></span>
+                        <div className="flex gap-2">
+                          <button onClick={() => { setEditingItem(item); setContentForm({ ...item, long_description: item.long_description || '', backdrop_url: item.backdrop_url || '', director: item.director || '', artist: item.artist || '', actors: item.actors?.join(', ') || '', platforms: item.platforms?.join(', ') || '', trailer_url: item.trailer_url || '', runtime: item.runtime || '', duration: item.duration || '', is_tv_show: item.is_tv_show || false, category_ids: [] }); setShowContentModal(true); }} className="text-gray-400 hover:text-white"><Edit size={16} /></button>
+                          <button onClick={() => deleteContent(item.id)} className="text-red-500 hover:text-red-400"><Trash2 size={16} /></button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         )}
@@ -878,6 +1012,7 @@ export default function AdminPage() {
             <h2 className="text-xl font-bold mb-4">System Settings</h2>
             <div className="space-y-4">
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Real-time Updates</h3><p className="text-sm text-gray-400">User stats, watchlist counts, and recommendations update automatically in real-time.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Admin Management</h3><p className="text-sm text-gray-400">You can make any user an admin by clicking the "Make Admin" button in the users table.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TV Shows vs Movies</h3><p className="text-sm text-gray-400">TV shows are automatically marked with a TV badge when imported from TMDB.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Email Notifications</h3><p className="text-sm text-gray-400">Welcome emails and password reset emails are sent via Resend.</p></div>
             </div>
