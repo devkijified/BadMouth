@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { 
   Plus, Edit, Trash2, Film, Music, Layers, Shield, X, 
   Users, TrendingUp, Settings, Heart, Star, Search as SearchIcon,
-  Loader2, Tv, AlertTriangle, RefreshCw, Crown
+  Loader2, Tv, AlertTriangle, RefreshCw
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -114,6 +114,7 @@ export default function AdminPage() {
   })
 
   useEffect(() => {
+    console.log('=== ADMIN PAGE LOADED ===')
     console.log('Auth loading:', authLoading)
     console.log('User:', user?.email)
     
@@ -121,6 +122,7 @@ export default function AdminPage() {
       if (user) {
         checkAdminAndLoadData()
       } else {
+        console.log('No user, redirecting to auth')
         setLoading(false)
         router.push('/auth')
       }
@@ -131,36 +133,29 @@ export default function AdminPage() {
     try {
       console.log('Checking admin status for:', user?.email)
       
-      // First check if user email is the master admin
-      if (user?.email === 'kijified@gmail.com') {
-        console.log('Master admin detected')
-        setIsAdmin(true)
-        await loadAllData()
-        setupRealtimeSubscriptions()
-        setLoading(false)
-        return
-      }
-      
-      // Otherwise check role in profiles table
+      // ONLY check role in profiles table - NO hardcoding
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user?.id)
         .single()
       
-      console.log('Profile role check:', profile, error)
+      console.log('Profile data:', profile)
+      console.log('Profile error:', error)
       
       if (profile?.role === 'admin') {
-        console.log('Admin role detected')
+        console.log('✅ Admin role detected in profiles table')
         setIsAdmin(true)
         await loadAllData()
         setupRealtimeSubscriptions()
       } else {
-        console.log('Not admin, redirecting...')
+        console.log('❌ Not admin. Role:', profile?.role)
+        toast.error('You do not have admin access')
         router.push('/')
       }
     } catch (error) {
       console.error('Admin check error:', error)
+      toast.error('Failed to verify admin status')
       router.push('/')
     } finally {
       setLoading(false)
@@ -169,17 +164,19 @@ export default function AdminPage() {
 
   const loadAllData = async () => {
     console.log('Loading all data...')
-    await Promise.all([
-      loadCategories(),
-      loadContent(),
-      loadUsers(),
-      loadRecommendations()
-    ])
-    console.log('All data loaded')
+    try {
+      await loadCategories()
+      await loadContent()
+      await loadUsers()
+      await loadRecommendations()
+      console.log('✅ All data loaded successfully')
+    } catch (error) {
+      console.error('Error loading data:', error)
+      toast.error('Failed to load some data')
+    }
   }
 
   const setupRealtimeSubscriptions = () => {
-    // Subscribe to profiles changes
     const profilesSubscription = supabase
       .channel('profiles-changes')
       .on('postgres_changes', 
@@ -191,7 +188,6 @@ export default function AdminPage() {
       )
       .subscribe()
 
-    // Subscribe to recommendations changes
     const recsSubscription = supabase
       .channel('recommendations-changes')
       .on('postgres_changes', 
@@ -204,7 +200,6 @@ export default function AdminPage() {
       )
       .subscribe()
 
-    // Subscribe to watchlist changes
     const watchlistSubscription = supabase
       .channel('watchlist-changes')
       .on('postgres_changes', 
@@ -216,7 +211,6 @@ export default function AdminPage() {
       )
       .subscribe()
 
-    // Subscribe to content changes
     const contentSubscription = supabase
       .channel('content-changes')
       .on('postgres_changes', 
@@ -238,6 +232,7 @@ export default function AdminPage() {
 
   const loadCategories = async () => {
     try {
+      console.log('Loading categories...')
       let query = supabase.from('categories').select('*').order('display_order')
       if (categoryTypeFilter !== 'all') {
         query = query.eq('type', categoryTypeFilter)
@@ -248,11 +243,13 @@ export default function AdminPage() {
       console.log('Categories loaded:', data?.length)
     } catch (error) {
       console.error('Error loading categories:', error)
+      toast.error('Failed to load categories')
     }
   }
 
   const loadContent = async () => {
     try {
+      console.log('Loading content...')
       const { data, error } = await supabase
         .from('content')
         .select('*')
@@ -262,6 +259,7 @@ export default function AdminPage() {
       console.log('Content loaded:', data?.length)
     } catch (error) {
       console.error('Error loading content:', error)
+      toast.error('Failed to load content')
     }
   }
 
@@ -281,17 +279,36 @@ export default function AdminPage() {
 
       console.log('Profiles data:', profiles)
 
-      const usersWithStats = await Promise.all(
-        (profiles || []).map(async (profile) => {
-          const [{ count: watchlistCount }, { count: recommendationsCount }] = await Promise.all([
-            supabase.from('watchlist').select('*', { count: 'exact', head: true }).eq('user_id', profile.id),
-            supabase.from('recommendations').select('*', { count: 'exact', head: true }).eq('user_id', profile.id)
-          ])
+      if (!profiles || profiles.length === 0) {
+        setUsers([])
+        return
+      }
 
-          return {
-            ...profile,
-            watchlist_count: watchlistCount || 0,
-            recommendations_count: recommendationsCount || 0
+      const usersWithStats = await Promise.all(
+        profiles.map(async (profile) => {
+          try {
+            const watchlistResult = await supabase
+              .from('watchlist')
+              .select('*', { count: 'exact', head: true })
+              .eq('user_id', profile.id)
+            
+            const recsResult = await supabase
+              .from('recommendations')
+              .select('*', { count: 'exact', head: true })
+              .eq('user_id', profile.id)
+
+            return {
+              ...profile,
+              watchlist_count: watchlistResult.count || 0,
+              recommendations_count: recsResult.count || 0
+            }
+          } catch (err) {
+            console.error('Error getting stats for user:', profile.id, err)
+            return {
+              ...profile,
+              watchlist_count: 0,
+              recommendations_count: 0
+            }
           }
         })
       )
@@ -306,16 +323,31 @@ export default function AdminPage() {
 
   const loadRecommendations = async () => {
     try {
+      console.log('Loading recommendations...')
       const { data, error } = await supabase
         .from('recommendations')
         .select('*, profiles(username), content(title)')
         .order('created_at', { ascending: false })
         .limit(50)
-      if (error) throw error
+      
+      if (error) {
+        console.error('Recommendations error:', error)
+        const { data: simpleData, error: simpleError } = await supabase
+          .from('recommendations')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(50)
+        
+        if (simpleError) throw simpleError
+        setRecommendations(simpleData || [])
+        return
+      }
+      
       setRecommendations(data || [])
       console.log('Recommendations loaded:', data?.length)
     } catch (error) {
       console.error('Error loading recommendations:', error)
+      setRecommendations([])
     }
   }
 
@@ -365,7 +397,7 @@ export default function AdminPage() {
       if (error) throw error
 
       toast.success(`User role updated to ${newRole}`)
-      loadUsers() // Reload users list
+      loadUsers()
     } catch (error) {
       console.error('Error updating user role:', error)
       toast.error('Failed to update user role')
@@ -728,14 +760,21 @@ export default function AdminPage() {
     )
   }
 
+  // If not admin, show access denied
   if (!isAdmin) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="text-center">
           <Shield size={48} className="text-red-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
-          <p className="text-gray-400">Admin privileges required</p>
-          <button onClick={() => router.push('/')} className="mt-4 px-4 py-2 bg-teal-600 rounded-lg">Go Home</button>
+          <p className="text-gray-400 mb-4">You do not have admin privileges</p>
+          <p className="text-sm text-gray-500 mb-6">Your email: {user?.email || 'Not logged in'}</p>
+          <button 
+            onClick={() => router.push('/')} 
+            className="px-4 py-2 bg-teal-600 rounded-lg hover:bg-teal-700 transition"
+          >
+            Go Home
+          </button>
         </div>
       </div>
     )
@@ -900,7 +939,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Analytics Tab */}
+        {/* Analytics Tab - Keep same as before */}
         {activeTab === 'analytics' && (
           <div className="bg-gray-800 rounded-xl p-6">
             <h2 className="text-xl font-bold mb-4">Recent Recommendations</h2>
@@ -924,7 +963,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Categories Tab */}
+        {/* Categories Tab - Keep same as before */}
         {activeTab === 'categories' && (
           <div>
             <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
@@ -957,7 +996,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Content Tab */}
+        {/* Content Tab - Keep same as before */}
         {activeTab === 'content' && (
           <div>
             <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
@@ -1011,8 +1050,8 @@ export default function AdminPage() {
           <div className="bg-gray-800 rounded-xl p-6">
             <h2 className="text-xl font-bold mb-4">System Settings</h2>
             <div className="space-y-4">
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Admin Management</h3><p className="text-sm text-gray-400">Admins are managed through the profiles table. Only users with role="admin" can access this panel.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Real-time Updates</h3><p className="text-sm text-gray-400">User stats, watchlist counts, and recommendations update automatically in real-time.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Admin Management</h3><p className="text-sm text-gray-400">You can make any user an admin by clicking the "Make Admin" button in the users table.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TV Shows vs Movies</h3><p className="text-sm text-gray-400">TV shows are automatically marked with a TV badge when imported from TMDB.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Email Notifications</h3><p className="text-sm text-gray-400">Welcome emails and password reset emails are sent via Resend.</p></div>
             </div>
