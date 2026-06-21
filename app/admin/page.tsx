@@ -68,12 +68,11 @@ export default function AdminPage() {
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | 'movie' | 'music'>('all')
   const [categoryTypeFilter, setCategoryTypeFilter] = useState<'all' | 'movie' | 'music'>('all')
   
-  // Deezer search states
+  // Deezer search states - SIMPLIFIED
   const [deezerSearchResults, setDeezerSearchResults] = useState<any[]>([])
   const [showDeezerSearch, setShowDeezerSearch] = useState(false)
   const [deezerSearchQuery, setDeezerSearchQuery] = useState('')
   const [searchingDeezer, setSearchingDeezer] = useState(false)
-  const [deezerSearchType, setDeezerSearchType] = useState<'track' | 'artist' | 'album'>('track')
   
   // TMDB search states
   const [tmdbSearchResults, setTmdbSearchResults] = useState<any[]>([])
@@ -115,23 +114,15 @@ export default function AdminPage() {
     category_ids: [] as string[]
   })
 
-  // ONLY check admin once when component mounts or user changes
   useEffect(() => {
-    console.log('=== ADMIN PAGE LOADED ===')
-    
-    if (authLoading) {
-      console.log('Waiting for auth to load...')
-      return
-    }
+    if (authLoading) return
 
     if (!user) {
-      console.log('No user, redirecting to auth')
       router.push('/auth')
       return
     }
 
     if (adminChecked && isAdmin) {
-      console.log('Already verified admin, loading data...')
       loadAllData()
       return
     }
@@ -141,232 +132,132 @@ export default function AdminPage() {
 
   const checkAdminStatus = async () => {
     try {
-      console.log('Checking admin status for:', user?.email)
-      
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user?.id)
         .single()
       
-      console.log('Profile data:', profile)
-      
       if (profile?.role === 'admin') {
-        console.log('✅ Admin role detected')
         setIsAdmin(true)
         setAdminChecked(true)
         await loadAllData()
         setupRealtimeSubscriptions()
       } else {
-        console.log('❌ Not admin. Role:', profile?.role)
         setIsAdmin(false)
         setAdminChecked(true)
-        if (window.location.pathname !== '/auth') {
-          toast.error('You do not have admin access')
-          router.push('/')
-        }
+        toast.error('You do not have admin access')
+        router.push('/')
       }
     } catch (error) {
       console.error('Admin check error:', error)
       setIsAdmin(false)
       setAdminChecked(true)
-      if (window.location.pathname !== '/auth') {
-        toast.error('Failed to verify admin status')
-        router.push('/')
-      }
+      router.push('/')
     } finally {
       setLoading(false)
     }
   }
 
   const loadAllData = async () => {
-    console.log('Loading all data...')
     try {
       await loadCategories()
       await loadContent()
       await loadUsers()
       await loadRecommendations()
-      console.log('✅ All data loaded successfully')
     } catch (error) {
       console.error('Error loading data:', error)
-      toast.error('Failed to load some data')
     }
   }
 
   const setupRealtimeSubscriptions = () => {
-    const profilesSubscription = supabase
+    supabase
       .channel('profiles-changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'profiles' }, 
-        () => {
-          console.log('Profiles changed, reloading...')
-          loadUsers()
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => loadUsers())
       .subscribe()
 
-    const recsSubscription = supabase
+    supabase
       .channel('recommendations-changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'recommendations' }, 
-        () => {
-          console.log('Recommendations changed, reloading...')
-          loadRecommendations()
-          loadUsers()
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'recommendations' }, () => {
+        loadRecommendations()
+        loadUsers()
+      })
       .subscribe()
 
-    const watchlistSubscription = supabase
+    supabase
       .channel('watchlist-changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'watchlist' }, 
-        () => {
-          console.log('Watchlist changed, reloading...')
-          loadUsers()
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'watchlist' }, () => loadUsers())
       .subscribe()
 
-    const contentSubscription = supabase
+    supabase
       .channel('content-changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'content' }, 
-        () => {
-          console.log('Content changed, reloading...')
-          loadContent()
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'content' }, () => loadContent())
       .subscribe()
-
-    return () => {
-      profilesSubscription.unsubscribe()
-      recsSubscription.unsubscribe()
-      watchlistSubscription.unsubscribe()
-      contentSubscription.unsubscribe()
-    }
   }
 
   const loadCategories = async () => {
-    try {
-      console.log('Loading categories...')
-      let query = supabase.from('categories').select('*').order('display_order')
-      if (categoryTypeFilter !== 'all') {
-        query = query.eq('type', categoryTypeFilter)
-      }
-      const { data, error } = await query
-      if (error) throw error
-      setCategories(data || [])
-      console.log('Categories loaded:', data?.length)
-    } catch (error) {
-      console.error('Error loading categories:', error)
-      toast.error('Failed to load categories')
-    }
+    const { data } = await supabase
+      .from('categories')
+      .select('*')
+      .order('display_order')
+    setCategories(data || [])
   }
 
   const loadContent = async () => {
-    try {
-      console.log('Loading content...')
-      const { data, error } = await supabase
-        .from('content')
-        .select('*')
-        .order('created_at', { ascending: false })
-      if (error) throw error
-      setContent(data || [])
-      console.log('Content loaded:', data?.length)
-    } catch (error) {
-      console.error('Error loading content:', error)
-      toast.error('Failed to load content')
-    }
+    const { data } = await supabase
+      .from('content')
+      .select('*')
+      .order('created_at', { ascending: false })
+    setContent(data || [])
   }
 
   const loadUsers = async () => {
     try {
-      console.log('Loading users from profiles...')
-      
-      const { data: profiles, error: profilesError } = await supabase
+      const { data: profiles } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false })
 
-      if (profilesError) {
-        console.error('Profiles error:', profilesError)
-        throw profilesError
-      }
-
-      if (!profiles || profiles.length === 0) {
+      if (!profiles) {
         setUsers([])
         return
       }
 
       const usersWithStats = await Promise.all(
         profiles.map(async (profile) => {
-          try {
-            const watchlistResult = await supabase
-              .from('watchlist')
-              .select('*', { count: 'exact', head: true })
-              .eq('user_id', profile.id)
-            
-            const recsResult = await supabase
-              .from('recommendations')
-              .select('*', { count: 'exact', head: true })
-              .eq('user_id', profile.id)
+          const [{ count: watchlistCount }, { count: recommendationsCount }] = await Promise.all([
+            supabase.from('watchlist').select('*', { count: 'exact', head: true }).eq('user_id', profile.id),
+            supabase.from('recommendations').select('*', { count: 'exact', head: true }).eq('user_id', profile.id)
+          ])
 
-            return {
-              ...profile,
-              watchlist_count: watchlistResult.count || 0,
-              recommendations_count: recsResult.count || 0
-            }
-          } catch (err) {
-            console.error('Error getting stats for user:', profile.id, err)
-            return {
-              ...profile,
-              watchlist_count: 0,
-              recommendations_count: 0
-            }
+          return {
+            ...profile,
+            watchlist_count: watchlistCount || 0,
+            recommendations_count: recommendationsCount || 0
           }
         })
       )
 
       setUsers(usersWithStats)
-      console.log('Users loaded:', usersWithStats.length)
     } catch (error) {
       console.error('Error loading users:', error)
-      toast.error('Failed to load users')
     }
   }
 
   const loadRecommendations = async () => {
     try {
-      console.log('Loading recommendations...')
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('recommendations')
         .select('*, profiles(username), content(title)')
         .order('created_at', { ascending: false })
         .limit(50)
-      
-      if (error) {
-        console.error('Recommendations error:', error)
-        const { data: simpleData, error: simpleError } = await supabase
-          .from('recommendations')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(50)
-        
-        if (simpleError) throw simpleError
-        setRecommendations(simpleData || [])
-        return
-      }
-      
       setRecommendations(data || [])
-      console.log('Recommendations loaded:', data?.length)
     } catch (error) {
       console.error('Error loading recommendations:', error)
       setRecommendations([])
     }
   }
 
-  // Delete all content
   const deleteAllContent = async () => {
     if (!confirm('⚠️ WARNING: This will delete ALL content. This action cannot be undone. Are you absolutely sure?')) return
     
@@ -382,7 +273,6 @@ export default function AdminPage() {
     }
   }
 
-  // Delete all users (except admin)
   const deleteAllUsers = async () => {
     if (!confirm('⚠️ WARNING: This will delete ALL users except you. This action cannot be undone. Are you absolutely sure?')) return
     
@@ -396,7 +286,6 @@ export default function AdminPage() {
     }
   }
 
-  // Make user admin
   const makeUserAdmin = async (userId: string, currentRole: string) => {
     const newRole = currentRole === 'admin' ? 'user' : 'admin'
     const action = newRole === 'admin' ? 'make admin' : 'remove admin'
@@ -420,11 +309,11 @@ export default function AdminPage() {
   }
 
   // ============================================
-  // FIXED DEEZER SEARCH
+  // WORKING DEEZER SEARCH
   // ============================================
   const searchDeezer = async () => {
     if (!deezerSearchQuery.trim()) {
-      toast.error('Please enter a song, artist, or album name')
+      toast.error('Please enter a song or artist name')
       return
     }
 
@@ -432,33 +321,19 @@ export default function AdminPage() {
     setDeezerSearchResults([])
     
     try {
-      let url = ''
       const query = encodeURIComponent(deezerSearchQuery.trim())
+      const url = `https://api.deezer.com/search?q=${query}&limit=20`
       
-      // Build URL based on search type
-      if (deezerSearchType === 'track') {
-        url = `https://api.deezer.com/search/track?q=${query}&limit=20`
-      } else if (deezerSearchType === 'artist') {
-        url = `https://api.deezer.com/search/artist?q=${query}&limit=20`
-      } else if (deezerSearchType === 'album') {
-        url = `https://api.deezer.com/search/album?q=${query}&limit=20`
-      }
-
-      console.log('Fetching from Deezer:', url)
+      console.log('Searching Deezer:', url)
       
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        }
-      })
-
+      const response = await fetch(url)
+      
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
       const data = await response.json()
-      console.log('Deezer response:', data)
+      console.log('Deezer results:', data)
 
       if (data.data && data.data.length > 0) {
         setDeezerSearchResults(data.data)
@@ -484,60 +359,38 @@ export default function AdminPage() {
   }
 
   const importFromDeezer = (item: any) => {
-    let title = ''
-    let artist = ''
-    let imageUrl = ''
-    let year = new Date().getFullYear()
-    let duration = ''
-    let genre = ''
-    let description = ''
-    let longDescription = ''
-    let platforms = 'Spotify, Apple Music, Deezer, YouTube Music'
-
-    // Handle different search types
-    if (deezerSearchType === 'track') {
-      title = item.title || 'Unknown Track'
-      artist = item.artist?.name || 'Unknown Artist'
-      imageUrl = item.album?.cover_xl || item.album?.cover_big || ''
-      year = item.release_date ? new Date(item.release_date).getFullYear() : new Date().getFullYear()
-      duration = formatDuration(item.duration)
-      genre = item.artist?.name?.split(' ')[0] || 'Music'
-      description = `"${title}" by ${artist}`
-      longDescription = `"${title}" by ${artist}. A great track worth listening to.`
-    } else if (deezerSearchType === 'artist') {
-      title = item.name || 'Unknown Artist'
-      artist = item.name || 'Unknown Artist'
-      imageUrl = item.picture_xl || item.picture_big || ''
-      year = new Date().getFullYear()
-      duration = ''
-      genre = item.name?.split(' ')[0] || 'Music'
-      description = `Artist: ${item.name}`
-      longDescription = `${item.name} - Popular artist. Check out their music.`
-    } else if (deezerSearchType === 'album') {
-      title = item.title || 'Unknown Album'
-      artist = item.artist?.name || 'Unknown Artist'
-      imageUrl = item.cover_xl || item.cover_big || ''
-      year = item.release_date ? new Date(item.release_date).getFullYear() : new Date().getFullYear()
-      duration = ''
-      genre = item.artist?.name?.split(' ')[0] || 'Music'
-      description = `Album: "${title}" by ${artist}`
-      longDescription = `"${title}" by ${artist}. A great album worth listening to.`
+    let title = item.title || 'Unknown Track'
+    let artist = item.artist?.name || 'Unknown Artist'
+    let imageUrl = item.album?.cover_xl || item.album?.cover_big || ''
+    let year = item.release_date ? new Date(item.release_date).getFullYear() : new Date().getFullYear()
+    let duration = formatDuration(item.duration)
+    let genre = item.artist?.name?.split(' ')[0] || 'Music'
+    
+    // Try to get genre from album or artist
+    if (item.artist?.name) {
+      const artistName = item.artist.name.toLowerCase()
+      if (artistName.includes('rock')) genre = 'Rock'
+      else if (artistName.includes('pop')) genre = 'Pop'
+      else if (artistName.includes('hip hop') || artistName.includes('rap')) genre = 'Hip Hop'
+      else if (artistName.includes('jazz')) genre = 'Jazz'
+      else if (artistName.includes('classical')) genre = 'Classical'
+      else if (artistName.includes('electronic') || artistName.includes('edm')) genre = 'Electronic'
+      else genre = artistName.split(' ')[0]
     }
 
-    // Set the form data
     setContentForm({
       ...contentForm,
       title: title,
       artist: artist,
-      description: description,
-      long_description: longDescription,
+      description: `"${title}" by ${artist}`,
+      long_description: `"${title}" by ${artist}. ${item.album?.title ? `From the album "${item.album.title}".` : ''} ${item.rank ? `Deezer rank: ${item.rank.toLocaleString()}.` : ''}`,
       image_url: imageUrl,
-      backdrop_url: imageUrl,
+      backdrop_url: imageUrl || '',
       type: 'music',
       year: year,
       duration: duration,
       genre: genre,
-      platforms: platforms,
+      platforms: 'Spotify, Apple Music, Deezer, YouTube Music',
       trailer_url: '',
       stats_highly: Math.floor(Math.random() * 1000) + 500,
       stats_recommended: Math.floor(Math.random() * 500) + 200,
@@ -569,7 +422,6 @@ export default function AdminPage() {
         ? `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(tmdbSearchQuery)}&language=en-US&page=1`
         : `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(tmdbSearchQuery)}&language=en-US&page=1`
       
-      console.log('Fetching from TMDB:', url)
       const response = await fetch(url)
       const data = await response.json()
       
@@ -845,13 +697,7 @@ export default function AdminPage() {
           <Shield size={48} className="text-red-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
           <p className="text-gray-400 mb-4">You do not have admin privileges</p>
-          <p className="text-sm text-gray-500 mb-6">Your email: {user?.email || 'Not logged in'}</p>
-          <button 
-            onClick={() => router.push('/')} 
-            className="px-4 py-2 bg-teal-600 rounded-lg hover:bg-teal-700 transition"
-          >
-            Go Home
-          </button>
+          <button onClick={() => router.push('/')} className="px-4 py-2 bg-teal-600 rounded-lg">Go Home</button>
         </div>
       </div>
     )
@@ -877,17 +723,7 @@ export default function AdminPage() {
               <span className="text-xs text-green-500 hidden md:inline">● Active</span>
             </div>
             <div className="flex items-center gap-4">
-              <button 
-                onClick={() => { 
-                  loadUsers()
-                  loadContent()
-                  loadCategories()
-                  loadRecommendations()
-                  toast.success('Data refreshed')
-                }} 
-                className="text-gray-400 hover:text-white transition" 
-                title="Refresh all data"
-              >
+              <button onClick={() => { loadUsers(); loadContent(); loadCategories(); loadRecommendations(); toast.success('Data refreshed'); }} className="text-gray-400 hover:text-white transition">
                 <RefreshCw size={18} />
               </button>
               <Link href="/" className="text-gray-400 hover:text-white transition">← Back to Site</Link>
@@ -899,30 +735,12 @@ export default function AdminPage() {
       <div className="container mx-auto px-4 py-8">
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
-          <div className="bg-gray-800 rounded-xl p-4">
-            <div className="flex items-center gap-2 text-teal-500 mb-2"><Users size={20} /> Users</div>
-            <p className="text-2xl font-bold">{totalUsers}</p>
-          </div>
-          <div className="bg-gray-800 rounded-xl p-4">
-            <div className="flex items-center gap-2 text-teal-500 mb-2"><Film size={20} /> Movies & TV</div>
-            <p className="text-2xl font-bold">{totalMovies}</p>
-          </div>
-          <div className="bg-gray-800 rounded-xl p-4">
-            <div className="flex items-center gap-2 text-teal-500 mb-2"><Music size={20} /> Music</div>
-            <p className="text-2xl font-bold">{totalMusic}</p>
-          </div>
-          <div className="bg-gray-800 rounded-xl p-4">
-            <div className="flex items-center gap-2 text-teal-500 mb-2"><Layers size={20} /> Categories</div>
-            <p className="text-2xl font-bold">{totalCategories}</p>
-          </div>
-          <div className="bg-gray-800 rounded-xl p-4">
-            <div className="flex items-center gap-2 text-teal-500 mb-2"><Heart size={20} /> Recs</div>
-            <p className="text-2xl font-bold">{totalRecommendations}</p>
-          </div>
-          <div className="bg-gray-800 rounded-xl p-4">
-            <div className="flex items-center gap-2 text-teal-500 mb-2"><Star size={20} /> Content</div>
-            <p className="text-2xl font-bold">{totalContent}</p>
-          </div>
+          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Users size={20} /> Users</div><p className="text-2xl font-bold">{totalUsers}</p></div>
+          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Film size={20} /> Movies & TV</div><p className="text-2xl font-bold">{totalMovies}</p></div>
+          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Music size={20} /> Music</div><p className="text-2xl font-bold">{totalMusic}</p></div>
+          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Layers size={20} /> Categories</div><p className="text-2xl font-bold">{totalCategories}</p></div>
+          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Heart size={20} /> Recs</div><p className="text-2xl font-bold">{totalRecommendations}</p></div>
+          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Star size={20} /> Content</div><p className="text-2xl font-bold">{totalContent}</p></div>
         </div>
 
         {/* Danger Zone */}
@@ -932,33 +750,19 @@ export default function AdminPage() {
             <h3 className="text-lg font-semibold text-red-500">Danger Zone</h3>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button onClick={deleteAllContent} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition text-sm font-semibold">
-              Delete All Content
-            </button>
-            <button onClick={deleteAllUsers} className="px-4 py-2 bg-red-600/70 hover:bg-red-700 rounded-lg transition text-sm font-semibold">
-              Delete All Users
-            </button>
+            <button onClick={deleteAllContent} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition text-sm font-semibold">Delete All Content</button>
+            <button onClick={deleteAllUsers} className="px-4 py-2 bg-red-600/70 hover:bg-red-700 rounded-lg transition text-sm font-semibold">Delete All Users</button>
           </div>
           <p className="text-xs text-gray-500 mt-2">⚠️ These actions cannot be undone</p>
         </div>
 
         {/* Navigation Tabs */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-800">
-          <button onClick={() => setActiveTab('users')} className={`px-4 py-2 transition ${activeTab === 'users' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
-            <Users size={16} className="inline mr-1" /> Users
-          </button>
-          <button onClick={() => setActiveTab('analytics')} className={`px-4 py-2 transition ${activeTab === 'analytics' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
-            <TrendingUp size={16} className="inline mr-1" /> Analytics
-          </button>
-          <button onClick={() => setActiveTab('categories')} className={`px-4 py-2 transition ${activeTab === 'categories' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
-            <Layers size={16} className="inline mr-1" /> Categories
-          </button>
-          <button onClick={() => setActiveTab('content')} className={`px-4 py-2 transition ${activeTab === 'content' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
-            <Film size={16} className="inline mr-1" /> Content
-          </button>
-          <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 transition ${activeTab === 'settings' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
-            <Settings size={16} className="inline mr-1" /> Settings
-          </button>
+          <button onClick={() => setActiveTab('users')} className={`px-4 py-2 transition ${activeTab === 'users' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><Users size={16} className="inline mr-1" /> Users</button>
+          <button onClick={() => setActiveTab('analytics')} className={`px-4 py-2 transition ${activeTab === 'analytics' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><TrendingUp size={16} className="inline mr-1" /> Analytics</button>
+          <button onClick={() => setActiveTab('categories')} className={`px-4 py-2 transition ${activeTab === 'categories' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><Layers size={16} className="inline mr-1" /> Categories</button>
+          <button onClick={() => setActiveTab('content')} className={`px-4 py-2 transition ${activeTab === 'content' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><Film size={16} className="inline mr-1" /> Content</button>
+          <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 transition ${activeTab === 'settings' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><Settings size={16} className="inline mr-1" /> Settings</button>
         </div>
 
         {/* Users Tab */}
@@ -967,32 +771,17 @@ export default function AdminPage() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-700">
-                  <tr>
-                    <th className="px-4 py-3 text-left">User</th>
-                    <th className="px-4 py-3 text-left">Username</th>
-                    <th className="px-4 py-3 text-left">Email</th>
-                    <th className="px-4 py-3 text-left">Role</th>
-                    <th className="px-4 py-3 text-left">Watchlist</th>
-                    <th className="px-4 py-3 text-left">Recs</th>
-                    <th className="px-4 py-3 text-left">Joined</th>
-                    <th className="px-4 py-3 text-left">Actions</th>
-                  </tr>
+                  <tr><th className="px-4 py-3 text-left">User</th><th className="px-4 py-3 text-left">Username</th><th className="px-4 py-3 text-left">Email</th><th className="px-4 py-3 text-left">Role</th><th className="px-4 py-3 text-left">Watchlist</th><th className="px-4 py-3 text-left">Recs</th><th className="px-4 py-3 text-left">Joined</th><th className="px-4 py-3 text-left">Actions</th></tr>
                 </thead>
                 <tbody>
                   {users.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="text-center py-8 text-gray-400">No users found</td>
-                    </tr>
+                    <tr><td colSpan={8} className="text-center py-8 text-gray-400">No users found</td></tr>
                   ) : (
                     users.map(userItem => (
                       <tr key={userItem.id} className="border-b border-gray-700 hover:bg-gray-700/50">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <img 
-                              src={userItem.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userItem.username}`} 
-                              className="w-8 h-8 rounded-full" 
-                              alt=""
-                            />
+                            <img src={userItem.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userItem.username}`} className="w-8 h-8 rounded-full" />
                             <span className="text-sm">{userItem.id?.slice(0, 8)}...</span>
                           </div>
                         </td>
@@ -1007,14 +796,7 @@ export default function AdminPage() {
                         <td className="px-4 py-3"><span className="text-blue-400">👍 {userItem.recommendations_count || 0}</span></td>
                         <td className="px-4 py-3 text-sm">{userItem.created_at ? new Date(userItem.created_at).toLocaleDateString() : 'N/A'}</td>
                         <td className="px-4 py-3">
-                          <button 
-                            onClick={() => makeUserAdmin(userItem.id, userItem.role || 'user')}
-                            className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
-                              userItem.role === 'admin' 
-                                ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30' 
-                                : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'
-                            }`}
-                          >
+                          <button onClick={() => makeUserAdmin(userItem.id, userItem.role || 'user')} className={`px-3 py-1 rounded-lg text-xs font-medium transition ${userItem.role === 'admin' ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30' : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'}`}>
                             {userItem.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
                           </button>
                         </td>
@@ -1037,10 +819,7 @@ export default function AdminPage() {
               ) : (
                 recommendations.slice(0, 20).map(rec => (
                   <div key={rec.id} className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg">
-                    <div>
-                      <p className="font-medium">{rec.profiles?.username || 'Anonymous'}</p>
-                      <p className="text-sm text-gray-400">Recommended: {rec.content?.title || 'Unknown'}</p>
-                    </div>
+                    <div><p className="font-medium">{rec.profiles?.username || 'Anonymous'}</p><p className="text-sm text-gray-400">Recommended: {rec.content?.title || 'Unknown'}</p></div>
                     <span className={`px-2 py-1 rounded-full text-xs ${rec.recommendation_tier === 'highly' ? 'bg-teal-600/20 text-teal-400' : rec.recommendation_tier === 'recommended' ? 'bg-blue-600/20 text-blue-400' : 'bg-gray-600/20 text-gray-400'}`}>
                       {rec.recommendation_tier === 'highly' ? '🔥 HIGHLY' : rec.recommendation_tier === 'recommended' ? '👍 RECOMMENDED' : '👎 NOT'}
                     </span>
@@ -1139,8 +918,8 @@ export default function AdminPage() {
             <h2 className="text-xl font-bold mb-4">System Settings</h2>
             <div className="space-y-4">
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Admin Access</h3><p className="text-sm text-gray-400">Admin status is determined by the role field in the profiles table. Only users with role="admin" can access this panel.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Real-time Updates</h3><p className="text-sm text-gray-400">User stats, watchlist counts, and recommendations update automatically in real-time.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Deezer Search</h3><p className="text-sm text-gray-400">Search for tracks, artists, or albums. Click "Import" to add to your content library.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Deezer Search</h3><p className="text-sm text-gray-400">Search for tracks on Deezer using the search endpoint. Click "Import" to add to your content library.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TMDB Search</h3><p className="text-sm text-gray-400">Search for movies and TV shows. Automatically fetches trailers, cast, and watch providers.</p></div>
             </div>
           </div>
         )}
@@ -1160,14 +939,11 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Content Modal - WITH FIXED DEEZER */}
+      {/* Content Modal */}
       {showContentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 overflow-y-auto">
           <div className="bg-gray-900 rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Content</h2>
-              <button onClick={closeContentModal} className="p-1 hover:bg-gray-800 rounded"><X size={20} /></button>
-            </div>
+            <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Content</h2><button onClick={closeContentModal} className="p-1 hover:bg-gray-800 rounded"><X size={20} /></button></div>
             <div className="space-y-3">
               <input type="text" placeholder="Title" value={contentForm.title} onChange={e => setContentForm({ ...contentForm, title: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               <textarea placeholder="Description" value={contentForm.description} onChange={e => setContentForm({ ...contentForm, description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" rows={2} />
@@ -1228,7 +1004,7 @@ export default function AdminPage() {
                 </>
               ) : (
                 <>
-                  {/* FIXED DEEZER SEARCH */}
+                  {/* DEEZER SEARCH SECTION */}
                   <div className="mb-2">
                     <button type="button" onClick={() => setShowDeezerSearch(!showDeezerSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1">
                       {showDeezerSearch ? '− Hide Deezer Search' : '🔍 + Search on Deezer (Music)'}
@@ -1236,39 +1012,10 @@ export default function AdminPage() {
                     
                     {showDeezerSearch && (
                       <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
-                        <div className="flex flex-wrap gap-2">
-                          <div className="flex gap-1">
-                            <button 
-                              onClick={() => setDeezerSearchType('track')} 
-                              className={`px-3 py-1.5 rounded text-xs font-medium transition ${
-                                deezerSearchType === 'track' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'
-                              }`}
-                            >
-                              🎵 Tracks
-                            </button>
-                            <button 
-                              onClick={() => setDeezerSearchType('artist')} 
-                              className={`px-3 py-1.5 rounded text-xs font-medium transition ${
-                                deezerSearchType === 'artist' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'
-                              }`}
-                            >
-                              👤 Artists
-                            </button>
-                            <button 
-                              onClick={() => setDeezerSearchType('album')} 
-                              className={`px-3 py-1.5 rounded text-xs font-medium transition ${
-                                deezerSearchType === 'album' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'
-                              }`}
-                            >
-                              💿 Albums
-                            </button>
-                          </div>
-                        </div>
-                        
                         <div className="flex gap-2">
                           <input 
                             type="text" 
-                            placeholder={`Search for a ${deezerSearchType}...`} 
+                            placeholder="Search for a song or artist..." 
                             value={deezerSearchQuery} 
                             onChange={(e) => setDeezerSearchQuery(e.target.value)} 
                             onKeyPress={(e) => e.key === 'Enter' && searchDeezer()} 
@@ -1300,26 +1047,18 @@ export default function AdminPage() {
                                 className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition group"
                               >
                                 <img 
-                                  src={item.album?.cover_small || item.picture_small || ''} 
-                                  alt={item.title || item.name} 
+                                  src={item.album?.cover_small || ''} 
+                                  alt={item.title} 
                                   className="w-12 h-12 rounded object-cover" 
                                 />
                                 <div className="flex-1 min-w-0">
-                                  <p className="font-medium text-sm truncate">
-                                    {item.title || item.name || 'Unknown'}
-                                  </p>
-                                  <p className="text-xs text-gray-400 truncate">
-                                    {item.artist?.name || 'Unknown Artist'}
-                                  </p>
+                                  <p className="font-medium text-sm truncate">{item.title || 'Unknown'}</p>
+                                  <p className="text-xs text-gray-400 truncate">{item.artist?.name || 'Unknown Artist'}</p>
                                   {item.release_date && (
-                                    <p className="text-[10px] text-gray-500">
-                                      {new Date(item.release_date).getFullYear()}
-                                    </p>
+                                    <p className="text-[10px] text-gray-500">{new Date(item.release_date).getFullYear()}</p>
                                   )}
                                 </div>
-                                <button className="text-teal-400 text-sm opacity-0 group-hover:opacity-100 transition">
-                                  Import →
-                                </button>
+                                <button className="text-teal-400 text-sm opacity-0 group-hover:opacity-100 transition">Import →</button>
                               </div>
                             ))}
                           </div>
@@ -1328,7 +1067,7 @@ export default function AdminPage() {
                         {deezerSearchResults.length === 0 && !searchingDeezer && showDeezerSearch && (
                           <div className="text-center py-4 text-gray-500">
                             <Music size={24} className="mx-auto mb-2 opacity-50" />
-                            <p className="text-sm">Search for tracks, artists, or albums on Deezer</p>
+                            <p className="text-sm">Search for tracks on Deezer</p>
                           </div>
                         )}
                       </div>
