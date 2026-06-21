@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
 import { useRouter } from 'next/navigation'
@@ -49,11 +49,8 @@ export default function AdminPage() {
   const router = useRouter()
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [adminChecked, setAdminChecked] = useState(false)
   const [activeTab, setActiveTab] = useState<'categories' | 'content' | 'users' | 'analytics' | 'settings'>('users')
-  const [lastActivity, setLastActivity] = useState(Date.now())
-  const inactivityTimer = useRef<NodeJS.Timeout | null>(null)
-  const refreshInterval = useRef<NodeJS.Timeout | null>(null)
-  const sessionRefreshInterval = useRef<NodeJS.Timeout | null>(null)
   
   // Data states
   const [categories, setCategories] = useState<Category[]>([])
@@ -117,120 +114,38 @@ export default function AdminPage() {
     category_ids: [] as string[]
   })
 
-  // Reset inactivity timer on user interaction
-  const resetInactivityTimer = () => {
-    setLastActivity(Date.now())
-    if (inactivityTimer.current) {
-      clearTimeout(inactivityTimer.current)
-    }
-    // Set inactivity timeout to 30 minutes (1800000 ms)
-    inactivityTimer.current = setTimeout(() => {
-      console.log('Inactivity detected, refreshing session...')
-      refreshSession()
-    }, 1800000) // 30 minutes
-  }
-
-  // Refresh session
-  const refreshSession = async () => {
-    try {
-      const { data, error } = await supabase.auth.refreshSession()
-      if (error) {
-        console.log('Session refresh failed, redirecting to login')
-        toast.error('Session expired. Please login again.')
-        router.push('/auth')
-      } else {
-        console.log('Session refreshed successfully')
-        toast.success('Session refreshed')
-      }
-    } catch (error) {
-      console.error('Session refresh error:', error)
-    }
-  }
-
-  // Set up activity listeners
-  useEffect(() => {
-    const activities = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click', 'mousemove']
-    const handleActivity = () => resetInactivityTimer()
-    
-    activities.forEach(event => {
-      window.addEventListener(event, handleActivity)
-    })
-
-    // Initial timer setup
-    resetInactivityTimer()
-
-    // Set up periodic data refresh (every 30 seconds)
-    refreshInterval.current = setInterval(() => {
-      if (isAdmin && document.visibilityState === 'visible') {
-        console.log('Auto-refreshing data...')
-        loadUsers()
-        loadContent()
-        loadCategories()
-        loadRecommendations()
-      }
-    }, 30000) // 30 seconds
-
-    // Set up session refresh (every 5 minutes)
-    sessionRefreshInterval.current = setInterval(() => {
-      if (isAdmin && document.visibilityState === 'visible') {
-        console.log('Auto-refreshing session...')
-        supabase.auth.refreshSession().catch(console.error)
-      }
-    }, 300000) // 5 minutes
-
-    // Handle visibility change (tab switch)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        console.log('Tab became visible, refreshing data...')
-        resetInactivityTimer()
-        if (isAdmin) {
-          loadUsers()
-          loadContent()
-          loadCategories()
-          loadRecommendations()
-        }
-      }
-    }
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    return () => {
-      activities.forEach(event => {
-        window.removeEventListener(event, handleActivity)
-      })
-      if (inactivityTimer.current) {
-        clearTimeout(inactivityTimer.current)
-      }
-      if (refreshInterval.current) {
-        clearInterval(refreshInterval.current)
-      }
-      if (sessionRefreshInterval.current) {
-        clearInterval(sessionRefreshInterval.current)
-      }
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [isAdmin])
-
+  // ONLY check admin once when component mounts or user changes
   useEffect(() => {
     console.log('=== ADMIN PAGE LOADED ===')
-    console.log('Auth loading:', authLoading)
-    console.log('User:', user?.email)
     
-    if (!authLoading) {
-      if (user) {
-        checkAdminAndLoadData()
-      } else {
-        console.log('No user, redirecting to auth')
-        setLoading(false)
-        router.push('/auth')
-      }
+    // If still loading auth, wait
+    if (authLoading) {
+      console.log('Waiting for auth to load...')
+      return
     }
+
+    // If no user, redirect to auth
+    if (!user) {
+      console.log('No user, redirecting to auth')
+      router.push('/auth')
+      return
+    }
+
+    // If already checked admin and user hasn't changed, skip
+    if (adminChecked && isAdmin) {
+      console.log('Already verified admin, loading data...')
+      loadAllData()
+      return
+    }
+
+    // Check admin status once
+    checkAdminStatus()
   }, [authLoading, user])
 
-  const checkAdminAndLoadData = async () => {
+  const checkAdminStatus = async () => {
     try {
       console.log('Checking admin status for:', user?.email)
       
-      // Check role in profiles table
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('role')
@@ -241,19 +156,30 @@ export default function AdminPage() {
       console.log('Profile error:', error)
       
       if (profile?.role === 'admin') {
-        console.log('✅ Admin role detected in profiles table')
+        console.log('✅ Admin role detected')
         setIsAdmin(true)
+        setAdminChecked(true)
         await loadAllData()
         setupRealtimeSubscriptions()
       } else {
         console.log('❌ Not admin. Role:', profile?.role)
-        toast.error('You do not have admin access')
-        router.push('/')
+        setIsAdmin(false)
+        setAdminChecked(true)
+        // Only redirect if we're not already on auth page
+        if (window.location.pathname !== '/auth') {
+          toast.error('You do not have admin access')
+          router.push('/')
+        }
       }
     } catch (error) {
       console.error('Admin check error:', error)
-      toast.error('Failed to verify admin status')
-      router.push('/')
+      setIsAdmin(false)
+      setAdminChecked(true)
+      // Only redirect if we're not already on auth page
+      if (window.location.pathname !== '/auth') {
+        toast.error('Failed to verify admin status')
+        router.push('/')
+      }
     } finally {
       setLoading(false)
     }
@@ -821,23 +747,6 @@ export default function AdminPage() {
     }
   }
 
-  const updateUserRole = async (userId: string, newRole: string) => {
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ role: newRole })
-        .eq('id', userId)
-
-      if (error) throw error
-
-      toast.success(`User role updated to ${newRole}`)
-      loadUsers()
-    } catch (error) {
-      console.error('Update role error:', error)
-      toast.error('Failed to update user role')
-    }
-  }
-
   const filteredContent = content.filter(item => {
     const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesType = contentTypeFilter === 'all' || item.type === contentTypeFilter
@@ -849,6 +758,7 @@ export default function AdminPage() {
     return cat.type === categoryTypeFilter
   })
 
+  // Show loading state while checking auth
   if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -857,8 +767,8 @@ export default function AdminPage() {
     )
   }
 
-  // If not admin, show access denied
-  if (!isAdmin) {
+  // If not admin, show access denied (this will only show briefly before redirect)
+  if (!isAdmin && adminChecked) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="text-center">
@@ -894,14 +804,11 @@ export default function AdminPage() {
                 BADMOUTH Admin
               </Link>
               <span className="text-xs bg-teal-600 px-2 py-1 rounded-full">Admin Panel</span>
-              <span className="text-xs text-green-500 hidden md:inline">
-                ● Session active
-              </span>
+              <span className="text-xs text-green-500 hidden md:inline">● Active</span>
             </div>
             <div className="flex items-center gap-4">
               <button 
                 onClick={() => { 
-                  resetInactivityTimer()
                   loadUsers()
                   loadContent()
                   loadCategories()
@@ -912,13 +819,6 @@ export default function AdminPage() {
                 title="Refresh all data"
               >
                 <RefreshCw size={18} />
-              </button>
-              <button
-                onClick={refreshSession}
-                className="text-gray-400 hover:text-white transition text-xs"
-                title="Refresh session"
-              >
-                🔄 Session
               </button>
               <Link href="/" className="text-gray-400 hover:text-white transition">← Back to Site</Link>
             </div>
@@ -1168,8 +1068,7 @@ export default function AdminPage() {
           <div className="bg-gray-800 rounded-xl p-6">
             <h2 className="text-xl font-bold mb-4">System Settings</h2>
             <div className="space-y-4">
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Session Management</h3><p className="text-sm text-gray-400">Session stays active for 30 minutes of inactivity. Auto-refreshes data every 30 seconds.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Admin Management</h3><p className="text-sm text-gray-400">Admins are managed through the profiles table. Only users with role="admin" can access this panel.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Admin Access</h3><p className="text-sm text-gray-400">Admin status is determined by the role field in the profiles table. Only users with role="admin" can access this panel.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Real-time Updates</h3><p className="text-sm text-gray-400">User stats, watchlist counts, and recommendations update automatically in real-time.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TV Shows vs Movies</h3><p className="text-sm text-gray-400">TV shows are automatically marked with a TV badge when imported from TMDB.</p></div>
             </div>
@@ -1191,164 +1090,127 @@ export default function AdminPage() {
         </div>
       )}
 
-     {/* Content Modal */}
-{showContentModal && (
-  <div 
-    className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80"
-    onClick={(e) => {
-      // Only close when clicking the backdrop
-      if (e.target === e.currentTarget) {
-        // Don't close automatically
-        return
-      }
-    }}
-  >
-    <div className="bg-gray-900 rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto relative">
-      {/* Modal Header - Sticky */}
-      <div className="sticky top-0 bg-gray-900 z-10 pb-4 border-b border-gray-700">
-        <div className="flex justify-between items-center">
-          <h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Content</h2>
-          <button 
-            onClick={() => {
-              if (confirm('Are you sure you want to close? Any unsaved changes will be lost.')) {
-                closeContentModal()
-              }
-            }} 
-            className="p-2 hover:bg-gray-800 rounded-full transition"
-          >
-            <X size={20} />
-          </button>
-        </div>
-      </div>
-      
-      {/* Modal Body - Scrollable */}
-      <div className="mt-4 space-y-3 overflow-y-auto">
-        <input type="text" placeholder="Title" value={contentForm.title} onChange={e => setContentForm({ ...contentForm, title: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-        <textarea placeholder="Description" value={contentForm.description} onChange={e => setContentForm({ ...contentForm, description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" rows={2} />
-        <textarea placeholder="Long Description" value={contentForm.long_description} onChange={e => setContentForm({ ...contentForm, long_description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" rows={3} />
-        <input type="text" placeholder="Image URL" value={contentForm.image_url} onChange={e => setContentForm({ ...contentForm, image_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-        <input type="text" placeholder="Backdrop URL" value={contentForm.backdrop_url} onChange={e => setContentForm({ ...contentForm, backdrop_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-        
-        <select value={contentForm.type} onChange={e => setContentForm({ ...contentForm, type: e.target.value as 'movie' | 'music' })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500">
-          <option value="movie">Movie / TV Show</option>
-          <option value="music">Music</option>
-        </select>
-        
-        <input type="number" placeholder="Year" value={contentForm.year} onChange={e => setContentForm({ ...contentForm, year: parseInt(e.target.value) })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-        
-        {contentForm.type === 'movie' ? (
-          <>
-            <div className="mb-2 p-3 bg-gray-800/50 rounded-lg">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" checked={contentForm.is_tv_show} onChange={(e) => setContentForm({ ...contentForm, is_tv_show: e.target.checked })} className="w-5 h-5 rounded border-gray-700 bg-gray-800 text-teal-500" />
-                <div><span className="text-sm text-gray-300 font-medium">This is a TV Show</span>{contentForm.is_tv_show && <p className="text-xs text-purple-400 mt-1">📺 TV Show badge will appear</p>}</div>
-              </label>
-            </div>
+      {/* Content Modal */}
+      {showContentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 overflow-y-auto">
+          <div className="bg-gray-900 rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Content</h2><button onClick={closeContentModal} className="p-1 hover:bg-gray-800 rounded"><X size={20} /></button></div>
+            <div className="space-y-3">
+              <input type="text" placeholder="Title" value={contentForm.title} onChange={e => setContentForm({ ...contentForm, title: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              <textarea placeholder="Description" value={contentForm.description} onChange={e => setContentForm({ ...contentForm, description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" rows={2} />
+              <textarea placeholder="Long Description" value={contentForm.long_description} onChange={e => setContentForm({ ...contentForm, long_description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" rows={3} />
+              <input type="text" placeholder="Image URL" value={contentForm.image_url} onChange={e => setContentForm({ ...contentForm, image_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              <input type="text" placeholder="Backdrop URL" value={contentForm.backdrop_url} onChange={e => setContentForm({ ...contentForm, backdrop_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              
+              <select value={contentForm.type} onChange={e => setContentForm({ ...contentForm, type: e.target.value as 'movie' | 'music' })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded">
+                <option value="movie">Movie / TV Show</option>
+                <option value="music">Music</option>
+              </select>
+              
+              <input type="number" placeholder="Year" value={contentForm.year} onChange={e => setContentForm({ ...contentForm, year: parseInt(e.target.value) })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              
+              {contentForm.type === 'movie' ? (
+                <>
+                  <div className="mb-2 p-3 bg-gray-800/50 rounded-lg">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" checked={contentForm.is_tv_show} onChange={(e) => setContentForm({ ...contentForm, is_tv_show: e.target.checked })} className="w-5 h-5 rounded border-gray-700 bg-gray-800 text-teal-500" />
+                      <div><span className="text-sm text-gray-300 font-medium">This is a TV Show</span>{contentForm.is_tv_show && <p className="text-xs text-purple-400 mt-1">📺 TV Show badge will appear</p>}</div>
+                    </label>
+                  </div>
 
-            <div className="mb-2">
-              <button type="button" onClick={() => setShowTmdbSearch(!showTmdbSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2">+ Search on TMDB</button>
-              {showTmdbSearch && (
-                <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
-                  <div className="flex gap-2">
-                    <input type="text" placeholder="Search for a movie or TV show..." value={tmdbSearchQuery} onChange={(e) => setTmdbSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchTmdb()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm" />
-                    <div className="flex gap-1">
-                      <button onClick={() => { setTmdbSearchType('movie'); searchTmdb(); }} className={`px-3 py-2 rounded ${tmdbSearchType === 'movie' ? 'bg-teal-600' : 'bg-gray-700'}`}><Film size={16} /></button>
-                      <button onClick={() => { setTmdbSearchType('tv'); searchTmdb(); }} className={`px-3 py-2 rounded ${tmdbSearchType === 'tv' ? 'bg-teal-600' : 'bg-gray-700'}`}><Tv size={16} /></button>
-                    </div>
-                  </div>
-                  {searchingTmdb && <div className="flex justify-center py-4"><Loader2 className="h-6 w-6 animate-spin text-teal-500" /></div>}
-                  {tmdbSearchResults.length > 0 && !searchingTmdb && (
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {tmdbSearchResults.map((result) => (
-                        <div key={result.id} onClick={() => importFromTmdb(result, tmdbSearchType)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600">
-                          <img src={result.poster_path ? `https://image.tmdb.org/t/p/w92${result.poster_path}` : '/api/placeholder/92/138'} className="w-12 h-16 rounded object-cover" />
-                          <div className="flex-1">
-                            <p className="font-medium text-sm">{tmdbSearchType === 'movie' ? result.title : result.name}</p>
-                            <p className="text-xs text-gray-400">{tmdbSearchType === 'movie' ? result.release_date?.split('-')[0] : result.first_air_date?.split('-')[0]}</p>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-600/20 text-purple-400">{tmdbSearchType === 'movie' ? '🎬 Movie' : '📺 TV Series'}</span>
+                  <div className="mb-2">
+                    <button type="button" onClick={() => setShowTmdbSearch(!showTmdbSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2">+ Search on TMDB</button>
+                    {showTmdbSearch && (
+                      <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
+                        <div className="flex gap-2">
+                          <input type="text" placeholder="Search for a movie or TV show..." value={tmdbSearchQuery} onChange={(e) => setTmdbSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchTmdb()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded text-sm" />
+                          <div className="flex gap-1">
+                            <button onClick={() => { setTmdbSearchType('movie'); searchTmdb(); }} className={`px-3 py-2 rounded ${tmdbSearchType === 'movie' ? 'bg-teal-600' : 'bg-gray-700'}`}><Film size={16} /></button>
+                            <button onClick={() => { setTmdbSearchType('tv'); searchTmdb(); }} className={`px-3 py-2 rounded ${tmdbSearchType === 'tv' ? 'bg-teal-600' : 'bg-gray-700'}`}><Tv size={16} /></button>
                           </div>
-                          <button className="text-teal-400 text-sm">Import →</button>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            
-            <input type="text" placeholder="Director / Creator" value={contentForm.director} onChange={e => setContentForm({ ...contentForm, director: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-            <input type="text" placeholder="Cast (comma separated)" value={contentForm.actors} onChange={e => setContentForm({ ...contentForm, actors: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-            <input type="text" placeholder="Runtime" value={contentForm.runtime} onChange={e => setContentForm({ ...contentForm, runtime: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-          </>
-        ) : (
-          <>
-            <div className="mb-2">
-              <button type="button" onClick={() => setShowDeezerSearch(!showDeezerSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2">+ Search on Deezer</button>
-              {showDeezerSearch && (
-                <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
-                  <div className="flex gap-2">
-                    <input type="text" placeholder="Search for a song or artist..." value={deezerSearchQuery} onChange={(e) => setDeezerSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchDeezerForMusic()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm" />
-                    <button onClick={searchDeezerForMusic} disabled={searchingDeezer} className="px-4 py-2 bg-teal-600 rounded">{searchingDeezer ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}</button>
+                        {searchingTmdb && <div className="flex justify-center py-4"><Loader2 className="h-6 w-6 animate-spin text-teal-500" /></div>}
+                        {tmdbSearchResults.length > 0 && !searchingTmdb && (
+                          <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {tmdbSearchResults.map((result) => (
+                              <div key={result.id} onClick={() => importFromTmdb(result, tmdbSearchType)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600">
+                                <img src={result.poster_path ? `https://image.tmdb.org/t/p/w92${result.poster_path}` : '/api/placeholder/92/138'} className="w-12 h-16 rounded object-cover" />
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">{tmdbSearchType === 'movie' ? result.title : result.name}</p>
+                                  <p className="text-xs text-gray-400">{tmdbSearchType === 'movie' ? result.release_date?.split('-')[0] : result.first_air_date?.split('-')[0]}</p>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-600/20 text-purple-400">{tmdbSearchType === 'movie' ? '🎬 Movie' : '📺 TV Series'}</span>
+                                </div>
+                                <button className="text-teal-400 text-sm">Import →</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {deezerSearchResults.length > 0 && (
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {deezerSearchResults.map((track) => (
-                        <div key={track.id} onClick={() => importFromDeezer(track)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600">
-                          <img src={track.album.cover_small} className="w-12 h-12 rounded" />
-                          <div><p className="font-medium text-sm">{track.title}</p><p className="text-xs text-gray-400">{track.artist.name}</p></div>
-                          <button className="text-teal-400 text-sm ml-auto">Import →</button>
+                  
+                  <input type="text" placeholder="Director / Creator" value={contentForm.director} onChange={e => setContentForm({ ...contentForm, director: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                  <input type="text" placeholder="Cast (comma separated)" value={contentForm.actors} onChange={e => setContentForm({ ...contentForm, actors: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                  <input type="text" placeholder="Runtime" value={contentForm.runtime} onChange={e => setContentForm({ ...contentForm, runtime: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                </>
+              ) : (
+                <>
+                  <div className="mb-2">
+                    <button type="button" onClick={() => setShowDeezerSearch(!showDeezerSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2">+ Search on Deezer</button>
+                    {showDeezerSearch && (
+                      <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
+                        <div className="flex gap-2">
+                          <input type="text" placeholder="Search for a song or artist..." value={deezerSearchQuery} onChange={(e) => setDeezerSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchDeezerForMusic()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded text-sm" />
+                          <button onClick={searchDeezerForMusic} disabled={searchingDeezer} className="px-4 py-2 bg-teal-600 rounded">{searchingDeezer ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}</button>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                        {deezerSearchResults.length > 0 && (
+                          <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {deezerSearchResults.map((track) => (
+                              <div key={track.id} onClick={() => importFromDeezer(track)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600">
+                                <img src={track.album.cover_small} className="w-12 h-12 rounded" />
+                                <div><p className="font-medium text-sm">{track.title}</p><p className="text-xs text-gray-400">{track.artist.name}</p></div>
+                                <button className="text-teal-400 text-sm ml-auto">Import →</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <input type="text" placeholder="Artist" value={contentForm.artist} onChange={e => setContentForm({ ...contentForm, artist: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                  <input type="text" placeholder="Duration" value={contentForm.duration} onChange={e => setContentForm({ ...contentForm, duration: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                </>
               )}
+              
+              <input type="text" placeholder="Platforms (comma separated)" value={contentForm.platforms} onChange={e => setContentForm({ ...contentForm, platforms: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              <input type="text" placeholder="Trailer URL" value={contentForm.trailer_url} onChange={e => setContentForm({ ...contentForm, trailer_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              <input type="text" placeholder="Genre" value={contentForm.genre} onChange={e => setContentForm({ ...contentForm, genre: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              
+              <div className="grid grid-cols-3 gap-2">
+                <input type="number" placeholder="🔥 Highly" value={contentForm.stats_highly} onChange={e => setContentForm({ ...contentForm, stats_highly: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
+                <input type="number" placeholder="👍 Recommended" value={contentForm.stats_recommended} onChange={e => setContentForm({ ...contentForm, stats_recommended: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
+                <input type="number" placeholder="👎 Not" value={contentForm.stats_not} onChange={e => setContentForm({ ...contentForm, stats_not: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
+              </div>
+              
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Assign to Categories</label>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {categories.filter(c => c.type === contentForm.type).map(cat => (
+                    <label key={cat.id} className="flex items-center gap-2">
+                      <input type="checkbox" checked={contentForm.category_ids.includes(cat.id)} onChange={e => { if (e.target.checked) setContentForm({ ...contentForm, category_ids: [...contentForm.category_ids, cat.id] }); else setContentForm({ ...contentForm, category_ids: contentForm.category_ids.filter(id => id !== cat.id) }) }} />
+                      {cat.name} (Order: {cat.display_order})
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
-            <input type="text" placeholder="Artist" value={contentForm.artist} onChange={e => setContentForm({ ...contentForm, artist: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-            <input type="text" placeholder="Duration" value={contentForm.duration} onChange={e => setContentForm({ ...contentForm, duration: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-          </>
-        )}
-        
-        <input type="text" placeholder="Platforms (comma separated)" value={contentForm.platforms} onChange={e => setContentForm({ ...contentForm, platforms: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-        <input type="text" placeholder="Trailer URL" value={contentForm.trailer_url} onChange={e => setContentForm({ ...contentForm, trailer_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-        <input type="text" placeholder="Genre" value={contentForm.genre} onChange={e => setContentForm({ ...contentForm, genre: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-        
-        <div className="grid grid-cols-3 gap-2">
-          <input type="number" placeholder="🔥 Highly" value={contentForm.stats_highly} onChange={e => setContentForm({ ...contentForm, stats_highly: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-          <input type="number" placeholder="👍 Recommended" value={contentForm.stats_recommended} onChange={e => setContentForm({ ...contentForm, stats_recommended: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-          <input type="number" placeholder="👎 Not" value={contentForm.stats_not} onChange={e => setContentForm({ ...contentForm, stats_not: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500" />
-        </div>
-        
-        <div>
-          <label className="text-sm text-gray-400 mb-2 block">Assign to Categories</label>
-          <div className="space-y-2 max-h-40 overflow-y-auto">
-            {categories.filter(c => c.type === contentForm.type).map(cat => (
-              <label key={cat.id} className="flex items-center gap-2">
-                <input type="checkbox" checked={contentForm.category_ids.includes(cat.id)} onChange={e => { if (e.target.checked) setContentForm({ ...contentForm, category_ids: [...contentForm.category_ids, cat.id] }); else setContentForm({ ...contentForm, category_ids: contentForm.category_ids.filter(id => id !== cat.id) }) }} />
-                {cat.name} (Order: {cat.display_order})
-              </label>
-            ))}
+            <div className="flex gap-2 mt-6">
+              <button onClick={saveContent} className="flex-1 py-2 bg-teal-600 rounded">Save</button>
+              <button onClick={closeContentModal} className="flex-1 py-2 bg-gray-700 rounded">Cancel</button>
+            </div>
           </div>
         </div>
-      </div>
-      
-      {/* Modal Footer - Sticky */}
-      <div className="sticky bottom-0 bg-gray-900 pt-4 mt-4 border-t border-gray-700 flex gap-2">
-        <button onClick={saveContent} className="flex-1 py-2 bg-teal-600 rounded hover:bg-teal-700 transition">Save</button>
-        <button 
-          onClick={() => {
-            if (confirm('Are you sure you want to close? Any unsaved changes will be lost.')) {
-              closeContentModal()
-            }
-          }} 
-          className="flex-1 py-2 bg-gray-700 rounded hover:bg-gray-600 transition"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  </div>
-)} 
+      )}
     </div>
   )
 }
