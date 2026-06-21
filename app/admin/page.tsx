@@ -68,7 +68,7 @@ export default function AdminPage() {
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | 'movie' | 'music'>('all')
   const [categoryTypeFilter, setCategoryTypeFilter] = useState<'all' | 'movie' | 'music'>('all')
   
-  // Deezer search states - SIMPLIFIED
+  // Deezer search states
   const [deezerSearchResults, setDeezerSearchResults] = useState<any[]>([])
   const [showDeezerSearch, setShowDeezerSearch] = useState(false)
   const [deezerSearchQuery, setDeezerSearchQuery] = useState('')
@@ -309,7 +309,7 @@ export default function AdminPage() {
   }
 
   // ============================================
-  // WORKING DEEZER SEARCH
+  // DEEZER SEARCH - Using Next.js API Route (No CORS)
   // ============================================
   const searchDeezer = async () => {
     if (!deezerSearchQuery.trim()) {
@@ -322,14 +322,15 @@ export default function AdminPage() {
     
     try {
       const query = encodeURIComponent(deezerSearchQuery.trim())
-      const url = `https://api.deezer.com/search?q=${query}&limit=20`
+      const url = `/api/deezer?q=${query}`
       
-      console.log('Searching Deezer:', url)
+      console.log('Searching Deezer via proxy:', url)
       
       const response = await fetch(url)
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorData = await response.json()
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
       }
 
       const data = await response.json()
@@ -344,7 +345,7 @@ export default function AdminPage() {
       }
     } catch (error) {
       console.error('Deezer search error:', error)
-      toast.error('Failed to search Deezer. Please try again.')
+      toast.error(error instanceof Error ? error.message : 'Failed to search Deezer. Please try again.')
       setDeezerSearchResults([])
     } finally {
       setSearchingDeezer(false)
@@ -723,7 +724,16 @@ export default function AdminPage() {
               <span className="text-xs text-green-500 hidden md:inline">● Active</span>
             </div>
             <div className="flex items-center gap-4">
-              <button onClick={() => { loadUsers(); loadContent(); loadCategories(); loadRecommendations(); toast.success('Data refreshed'); }} className="text-gray-400 hover:text-white transition">
+              <button 
+                onClick={() => { 
+                  loadUsers()
+                  loadContent()
+                  loadCategories()
+                  loadRecommendations()
+                  toast.success('Data refreshed')
+                }} 
+                className="text-gray-400 hover:text-white transition"
+              >
                 <RefreshCw size={18} />
               </button>
               <Link href="/" className="text-gray-400 hover:text-white transition">← Back to Site</Link>
@@ -735,12 +745,30 @@ export default function AdminPage() {
       <div className="container mx-auto px-4 py-8">
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
-          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Users size={20} /> Users</div><p className="text-2xl font-bold">{totalUsers}</p></div>
-          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Film size={20} /> Movies & TV</div><p className="text-2xl font-bold">{totalMovies}</p></div>
-          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Music size={20} /> Music</div><p className="text-2xl font-bold">{totalMusic}</p></div>
-          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Layers size={20} /> Categories</div><p className="text-2xl font-bold">{totalCategories}</p></div>
-          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Heart size={20} /> Recs</div><p className="text-2xl font-bold">{totalRecommendations}</p></div>
-          <div className="bg-gray-800 rounded-xl p-4"><div className="flex items-center gap-2 text-teal-500 mb-2"><Star size={20} /> Content</div><p className="text-2xl font-bold">{totalContent}</p></div>
+          <div className="bg-gray-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-teal-500 mb-2"><Users size={20} /> Users</div>
+            <p className="text-2xl font-bold">{totalUsers}</p>
+          </div>
+          <div className="bg-gray-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-teal-500 mb-2"><Film size={20} /> Movies & TV</div>
+            <p className="text-2xl font-bold">{totalMovies}</p>
+          </div>
+          <div className="bg-gray-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-teal-500 mb-2"><Music size={20} /> Music</div>
+            <p className="text-2xl font-bold">{totalMusic}</p>
+          </div>
+          <div className="bg-gray-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-teal-500 mb-2"><Layers size={20} /> Categories</div>
+            <p className="text-2xl font-bold">{totalCategories}</p>
+          </div>
+          <div className="bg-gray-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-teal-500 mb-2"><Heart size={20} /> Recs</div>
+            <p className="text-2xl font-bold">{totalRecommendations}</p>
+          </div>
+          <div className="bg-gray-800 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-teal-500 mb-2"><Star size={20} /> Content</div>
+            <p className="text-2xl font-bold">{totalContent}</p>
+          </div>
         </div>
 
         {/* Danger Zone */}
@@ -750,19 +778,33 @@ export default function AdminPage() {
             <h3 className="text-lg font-semibold text-red-500">Danger Zone</h3>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button onClick={deleteAllContent} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition text-sm font-semibold">Delete All Content</button>
-            <button onClick={deleteAllUsers} className="px-4 py-2 bg-red-600/70 hover:bg-red-700 rounded-lg transition text-sm font-semibold">Delete All Users</button>
+            <button onClick={deleteAllContent} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition text-sm font-semibold">
+              Delete All Content
+            </button>
+            <button onClick={deleteAllUsers} className="px-4 py-2 bg-red-600/70 hover:bg-red-700 rounded-lg transition text-sm font-semibold">
+              Delete All Users
+            </button>
           </div>
           <p className="text-xs text-gray-500 mt-2">⚠️ These actions cannot be undone</p>
         </div>
 
         {/* Navigation Tabs */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-800">
-          <button onClick={() => setActiveTab('users')} className={`px-4 py-2 transition ${activeTab === 'users' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><Users size={16} className="inline mr-1" /> Users</button>
-          <button onClick={() => setActiveTab('analytics')} className={`px-4 py-2 transition ${activeTab === 'analytics' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><TrendingUp size={16} className="inline mr-1" /> Analytics</button>
-          <button onClick={() => setActiveTab('categories')} className={`px-4 py-2 transition ${activeTab === 'categories' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><Layers size={16} className="inline mr-1" /> Categories</button>
-          <button onClick={() => setActiveTab('content')} className={`px-4 py-2 transition ${activeTab === 'content' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><Film size={16} className="inline mr-1" /> Content</button>
-          <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 transition ${activeTab === 'settings' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}><Settings size={16} className="inline mr-1" /> Settings</button>
+          <button onClick={() => setActiveTab('users')} className={`px-4 py-2 transition ${activeTab === 'users' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
+            <Users size={16} className="inline mr-1" /> Users
+          </button>
+          <button onClick={() => setActiveTab('analytics')} className={`px-4 py-2 transition ${activeTab === 'analytics' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
+            <TrendingUp size={16} className="inline mr-1" /> Analytics
+          </button>
+          <button onClick={() => setActiveTab('categories')} className={`px-4 py-2 transition ${activeTab === 'categories' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
+            <Layers size={16} className="inline mr-1" /> Categories
+          </button>
+          <button onClick={() => setActiveTab('content')} className={`px-4 py-2 transition ${activeTab === 'content' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
+            <Film size={16} className="inline mr-1" /> Content
+          </button>
+          <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 transition ${activeTab === 'settings' ? 'text-teal-500 border-b-2 border-teal-500' : 'text-gray-400'}`}>
+            <Settings size={16} className="inline mr-1" /> Settings
+          </button>
         </div>
 
         {/* Users Tab */}
@@ -771,17 +813,32 @@ export default function AdminPage() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-700">
-                  <tr><th className="px-4 py-3 text-left">User</th><th className="px-4 py-3 text-left">Username</th><th className="px-4 py-3 text-left">Email</th><th className="px-4 py-3 text-left">Role</th><th className="px-4 py-3 text-left">Watchlist</th><th className="px-4 py-3 text-left">Recs</th><th className="px-4 py-3 text-left">Joined</th><th className="px-4 py-3 text-left">Actions</th></tr>
+                  <tr>
+                    <th className="px-4 py-3 text-left">User</th>
+                    <th className="px-4 py-3 text-left">Username</th>
+                    <th className="px-4 py-3 text-left">Email</th>
+                    <th className="px-4 py-3 text-left">Role</th>
+                    <th className="px-4 py-3 text-left">Watchlist</th>
+                    <th className="px-4 py-3 text-left">Recs</th>
+                    <th className="px-4 py-3 text-left">Joined</th>
+                    <th className="px-4 py-3 text-left">Actions</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {users.length === 0 ? (
-                    <tr><td colSpan={8} className="text-center py-8 text-gray-400">No users found</td></tr>
+                    <tr>
+                      <td colSpan={8} className="text-center py-8 text-gray-400">No users found</td>
+                    </tr>
                   ) : (
                     users.map(userItem => (
                       <tr key={userItem.id} className="border-b border-gray-700 hover:bg-gray-700/50">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <img src={userItem.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userItem.username}`} className="w-8 h-8 rounded-full" />
+                            <img 
+                              src={userItem.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userItem.username}`} 
+                              className="w-8 h-8 rounded-full" 
+                              alt=""
+                            />
                             <span className="text-sm">{userItem.id?.slice(0, 8)}...</span>
                           </div>
                         </td>
@@ -796,7 +853,14 @@ export default function AdminPage() {
                         <td className="px-4 py-3"><span className="text-blue-400">👍 {userItem.recommendations_count || 0}</span></td>
                         <td className="px-4 py-3 text-sm">{userItem.created_at ? new Date(userItem.created_at).toLocaleDateString() : 'N/A'}</td>
                         <td className="px-4 py-3">
-                          <button onClick={() => makeUserAdmin(userItem.id, userItem.role || 'user')} className={`px-3 py-1 rounded-lg text-xs font-medium transition ${userItem.role === 'admin' ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30' : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'}`}>
+                          <button 
+                            onClick={() => makeUserAdmin(userItem.id, userItem.role || 'user')}
+                            className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
+                              userItem.role === 'admin' 
+                                ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30' 
+                                : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'
+                            }`}
+                          >
                             {userItem.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
                           </button>
                         </td>
@@ -819,7 +883,10 @@ export default function AdminPage() {
               ) : (
                 recommendations.slice(0, 20).map(rec => (
                   <div key={rec.id} className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg">
-                    <div><p className="font-medium">{rec.profiles?.username || 'Anonymous'}</p><p className="text-sm text-gray-400">Recommended: {rec.content?.title || 'Unknown'}</p></div>
+                    <div>
+                      <p className="font-medium">{rec.profiles?.username || 'Anonymous'}</p>
+                      <p className="text-sm text-gray-400">Recommended: {rec.content?.title || 'Unknown'}</p>
+                    </div>
                     <span className={`px-2 py-1 rounded-full text-xs ${rec.recommendation_tier === 'highly' ? 'bg-teal-600/20 text-teal-400' : rec.recommendation_tier === 'recommended' ? 'bg-blue-600/20 text-blue-400' : 'bg-gray-600/20 text-gray-400'}`}>
                       {rec.recommendation_tier === 'highly' ? '🔥 HIGHLY' : rec.recommendation_tier === 'recommended' ? '👍 RECOMMENDED' : '👎 NOT'}
                     </span>
@@ -839,7 +906,22 @@ export default function AdminPage() {
                 <button onClick={() => setCategoryTypeFilter('movie')} className={`px-3 py-1 rounded-lg text-sm ${categoryTypeFilter === 'movie' ? 'bg-teal-600' : 'bg-gray-700'}`}>Movies</button>
                 <button onClick={() => setCategoryTypeFilter('music')} className={`px-3 py-1 rounded-lg text-sm ${categoryTypeFilter === 'music' ? 'bg-teal-600' : 'bg-gray-700'}`}>Music</button>
               </div>
-              <button onClick={() => { setShowCategoryModal(true); setEditingItem(null); setCategoryForm({ name: '', description: '', type: categoryTypeFilter === 'all' ? 'movie' : categoryTypeFilter, is_active: true, display_order: 0 }) }} className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"><Plus size={16} /> Add Category</button>
+              <button 
+                onClick={() => { 
+                  setShowCategoryModal(true); 
+                  setEditingItem(null); 
+                  setCategoryForm({ 
+                    name: '', 
+                    description: '', 
+                    type: categoryTypeFilter === 'all' ? 'movie' : categoryTypeFilter, 
+                    is_active: true, 
+                    display_order: 0 
+                  }) 
+                }} 
+                className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"
+              >
+                <Plus size={16} /> Add Category
+              </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredCategories.length === 0 ? (
@@ -848,10 +930,27 @@ export default function AdminPage() {
                 filteredCategories.map(cat => (
                   <div key={cat.id} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
                     <div className="flex justify-between items-start mb-2">
-                      <div><h3 className="font-bold text-lg">{cat.name}</h3><p className="text-xs text-gray-400">{cat.type}</p></div>
+                      <div>
+                        <h3 className="font-bold text-lg">{cat.name}</h3>
+                        <p className="text-xs text-gray-400">{cat.type}</p>
+                      </div>
                       <div className="flex gap-2">
-                        <button onClick={() => { setEditingItem(cat); setCategoryForm(cat); setShowCategoryModal(true); }} className="p-1 hover:bg-gray-700 rounded"><Edit size={16} /></button>
-                        <button onClick={() => deleteCategory(cat.id)} className="p-1 hover:bg-gray-700 rounded text-red-500"><Trash2 size={16} /></button>
+                        <button 
+                          onClick={() => { 
+                            setEditingItem(cat); 
+                            setCategoryForm(cat); 
+                            setShowCategoryModal(true); 
+                          }} 
+                          className="p-1 hover:bg-gray-700 rounded"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button 
+                          onClick={() => deleteCategory(cat.id)} 
+                          className="p-1 hover:bg-gray-700 rounded text-red-500"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     </div>
                     <p className="text-sm text-gray-300">{cat.description}</p>
@@ -871,14 +970,38 @@ export default function AdminPage() {
               <div className="flex gap-2">
                 <div className="relative">
                   <SearchIcon size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  <input type="text" placeholder="Search content..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500" />
+                  <input 
+                    type="text" 
+                    placeholder="Search content..." 
+                    value={searchQuery} 
+                    onChange={(e) => setSearchQuery(e.target.value)} 
+                    className="pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500" 
+                  />
                 </div>
-                <select value={contentTypeFilter} onChange={(e) => setContentTypeFilter(e.target.value as any)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg">
+                <select 
+                  value={contentTypeFilter} 
+                  onChange={(e) => setContentTypeFilter(e.target.value as any)} 
+                  className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg"
+                >
                   <option value="all">All Types</option>
                   <option value="movie">Movies & TV</option>
                   <option value="music">Music</option>
                 </select>
-                <button onClick={() => { setShowContentModal(true); setEditingItem(null); setContentForm({ title: '', description: '', long_description: '', image_url: '', backdrop_url: '', type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '', platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', stats_highly: 0, stats_recommended: 0, stats_not: 0, is_tv_show: false, category_ids: [] }); }} className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"><Plus size={16} /> Add Content</button>
+                <button 
+                  onClick={() => { 
+                    setShowContentModal(true); 
+                    setEditingItem(null); 
+                    setContentForm({ 
+                      title: '', description: '', long_description: '', image_url: '', backdrop_url: '',
+                      type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '',
+                      platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', 
+                      stats_highly: 0, stats_recommended: 0, stats_not: 0, is_tv_show: false, category_ids: []
+                    }); 
+                  }} 
+                  className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"
+                >
+                  <Plus size={16} /> Add Content
+                </button>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -889,19 +1012,54 @@ export default function AdminPage() {
                   <div key={item.id} className="bg-gray-800 rounded-xl overflow-hidden border border-gray-700 relative">
                     {item.is_tv_show && (
                       <div className="absolute top-2 left-2 z-10">
-                        <div className="bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"><Tv size={10} /> TV Series</div>
+                        <div className="bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Tv size={10} /> TV Series
+                        </div>
                       </div>
                     )}
                     <img src={item.image_url} alt={item.title} className="w-full h-40 object-cover" />
                     <div className="p-4">
                       <h3 className="font-bold">{item.title}</h3>
-                      <p className="text-xs text-gray-400 mb-2">{item.is_tv_show ? '📺 TV Show' : (item.type === 'movie' ? '🎬 Movie' : '🎵 Music')} • {item.year}</p>
+                      <p className="text-xs text-gray-400 mb-2">
+                        {item.is_tv_show ? '📺 TV Show' : (item.type === 'movie' ? '🎬 Movie' : '🎵 Music')} • {item.year}
+                      </p>
                       <p className="text-sm text-gray-300 line-clamp-2">{item.description}</p>
                       <div className="flex justify-between mt-3">
-                        <span className="text-xs flex gap-2"><span className="text-teal-400">🔥 {item.stats_highly}</span><span className="text-blue-400">👍 {item.stats_recommended}</span><span className="text-gray-400">👎 {item.stats_not}</span></span>
+                        <span className="text-xs flex gap-2">
+                          <span className="text-teal-400">🔥 {item.stats_highly}</span>
+                          <span className="text-blue-400">👍 {item.stats_recommended}</span>
+                          <span className="text-gray-400">👎 {item.stats_not}</span>
+                        </span>
                         <div className="flex gap-2">
-                          <button onClick={() => { setEditingItem(item); setContentForm({ ...item, long_description: item.long_description || '', backdrop_url: item.backdrop_url || '', director: item.director || '', artist: item.artist || '', actors: item.actors?.join(', ') || '', platforms: item.platforms?.join(', ') || '', trailer_url: item.trailer_url || '', runtime: item.runtime || '', duration: item.duration || '', is_tv_show: item.is_tv_show || false, category_ids: [] }); setShowContentModal(true); }} className="text-gray-400 hover:text-white"><Edit size={16} /></button>
-                          <button onClick={() => deleteContent(item.id)} className="text-red-500 hover:text-red-400"><Trash2 size={16} /></button>
+                          <button 
+                            onClick={() => { 
+                              setEditingItem(item); 
+                              setContentForm({ 
+                                ...item, 
+                                long_description: item.long_description || '', 
+                                backdrop_url: item.backdrop_url || '', 
+                                director: item.director || '', 
+                                artist: item.artist || '', 
+                                actors: item.actors?.join(', ') || '', 
+                                platforms: item.platforms?.join(', ') || '', 
+                                trailer_url: item.trailer_url || '', 
+                                runtime: item.runtime || '', 
+                                duration: item.duration || '', 
+                                is_tv_show: item.is_tv_show || false, 
+                                category_ids: [] 
+                              }); 
+                              setShowContentModal(true); 
+                            }} 
+                            className="text-gray-400 hover:text-white"
+                          >
+                            <Edit size={16} />
+                          </button>
+                          <button 
+                            onClick={() => deleteContent(item.id)} 
+                            className="text-red-500 hover:text-red-400"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -917,9 +1075,18 @@ export default function AdminPage() {
           <div className="bg-gray-800 rounded-xl p-6">
             <h2 className="text-xl font-bold mb-4">System Settings</h2>
             <div className="space-y-4">
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Admin Access</h3><p className="text-sm text-gray-400">Admin status is determined by the role field in the profiles table. Only users with role="admin" can access this panel.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Deezer Search</h3><p className="text-sm text-gray-400">Search for tracks on Deezer using the search endpoint. Click "Import" to add to your content library.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TMDB Search</h3><p className="text-sm text-gray-400">Search for movies and TV shows. Automatically fetches trailers, cast, and watch providers.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg">
+                <h3 className="font-semibold mb-2">Admin Access</h3>
+                <p className="text-sm text-gray-400">Admin status is determined by the role field in the profiles table. Only users with role="admin" can access this panel.</p>
+              </div>
+              <div className="p-4 bg-gray-700/50 rounded-lg">
+                <h3 className="font-semibold mb-2">Deezer Search</h3>
+                <p className="text-sm text-gray-400">Search for tracks on Deezer using the proxy API route. Click "Import" to add to your content library.</p>
+              </div>
+              <div className="p-4 bg-gray-700/50 rounded-lg">
+                <h3 className="font-semibold mb-2">TMDB Search</h3>
+                <p className="text-sm text-gray-400">Search for movies and TV shows. Automatically fetches trailers, cast, and watch providers.</p>
+              </div>
             </div>
           </div>
         )}
@@ -929,12 +1096,45 @@ export default function AdminPage() {
       {showCategoryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
           <div className="bg-gray-900 rounded-xl max-w-md w-full p-6">
-            <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Category</h2><button onClick={() => setShowCategoryModal(false)} className="p-1 hover:bg-gray-800 rounded"><X size={20} /></button></div>
-            <input type="text" placeholder="Name" value={categoryForm.name} onChange={e => setCategoryForm({ ...categoryForm, name: e.target.value })} className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded" />
-            <input type="text" placeholder="Description" value={categoryForm.description} onChange={e => setCategoryForm({ ...categoryForm, description: e.target.value })} className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded" />
-            <select value={categoryForm.type} onChange={e => setCategoryForm({ ...categoryForm, type: e.target.value as 'movie' | 'music' })} className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded"><option value="movie">Movies & TV Shows</option><option value="music">Music</option></select>
-            <input type="number" placeholder="Display Order" value={categoryForm.display_order} onChange={e => setCategoryForm({ ...categoryForm, display_order: parseInt(e.target.value) })} className="w-full mb-4 p-2 bg-gray-800 border border-gray-700 rounded" />
-            <div className="flex gap-2"><button onClick={saveCategory} className="flex-1 py-2 bg-teal-600 rounded">Save</button><button onClick={() => setShowCategoryModal(false)} className="flex-1 py-2 bg-gray-700 rounded">Cancel</button></div>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Category</h2>
+              <button onClick={() => setShowCategoryModal(false)} className="p-1 hover:bg-gray-800 rounded">
+                <X size={20} />
+              </button>
+            </div>
+            <input 
+              type="text" 
+              placeholder="Name" 
+              value={categoryForm.name} 
+              onChange={e => setCategoryForm({ ...categoryForm, name: e.target.value })} 
+              className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded" 
+            />
+            <input 
+              type="text" 
+              placeholder="Description" 
+              value={categoryForm.description} 
+              onChange={e => setCategoryForm({ ...categoryForm, description: e.target.value })} 
+              className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded" 
+            />
+            <select 
+              value={categoryForm.type} 
+              onChange={e => setCategoryForm({ ...categoryForm, type: e.target.value as 'movie' | 'music' })} 
+              className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded"
+            >
+              <option value="movie">Movies & TV Shows</option>
+              <option value="music">Music</option>
+            </select>
+            <input 
+              type="number" 
+              placeholder="Display Order" 
+              value={categoryForm.display_order} 
+              onChange={e => setCategoryForm({ ...categoryForm, display_order: parseInt(e.target.value) })} 
+              className="w-full mb-4 p-2 bg-gray-800 border border-gray-700 rounded" 
+            />
+            <div className="flex gap-2">
+              <button onClick={saveCategory} className="flex-1 py-2 bg-teal-600 rounded">Save</button>
+              <button onClick={() => setShowCategoryModal(false)} className="flex-1 py-2 bg-gray-700 rounded">Cancel</button>
+            </div>
           </div>
         </div>
       )}
@@ -943,51 +1143,143 @@ export default function AdminPage() {
       {showContentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 overflow-y-auto">
           <div className="bg-gray-900 rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Content</h2><button onClick={closeContentModal} className="p-1 hover:bg-gray-800 rounded"><X size={20} /></button></div>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Content</h2>
+              <button onClick={closeContentModal} className="p-1 hover:bg-gray-800 rounded">
+                <X size={20} />
+              </button>
+            </div>
             <div className="space-y-3">
-              <input type="text" placeholder="Title" value={contentForm.title} onChange={e => setContentForm({ ...contentForm, title: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-              <textarea placeholder="Description" value={contentForm.description} onChange={e => setContentForm({ ...contentForm, description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" rows={2} />
-              <textarea placeholder="Long Description" value={contentForm.long_description} onChange={e => setContentForm({ ...contentForm, long_description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" rows={3} />
-              <input type="text" placeholder="Image URL" value={contentForm.image_url} onChange={e => setContentForm({ ...contentForm, image_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-              <input type="text" placeholder="Backdrop URL" value={contentForm.backdrop_url} onChange={e => setContentForm({ ...contentForm, backdrop_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              <input 
+                type="text" 
+                placeholder="Title" 
+                value={contentForm.title} 
+                onChange={e => setContentForm({ ...contentForm, title: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
+              <textarea 
+                placeholder="Description" 
+                value={contentForm.description} 
+                onChange={e => setContentForm({ ...contentForm, description: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                rows={2} 
+              />
+              <textarea 
+                placeholder="Long Description" 
+                value={contentForm.long_description} 
+                onChange={e => setContentForm({ ...contentForm, long_description: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                rows={3} 
+              />
+              <input 
+                type="text" 
+                placeholder="Image URL" 
+                value={contentForm.image_url} 
+                onChange={e => setContentForm({ ...contentForm, image_url: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
+              <input 
+                type="text" 
+                placeholder="Backdrop URL" 
+                value={contentForm.backdrop_url} 
+                onChange={e => setContentForm({ ...contentForm, backdrop_url: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
               
-              <select value={contentForm.type} onChange={e => setContentForm({ ...contentForm, type: e.target.value as 'movie' | 'music' })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded">
+              <select 
+                value={contentForm.type} 
+                onChange={e => setContentForm({ ...contentForm, type: e.target.value as 'movie' | 'music' })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded"
+              >
                 <option value="movie">Movie / TV Show</option>
                 <option value="music">Music</option>
               </select>
               
-              <input type="number" placeholder="Year" value={contentForm.year} onChange={e => setContentForm({ ...contentForm, year: parseInt(e.target.value) })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              <input 
+                type="number" 
+                placeholder="Year" 
+                value={contentForm.year} 
+                onChange={e => setContentForm({ ...contentForm, year: parseInt(e.target.value) })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
               
               {contentForm.type === 'movie' ? (
                 <>
                   <div className="mb-2 p-3 bg-gray-800/50 rounded-lg">
                     <label className="flex items-center gap-3 cursor-pointer">
-                      <input type="checkbox" checked={contentForm.is_tv_show} onChange={(e) => setContentForm({ ...contentForm, is_tv_show: e.target.checked })} className="w-5 h-5 rounded border-gray-700 bg-gray-800 text-teal-500" />
-                      <div><span className="text-sm text-gray-300 font-medium">This is a TV Show</span>{contentForm.is_tv_show && <p className="text-xs text-purple-400 mt-1">📺 TV Show badge will appear</p>}</div>
+                      <input 
+                        type="checkbox" 
+                        checked={contentForm.is_tv_show} 
+                        onChange={(e) => setContentForm({ ...contentForm, is_tv_show: e.target.checked })} 
+                        className="w-5 h-5 rounded border-gray-700 bg-gray-800 text-teal-500" 
+                      />
+                      <div>
+                        <span className="text-sm text-gray-300 font-medium">This is a TV Show</span>
+                        {contentForm.is_tv_show && (
+                          <p className="text-xs text-purple-400 mt-1">📺 TV Show badge will appear</p>
+                        )}
+                      </div>
                     </label>
                   </div>
 
                   <div className="mb-2">
-                    <button type="button" onClick={() => setShowTmdbSearch(!showTmdbSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2">+ Search on TMDB (Movies & TV Shows)</button>
+                    <button 
+                      type="button" 
+                      onClick={() => setShowTmdbSearch(!showTmdbSearch)} 
+                      className="text-sm text-teal-400 hover:text-teal-300 mb-2"
+                    >
+                      {showTmdbSearch ? '− Hide TMDB Search' : '+ Search on TMDB (Movies & TV Shows)'}
+                    </button>
+                    
                     {showTmdbSearch && (
                       <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
                         <div className="flex gap-2">
-                          <input type="text" placeholder="Search for a movie or TV show..." value={tmdbSearchQuery} onChange={(e) => setTmdbSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchTmdb()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded text-sm" />
+                          <input 
+                            type="text" 
+                            placeholder="Search for a movie or TV show..." 
+                            value={tmdbSearchQuery} 
+                            onChange={(e) => setTmdbSearchQuery(e.target.value)} 
+                            onKeyPress={(e) => e.key === 'Enter' && searchTmdb()} 
+                            className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded text-sm" 
+                          />
                           <div className="flex gap-1">
-                            <button onClick={() => { setTmdbSearchType('movie'); searchTmdb(); }} className={`px-3 py-2 rounded ${tmdbSearchType === 'movie' ? 'bg-teal-600' : 'bg-gray-700'}`}><Film size={16} /></button>
-                            <button onClick={() => { setTmdbSearchType('tv'); searchTmdb(); }} className={`px-3 py-2 rounded ${tmdbSearchType === 'tv' ? 'bg-teal-600' : 'bg-gray-700'}`}><Tv size={16} /></button>
+                            <button 
+                              onClick={() => { setTmdbSearchType('movie'); searchTmdb(); }} 
+                              className={`px-3 py-2 rounded ${tmdbSearchType === 'movie' ? 'bg-teal-600' : 'bg-gray-700'}`}
+                            >
+                              <Film size={16} />
+                            </button>
+                            <button 
+                              onClick={() => { setTmdbSearchType('tv'); searchTmdb(); }} 
+                              className={`px-3 py-2 rounded ${tmdbSearchType === 'tv' ? 'bg-teal-600' : 'bg-gray-700'}`}
+                            >
+                              <Tv size={16} />
+                            </button>
                           </div>
                         </div>
-                        {searchingTmdb && <div className="flex justify-center py-4"><Loader2 className="h-6 w-6 animate-spin text-teal-500" /></div>}
+                        {searchingTmdb && (
+                          <div className="flex justify-center py-4">
+                            <Loader2 className="h-6 w-6 animate-spin text-teal-500" />
+                          </div>
+                        )}
                         {tmdbSearchResults.length > 0 && !searchingTmdb && (
                           <div className="space-y-2 max-h-64 overflow-y-auto">
                             {tmdbSearchResults.map((result) => (
-                              <div key={result.id} onClick={() => importFromTmdb(result, tmdbSearchType)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600">
-                                <img src={result.poster_path ? `https://image.tmdb.org/t/p/w92${result.poster_path}` : '/api/placeholder/92/138'} className="w-12 h-16 rounded object-cover" />
+                              <div 
+                                key={result.id} 
+                                onClick={() => importFromTmdb(result, tmdbSearchType)} 
+                                className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600"
+                              >
+                                <img 
+                                  src={result.poster_path ? `https://image.tmdb.org/t/p/w92${result.poster_path}` : '/api/placeholder/92/138'} 
+                                  className="w-12 h-16 rounded object-cover" 
+                                />
                                 <div className="flex-1">
                                   <p className="font-medium text-sm">{tmdbSearchType === 'movie' ? result.title : result.name}</p>
                                   <p className="text-xs text-gray-400">{tmdbSearchType === 'movie' ? result.release_date?.split('-')[0] : result.first_air_date?.split('-')[0]}</p>
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-600/20 text-purple-400">{tmdbSearchType === 'movie' ? '🎬 Movie' : '📺 TV Series'}</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-600/20 text-purple-400">
+                                    {tmdbSearchType === 'movie' ? '🎬 Movie' : '📺 TV Series'}
+                                  </span>
                                 </div>
                                 <button className="text-teal-400 text-sm">Import →</button>
                               </div>
@@ -998,15 +1290,37 @@ export default function AdminPage() {
                     )}
                   </div>
                   
-                  <input type="text" placeholder="Director / Creator" value={contentForm.director} onChange={e => setContentForm({ ...contentForm, director: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-                  <input type="text" placeholder="Cast (comma separated)" value={contentForm.actors} onChange={e => setContentForm({ ...contentForm, actors: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-                  <input type="text" placeholder="Runtime" value={contentForm.runtime} onChange={e => setContentForm({ ...contentForm, runtime: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                  <input 
+                    type="text" 
+                    placeholder="Director / Creator" 
+                    value={contentForm.director} 
+                    onChange={e => setContentForm({ ...contentForm, director: e.target.value })} 
+                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                  />
+                  <input 
+                    type="text" 
+                    placeholder="Cast (comma separated)" 
+                    value={contentForm.actors} 
+                    onChange={e => setContentForm({ ...contentForm, actors: e.target.value })} 
+                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                  />
+                  <input 
+                    type="text" 
+                    placeholder="Runtime" 
+                    value={contentForm.runtime} 
+                    onChange={e => setContentForm({ ...contentForm, runtime: e.target.value })} 
+                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                  />
                 </>
               ) : (
                 <>
                   {/* DEEZER SEARCH SECTION */}
                   <div className="mb-2">
-                    <button type="button" onClick={() => setShowDeezerSearch(!showDeezerSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1">
+                    <button 
+                      type="button" 
+                      onClick={() => setShowDeezerSearch(!showDeezerSearch)} 
+                      className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1"
+                    >
                       {showDeezerSearch ? '− Hide Deezer Search' : '🔍 + Search on Deezer (Music)'}
                     </button>
                     
@@ -1074,19 +1388,67 @@ export default function AdminPage() {
                     )}
                   </div>
                   
-                  <input type="text" placeholder="Artist" value={contentForm.artist} onChange={e => setContentForm({ ...contentForm, artist: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-                  <input type="text" placeholder="Duration (e.g., 3:45)" value={contentForm.duration} onChange={e => setContentForm({ ...contentForm, duration: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                  <input 
+                    type="text" 
+                    placeholder="Artist" 
+                    value={contentForm.artist} 
+                    onChange={e => setContentForm({ ...contentForm, artist: e.target.value })} 
+                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                  />
+                  <input 
+                    type="text" 
+                    placeholder="Duration (e.g., 3:45)" 
+                    value={contentForm.duration} 
+                    onChange={e => setContentForm({ ...contentForm, duration: e.target.value })} 
+                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                  />
                 </>
               )}
               
-              <input type="text" placeholder="Platforms (comma separated)" value={contentForm.platforms} onChange={e => setContentForm({ ...contentForm, platforms: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-              <input type="text" placeholder="Trailer URL" value={contentForm.trailer_url} onChange={e => setContentForm({ ...contentForm, trailer_url: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-              <input type="text" placeholder="Genre" value={contentForm.genre} onChange={e => setContentForm({ ...contentForm, genre: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+              <input 
+                type="text" 
+                placeholder="Platforms (comma separated)" 
+                value={contentForm.platforms} 
+                onChange={e => setContentForm({ ...contentForm, platforms: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
+              <input 
+                type="text" 
+                placeholder="Trailer URL" 
+                value={contentForm.trailer_url} 
+                onChange={e => setContentForm({ ...contentForm, trailer_url: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
+              <input 
+                type="text" 
+                placeholder="Genre" 
+                value={contentForm.genre} 
+                onChange={e => setContentForm({ ...contentForm, genre: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
               
               <div className="grid grid-cols-3 gap-2">
-                <input type="number" placeholder="🔥 Highly" value={contentForm.stats_highly} onChange={e => setContentForm({ ...contentForm, stats_highly: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
-                <input type="number" placeholder="👍 Recommended" value={contentForm.stats_recommended} onChange={e => setContentForm({ ...contentForm, stats_recommended: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
-                <input type="number" placeholder="👎 Not" value={contentForm.stats_not} onChange={e => setContentForm({ ...contentForm, stats_not: parseInt(e.target.value) })} className="p-2 bg-gray-800 border border-gray-700 rounded" />
+                <input 
+                  type="number" 
+                  placeholder="🔥 Highly" 
+                  value={contentForm.stats_highly} 
+                  onChange={e => setContentForm({ ...contentForm, stats_highly: parseInt(e.target.value) })} 
+                  className="p-2 bg-gray-800 border border-gray-700 rounded" 
+                />
+                <input 
+                  type="number" 
+                  placeholder="👍 Recommended" 
+                  value={contentForm.stats_recommended} 
+                  onChange={e => setContentForm({ ...contentForm, stats_recommended: parseInt(e.target.value) })} 
+                  className="p-2 bg-gray-800 border border-gray-700 rounded" 
+                />
+                <input 
+                  type="number" 
+                  placeholder="👎 Not" 
+                  value={contentForm.stats_not} 
+                  onChange={e => setContentForm({ ...contentForm, stats_not: parseInt(e.target.value) })} 
+                  className="p-2 bg-gray-800 border border-gray-700 rounded" 
+                />
               </div>
               
               <div>
@@ -1094,7 +1456,17 @@ export default function AdminPage() {
                 <div className="space-y-2 max-h-40 overflow-y-auto">
                   {categories.filter(c => c.type === contentForm.type).map(cat => (
                     <label key={cat.id} className="flex items-center gap-2">
-                      <input type="checkbox" checked={contentForm.category_ids.includes(cat.id)} onChange={e => { if (e.target.checked) setContentForm({ ...contentForm, category_ids: [...contentForm.category_ids, cat.id] }); else setContentForm({ ...contentForm, category_ids: contentForm.category_ids.filter(id => id !== cat.id) }) }} />
+                      <input 
+                        type="checkbox" 
+                        checked={contentForm.category_ids.includes(cat.id)} 
+                        onChange={e => { 
+                          if (e.target.checked) {
+                            setContentForm({ ...contentForm, category_ids: [...contentForm.category_ids, cat.id] })
+                          } else {
+                            setContentForm({ ...contentForm, category_ids: contentForm.category_ids.filter(id => id !== cat.id) })
+                          }
+                        }} 
+                      />
                       {cat.name} (Order: {cat.display_order})
                     </label>
                   ))}
