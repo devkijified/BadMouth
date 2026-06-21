@@ -73,6 +73,7 @@ export default function AdminPage() {
   const [showDeezerSearch, setShowDeezerSearch] = useState(false)
   const [deezerSearchQuery, setDeezerSearchQuery] = useState('')
   const [searchingDeezer, setSearchingDeezer] = useState(false)
+  const [deezerSearchType, setDeezerSearchType] = useState<'track' | 'artist' | 'album'>('track')
   
   // TMDB search states
   const [tmdbSearchResults, setTmdbSearchResults] = useState<any[]>([])
@@ -118,27 +119,23 @@ export default function AdminPage() {
   useEffect(() => {
     console.log('=== ADMIN PAGE LOADED ===')
     
-    // If still loading auth, wait
     if (authLoading) {
       console.log('Waiting for auth to load...')
       return
     }
 
-    // If no user, redirect to auth
     if (!user) {
       console.log('No user, redirecting to auth')
       router.push('/auth')
       return
     }
 
-    // If already checked admin and user hasn't changed, skip
     if (adminChecked && isAdmin) {
       console.log('Already verified admin, loading data...')
       loadAllData()
       return
     }
 
-    // Check admin status once
     checkAdminStatus()
   }, [authLoading, user])
 
@@ -153,7 +150,6 @@ export default function AdminPage() {
         .single()
       
       console.log('Profile data:', profile)
-      console.log('Profile error:', error)
       
       if (profile?.role === 'admin') {
         console.log('✅ Admin role detected')
@@ -165,7 +161,6 @@ export default function AdminPage() {
         console.log('❌ Not admin. Role:', profile?.role)
         setIsAdmin(false)
         setAdminChecked(true)
-        // Only redirect if we're not already on auth page
         if (window.location.pathname !== '/auth') {
           toast.error('You do not have admin access')
           router.push('/')
@@ -175,7 +170,6 @@ export default function AdminPage() {
       console.error('Admin check error:', error)
       setIsAdmin(false)
       setAdminChecked(true)
-      // Only redirect if we're not already on auth page
       if (window.location.pathname !== '/auth') {
         toast.error('Failed to verify admin status')
         router.push('/')
@@ -299,8 +293,6 @@ export default function AdminPage() {
         console.error('Profiles error:', profilesError)
         throw profilesError
       }
-
-      console.log('Profiles data:', profiles)
 
       if (!profiles || profiles.length === 0) {
         setUsers([])
@@ -427,65 +419,142 @@ export default function AdminPage() {
     }
   }
 
-  // Search functions
-  const searchDeezerForMusic = async () => {
+  // ============================================
+  // FIXED DEEZER SEARCH
+  // ============================================
+  const searchDeezer = async () => {
     if (!deezerSearchQuery.trim()) {
-      toast.error('Please enter a song or artist name')
+      toast.error('Please enter a song, artist, or album name')
       return
     }
+
     setSearchingDeezer(true)
+    setDeezerSearchResults([])
+    
     try {
-      const response = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(deezerSearchQuery)}&limit=20`)
-      const data = await response.json()
+      let url = ''
+      const query = encodeURIComponent(deezerSearchQuery.trim())
       
+      // Build URL based on search type
+      if (deezerSearchType === 'track') {
+        url = `https://api.deezer.com/search/track?q=${query}&limit=20`
+      } else if (deezerSearchType === 'artist') {
+        url = `https://api.deezer.com/search/artist?q=${query}&limit=20`
+      } else if (deezerSearchType === 'album') {
+        url = `https://api.deezer.com/search/album?q=${query}&limit=20`
+      }
+
+      console.log('Fetching from Deezer:', url)
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      console.log('Deezer response:', data)
+
       if (data.data && data.data.length > 0) {
         setDeezerSearchResults(data.data)
         toast.success(`Found ${data.data.length} results on Deezer`)
       } else {
         setDeezerSearchResults([])
-        toast.error('No results found')
+        toast.error('No results found. Try different search terms.')
       }
     } catch (error) {
       console.error('Deezer search error:', error)
-      toast.error('Failed to search Deezer')
+      toast.error('Failed to search Deezer. Please try again.')
+      setDeezerSearchResults([])
     } finally {
       setSearchingDeezer(false)
     }
   }
 
   const formatDuration = (seconds: number) => {
+    if (!seconds) return '0:00'
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
-  const importFromDeezer = (track: any) => {
+  const importFromDeezer = (item: any) => {
+    let title = ''
+    let artist = ''
+    let imageUrl = ''
+    let year = new Date().getFullYear()
+    let duration = ''
+    let genre = ''
+    let description = ''
+    let longDescription = ''
+    let platforms = 'Spotify, Apple Music, Deezer, YouTube Music'
+
+    // Handle different search types
+    if (deezerSearchType === 'track') {
+      title = item.title || 'Unknown Track'
+      artist = item.artist?.name || 'Unknown Artist'
+      imageUrl = item.album?.cover_xl || item.album?.cover_big || ''
+      year = item.release_date ? new Date(item.release_date).getFullYear() : new Date().getFullYear()
+      duration = formatDuration(item.duration)
+      genre = item.artist?.name?.split(' ')[0] || 'Music'
+      description = `"${title}" by ${artist}`
+      longDescription = `"${title}" by ${artist}. A great track worth listening to.`
+    } else if (deezerSearchType === 'artist') {
+      title = item.name || 'Unknown Artist'
+      artist = item.name || 'Unknown Artist'
+      imageUrl = item.picture_xl || item.picture_big || ''
+      year = new Date().getFullYear()
+      duration = ''
+      genre = item.name?.split(' ')[0] || 'Music'
+      description = `Artist: ${item.name}`
+      longDescription = `${item.name} - Popular artist. Check out their music.`
+    } else if (deezerSearchType === 'album') {
+      title = item.title || 'Unknown Album'
+      artist = item.artist?.name || 'Unknown Artist'
+      imageUrl = item.cover_xl || item.cover_big || ''
+      year = item.release_date ? new Date(item.release_date).getFullYear() : new Date().getFullYear()
+      duration = ''
+      genre = item.artist?.name?.split(' ')[0] || 'Music'
+      description = `Album: "${title}" by ${artist}`
+      longDescription = `"${title}" by ${artist}. A great album worth listening to.`
+    }
+
+    // Set the form data
     setContentForm({
       ...contentForm,
-      title: track.title,
-      artist: track.artist.name,
-      description: `By ${track.artist.name} - ${track.album.title}`,
-      long_description: `"${track.title}" by ${track.artist.name} from the album "${track.album.title}".`,
-      image_url: track.album.cover_xl,
-      backdrop_url: track.album.cover_xl,
+      title: title,
+      artist: artist,
+      description: description,
+      long_description: longDescription,
+      image_url: imageUrl,
+      backdrop_url: imageUrl,
       type: 'music',
-      year: track.release_date ? new Date(track.release_date).getFullYear() : new Date().getFullYear(),
-      duration: formatDuration(track.duration),
-      genre: track.artist.name.split(' ')[0],
-      platforms: 'Spotify, Apple Music, Deezer, YouTube Music',
-      trailer_url: track.preview,
+      year: year,
+      duration: duration,
+      genre: genre,
+      platforms: platforms,
+      trailer_url: '',
       stats_highly: Math.floor(Math.random() * 1000) + 500,
       stats_recommended: Math.floor(Math.random() * 500) + 200,
       stats_not: 0,
       is_tv_show: false,
       category_ids: []
     })
+
     setShowDeezerSearch(false)
     setDeezerSearchQuery('')
     setDeezerSearchResults([])
-    toast.success(`Imported "${track.title}" from Deezer!`)
+    toast.success(`Imported "${title}" from Deezer!`)
   }
 
+  // ============================================
+  // TMDB SEARCH
+  // ============================================
   const searchTmdb = async () => {
     if (!tmdbSearchQuery.trim()) {
       toast.error('Please enter a title to search')
@@ -493,11 +562,14 @@ export default function AdminPage() {
     }
     
     setSearchingTmdb(true)
+    setTmdbSearchResults([])
+    
     try {
       const url = tmdbSearchType === 'movie'
         ? `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(tmdbSearchQuery)}&language=en-US&page=1`
         : `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(tmdbSearchQuery)}&language=en-US&page=1`
       
+      console.log('Fetching from TMDB:', url)
       const response = await fetch(url)
       const data = await response.json()
       
@@ -505,8 +577,8 @@ export default function AdminPage() {
         const enrichedResults = await Promise.all(
           data.results.slice(0, 10).map(async (result: any) => {
             const detailUrl = tmdbSearchType === 'movie'
-              ? `https://api.themoviedb.org/3/movie/${result.id}?api_key=${TMDB_API_KEY}&language=en-US`
-              : `https://api.themoviedb.org/3/tv/${result.id}?api_key=${TMDB_API_KEY}&language=en-US`
+              ? `https://api.themoviedb.org/3/movie/${result.id}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits`
+              : `https://api.themoviedb.org/3/tv/${result.id}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits`
             const detailResponse = await fetch(detailUrl)
             const details = await detailResponse.json()
             return { ...result, ...details }
@@ -758,7 +830,6 @@ export default function AdminPage() {
     return cat.type === categoryTypeFilter
   })
 
-  // Show loading state while checking auth
   if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -767,7 +838,6 @@ export default function AdminPage() {
     )
   }
 
-  // If not admin, show access denied (this will only show briefly before redirect)
   if (!isAdmin && adminChecked) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -1070,7 +1140,7 @@ export default function AdminPage() {
             <div className="space-y-4">
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Admin Access</h3><p className="text-sm text-gray-400">Admin status is determined by the role field in the profiles table. Only users with role="admin" can access this panel.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Real-time Updates</h3><p className="text-sm text-gray-400">User stats, watchlist counts, and recommendations update automatically in real-time.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TV Shows vs Movies</h3><p className="text-sm text-gray-400">TV shows are automatically marked with a TV badge when imported from TMDB.</p></div>
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Deezer Search</h3><p className="text-sm text-gray-400">Search for tracks, artists, or albums. Click "Import" to add to your content library.</p></div>
             </div>
           </div>
         )}
@@ -1090,11 +1160,14 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Content Modal */}
+      {/* Content Modal - WITH FIXED DEEZER */}
       {showContentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 overflow-y-auto">
           <div className="bg-gray-900 rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Content</h2><button onClick={closeContentModal} className="p-1 hover:bg-gray-800 rounded"><X size={20} /></button></div>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Content</h2>
+              <button onClick={closeContentModal} className="p-1 hover:bg-gray-800 rounded"><X size={20} /></button>
+            </div>
             <div className="space-y-3">
               <input type="text" placeholder="Title" value={contentForm.title} onChange={e => setContentForm({ ...contentForm, title: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
               <textarea placeholder="Description" value={contentForm.description} onChange={e => setContentForm({ ...contentForm, description: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" rows={2} />
@@ -1119,7 +1192,7 @@ export default function AdminPage() {
                   </div>
 
                   <div className="mb-2">
-                    <button type="button" onClick={() => setShowTmdbSearch(!showTmdbSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2">+ Search on TMDB</button>
+                    <button type="button" onClick={() => setShowTmdbSearch(!showTmdbSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2">+ Search on TMDB (Movies & TV Shows)</button>
                     {showTmdbSearch && (
                       <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
                         <div className="flex gap-2">
@@ -1155,30 +1228,115 @@ export default function AdminPage() {
                 </>
               ) : (
                 <>
+                  {/* FIXED DEEZER SEARCH */}
                   <div className="mb-2">
-                    <button type="button" onClick={() => setShowDeezerSearch(!showDeezerSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2">+ Search on Deezer</button>
+                    <button type="button" onClick={() => setShowDeezerSearch(!showDeezerSearch)} className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1">
+                      {showDeezerSearch ? '− Hide Deezer Search' : '🔍 + Search on Deezer (Music)'}
+                    </button>
+                    
                     {showDeezerSearch && (
                       <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
-                        <div className="flex gap-2">
-                          <input type="text" placeholder="Search for a song or artist..." value={deezerSearchQuery} onChange={(e) => setDeezerSearchQuery(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && searchDeezerForMusic()} className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded text-sm" />
-                          <button onClick={searchDeezerForMusic} disabled={searchingDeezer} className="px-4 py-2 bg-teal-600 rounded">{searchingDeezer ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}</button>
+                        <div className="flex flex-wrap gap-2">
+                          <div className="flex gap-1">
+                            <button 
+                              onClick={() => setDeezerSearchType('track')} 
+                              className={`px-3 py-1.5 rounded text-xs font-medium transition ${
+                                deezerSearchType === 'track' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'
+                              }`}
+                            >
+                              🎵 Tracks
+                            </button>
+                            <button 
+                              onClick={() => setDeezerSearchType('artist')} 
+                              className={`px-3 py-1.5 rounded text-xs font-medium transition ${
+                                deezerSearchType === 'artist' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'
+                              }`}
+                            >
+                              👤 Artists
+                            </button>
+                            <button 
+                              onClick={() => setDeezerSearchType('album')} 
+                              className={`px-3 py-1.5 rounded text-xs font-medium transition ${
+                                deezerSearchType === 'album' ? 'bg-teal-600' : 'bg-gray-700 hover:bg-gray-600'
+                              }`}
+                            >
+                              💿 Albums
+                            </button>
+                          </div>
                         </div>
-                        {deezerSearchResults.length > 0 && (
+                        
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            placeholder={`Search for a ${deezerSearchType}...`} 
+                            value={deezerSearchQuery} 
+                            onChange={(e) => setDeezerSearchQuery(e.target.value)} 
+                            onKeyPress={(e) => e.key === 'Enter' && searchDeezer()} 
+                            className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm" 
+                          />
+                          <button 
+                            onClick={searchDeezer} 
+                            disabled={searchingDeezer} 
+                            className="px-4 py-2 bg-teal-600 rounded hover:bg-teal-700 transition disabled:opacity-50 flex items-center gap-2"
+                          >
+                            {searchingDeezer ? <Loader2 className="w-4 h-4 animate-spin" /> : <SearchIcon size={16} />}
+                            {searchingDeezer ? 'Searching...' : 'Search'}
+                          </button>
+                        </div>
+                        
+                        {searchingDeezer && (
+                          <div className="flex justify-center py-4">
+                            <Loader2 className="h-6 w-6 animate-spin text-teal-500" />
+                            <span className="ml-2 text-gray-400">Searching Deezer...</span>
+                          </div>
+                        )}
+                        
+                        {deezerSearchResults.length > 0 && !searchingDeezer && (
                           <div className="space-y-2 max-h-64 overflow-y-auto">
-                            {deezerSearchResults.map((track) => (
-                              <div key={track.id} onClick={() => importFromDeezer(track)} className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600">
-                                <img src={track.album.cover_small} className="w-12 h-12 rounded" />
-                                <div><p className="font-medium text-sm">{track.title}</p><p className="text-xs text-gray-400">{track.artist.name}</p></div>
-                                <button className="text-teal-400 text-sm ml-auto">Import →</button>
+                            {deezerSearchResults.map((item, index) => (
+                              <div 
+                                key={item.id || index} 
+                                onClick={() => importFromDeezer(item)} 
+                                className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition group"
+                              >
+                                <img 
+                                  src={item.album?.cover_small || item.picture_small || ''} 
+                                  alt={item.title || item.name} 
+                                  className="w-12 h-12 rounded object-cover" 
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-sm truncate">
+                                    {item.title || item.name || 'Unknown'}
+                                  </p>
+                                  <p className="text-xs text-gray-400 truncate">
+                                    {item.artist?.name || 'Unknown Artist'}
+                                  </p>
+                                  {item.release_date && (
+                                    <p className="text-[10px] text-gray-500">
+                                      {new Date(item.release_date).getFullYear()}
+                                    </p>
+                                  )}
+                                </div>
+                                <button className="text-teal-400 text-sm opacity-0 group-hover:opacity-100 transition">
+                                  Import →
+                                </button>
                               </div>
                             ))}
+                          </div>
+                        )}
+                        
+                        {deezerSearchResults.length === 0 && !searchingDeezer && showDeezerSearch && (
+                          <div className="text-center py-4 text-gray-500">
+                            <Music size={24} className="mx-auto mb-2 opacity-50" />
+                            <p className="text-sm">Search for tracks, artists, or albums on Deezer</p>
                           </div>
                         )}
                       </div>
                     )}
                   </div>
+                  
                   <input type="text" placeholder="Artist" value={contentForm.artist} onChange={e => setContentForm({ ...contentForm, artist: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
-                  <input type="text" placeholder="Duration" value={contentForm.duration} onChange={e => setContentForm({ ...contentForm, duration: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
+                  <input type="text" placeholder="Duration (e.g., 3:45)" value={contentForm.duration} onChange={e => setContentForm({ ...contentForm, duration: e.target.value })} className="w-full p-2 bg-gray-800 border border-gray-700 rounded" />
                 </>
               )}
               
@@ -1205,8 +1363,8 @@ export default function AdminPage() {
               </div>
             </div>
             <div className="flex gap-2 mt-6">
-              <button onClick={saveContent} className="flex-1 py-2 bg-teal-600 rounded">Save</button>
-              <button onClick={closeContentModal} className="flex-1 py-2 bg-gray-700 rounded">Cancel</button>
+              <button onClick={saveContent} className="flex-1 py-2 bg-teal-600 rounded hover:bg-teal-700 transition">Save</button>
+              <button onClick={closeContentModal} className="flex-1 py-2 bg-gray-700 rounded hover:bg-gray-600 transition">Cancel</button>
             </div>
           </div>
         </div>
