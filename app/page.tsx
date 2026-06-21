@@ -46,6 +46,7 @@ export default function HomePage() {
   const [showSearchModal, setShowSearchModal] = useState(false)
   const [showRecommendModal, setShowRecommendModal] = useState(false)
   const [recommendItem, setRecommendItem] = useState<ContentItem | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   
   // User's own recommendations for profile modal
   const [myRecommendations, setMyRecommendations] = useState<any[]>([])
@@ -100,6 +101,34 @@ export default function HomePage() {
       setShowNotifications(true)
     }
   }
+
+  // Check if user is admin
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      if (!user) {
+        setIsAdmin(false)
+        return
+      }
+      
+      try {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+        
+        if (error) throw error
+        
+        setIsAdmin(profile?.role === 'admin')
+        console.log('Admin status:', profile?.role === 'admin')
+      } catch (error) {
+        console.error('Error checking admin status:', error)
+        setIsAdmin(false)
+      }
+    }
+    
+    checkAdminStatus()
+  }, [user])
 
   // Load user's own recommendations for profile modal
   const loadMyRecommendations = async () => {
@@ -269,12 +298,11 @@ export default function HomePage() {
     }
   }, [user])
 
-  // Load data for Movies tab - FIXED with sorting
+  // Load data for Movies tab
   const loadMoviesData = async () => {
     setLoading(true)
     
     try {
-      // Load categories in display_order (already sorted)
       const { data: categoriesData } = await supabase
         .from('categories')
         .select('*')
@@ -284,12 +312,11 @@ export default function HomePage() {
       
       setCategories(categoriesData || [])
       
-      // ✅ FIX: Load all content sorted by stats_highly in descending order
       const { data: contentData } = await supabase
         .from('content')
         .select('*')
         .eq('type', 'movie')
-        .order('stats_highly', { ascending: false })  // 👈 Added sorting
+        .order('stats_highly', { ascending: false })
       
       const contentWithImages = (contentData || []).map(item => ({
         ...item,
@@ -298,16 +325,13 @@ export default function HomePage() {
       
       setAllContent(contentWithImages)
       
-      // Load relations
       const { data: relations } = await supabase
         .from('content_categories')
         .select('*')
       
-      // Build category map with sorting within each category
       const byCategory: Record<string, ContentItem[]> = {}
       for (const category of categoriesData || []) {
         const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
-        // ✅ OPTIONAL: Sort items within each category by stats_highly
         byCategory[category.name] = contentWithImages
           .filter(c => contentIds.includes(c.id))
           .sort((a, b) => (b.stats_highly || 0) - (a.stats_highly || 0))
@@ -320,7 +344,7 @@ export default function HomePage() {
     }
   }
 
-  // Load data for Music tab - FIXED with sorting
+  // Load data for Music tab
   const loadMusicData = async () => {
     setLoading(true)
     
@@ -338,7 +362,7 @@ export default function HomePage() {
         .from('content')
         .select('*')
         .eq('type', 'music')
-        .order('stats_highly', { ascending: false })  // 👈 Added sorting
+        .order('stats_highly', { ascending: false })
       
       if (selectedGenre !== 'all') {
         contentQuery = contentQuery.eq('genre', selectedGenre)
@@ -357,11 +381,9 @@ export default function HomePage() {
         .from('content_categories')
         .select('*')
       
-      // Build category map with sorting within each category
       const byCategory: Record<string, ContentItem[]> = {}
       for (const category of categoriesData || []) {
         const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
-        // ✅ OPTIONAL: Sort items within each category by stats_highly
         byCategory[category.name] = contentWithImages
           .filter(c => contentIds.includes(c.id))
           .sort((a, b) => (b.stats_highly || 0) - (a.stats_highly || 0))
@@ -792,7 +814,8 @@ export default function HomePage() {
                 )}
               </button>
 
-              {user?.email === 'kijified@gmail.com' && (
+              {/* ✅ DYNAMIC ADMIN CHECK - NO HARDCODING */}
+              {isAdmin && (
                 <Link href="/admin" className="text-gray-300 hover:text-teal-500 transition">
                   <Shield size={20} />
                 </Link>
@@ -841,11 +864,14 @@ export default function HomePage() {
               <button onClick={() => { toggleWatchlist(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">❤️ Watchlist ({watchlistCount})</button>
               <button onClick={() => { toggleProfile(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">👤 Profile</button>
               <button onClick={() => { toggleNotifications(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🔔 Notifications</button>
-              {user?.email === 'kijified@gmail.com' && (
+              
+              {/* ✅ DYNAMIC ADMIN LINK IN SIDEBAR */}
+              {isAdmin && (
                 <Link href="/admin" onClick={() => setIsSidebarOpen(false)} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg flex items-center gap-2">
                   <Shield size={16} /> Admin
                 </Link>
               )}
+              
               <button onClick={signOut} className="w-full text-left p-3 text-red-500 hover:bg-gray-800 rounded-lg flex items-center gap-2">
                 <LogOut size={16} /> Sign Out
               </button>
@@ -894,7 +920,6 @@ export default function HomePage() {
               activeTab={activeTab} 
             />
             <div className="container mx-auto px-4">
-              {/* Display Trending Now first */}
               {categories.filter(c => c.name === '🔥 Trending Now').map((category) => (
                 <ContentRow 
                   key={category.id}
@@ -909,7 +934,6 @@ export default function HomePage() {
                 />
               ))}
               
-              {/* Display other categories */}
               {categories.filter(c => c.name !== '🔥 Trending Now').map((category) => (
                 <ContentRow 
                   key={category.id}
