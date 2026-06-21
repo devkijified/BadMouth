@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
 import { useRouter } from 'next/navigation'
@@ -50,6 +50,10 @@ export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'categories' | 'content' | 'users' | 'analytics' | 'settings'>('users')
+  const [lastActivity, setLastActivity] = useState(Date.now())
+  const inactivityTimer = useRef<NodeJS.Timeout | null>(null)
+  const refreshInterval = useRef<NodeJS.Timeout | null>(null)
+  const sessionRefreshInterval = useRef<NodeJS.Timeout | null>(null)
   
   // Data states
   const [categories, setCategories] = useState<Category[]>([])
@@ -113,6 +117,99 @@ export default function AdminPage() {
     category_ids: [] as string[]
   })
 
+  // Reset inactivity timer on user interaction
+  const resetInactivityTimer = () => {
+    setLastActivity(Date.now())
+    if (inactivityTimer.current) {
+      clearTimeout(inactivityTimer.current)
+    }
+    // Set inactivity timeout to 30 minutes (1800000 ms)
+    inactivityTimer.current = setTimeout(() => {
+      console.log('Inactivity detected, refreshing session...')
+      refreshSession()
+    }, 1800000) // 30 minutes
+  }
+
+  // Refresh session
+  const refreshSession = async () => {
+    try {
+      const { data, error } = await supabase.auth.refreshSession()
+      if (error) {
+        console.log('Session refresh failed, redirecting to login')
+        toast.error('Session expired. Please login again.')
+        router.push('/auth')
+      } else {
+        console.log('Session refreshed successfully')
+        toast.success('Session refreshed')
+      }
+    } catch (error) {
+      console.error('Session refresh error:', error)
+    }
+  }
+
+  // Set up activity listeners
+  useEffect(() => {
+    const activities = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click', 'mousemove']
+    const handleActivity = () => resetInactivityTimer()
+    
+    activities.forEach(event => {
+      window.addEventListener(event, handleActivity)
+    })
+
+    // Initial timer setup
+    resetInactivityTimer()
+
+    // Set up periodic data refresh (every 30 seconds)
+    refreshInterval.current = setInterval(() => {
+      if (isAdmin && document.visibilityState === 'visible') {
+        console.log('Auto-refreshing data...')
+        loadUsers()
+        loadContent()
+        loadCategories()
+        loadRecommendations()
+      }
+    }, 30000) // 30 seconds
+
+    // Set up session refresh (every 5 minutes)
+    sessionRefreshInterval.current = setInterval(() => {
+      if (isAdmin && document.visibilityState === 'visible') {
+        console.log('Auto-refreshing session...')
+        supabase.auth.refreshSession().catch(console.error)
+      }
+    }, 300000) // 5 minutes
+
+    // Handle visibility change (tab switch)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('Tab became visible, refreshing data...')
+        resetInactivityTimer()
+        if (isAdmin) {
+          loadUsers()
+          loadContent()
+          loadCategories()
+          loadRecommendations()
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      activities.forEach(event => {
+        window.removeEventListener(event, handleActivity)
+      })
+      if (inactivityTimer.current) {
+        clearTimeout(inactivityTimer.current)
+      }
+      if (refreshInterval.current) {
+        clearInterval(refreshInterval.current)
+      }
+      if (sessionRefreshInterval.current) {
+        clearInterval(sessionRefreshInterval.current)
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [isAdmin])
+
   useEffect(() => {
     console.log('=== ADMIN PAGE LOADED ===')
     console.log('Auth loading:', authLoading)
@@ -133,7 +230,7 @@ export default function AdminPage() {
     try {
       console.log('Checking admin status for:', user?.email)
       
-      // ONLY check role in profiles table - NO hardcoding
+      // Check role in profiles table
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('role')
@@ -797,10 +894,31 @@ export default function AdminPage() {
                 BADMOUTH Admin
               </Link>
               <span className="text-xs bg-teal-600 px-2 py-1 rounded-full">Admin Panel</span>
+              <span className="text-xs text-green-500 hidden md:inline">
+                ● Session active
+              </span>
             </div>
             <div className="flex items-center gap-4">
-              <button onClick={() => { loadUsers(); loadContent(); loadCategories(); loadRecommendations(); }} className="text-gray-400 hover:text-white transition" title="Refresh all data">
+              <button 
+                onClick={() => { 
+                  resetInactivityTimer()
+                  loadUsers()
+                  loadContent()
+                  loadCategories()
+                  loadRecommendations()
+                  toast.success('Data refreshed')
+                }} 
+                className="text-gray-400 hover:text-white transition" 
+                title="Refresh all data"
+              >
                 <RefreshCw size={18} />
+              </button>
+              <button
+                onClick={refreshSession}
+                className="text-gray-400 hover:text-white transition text-xs"
+                title="Refresh session"
+              >
+                🔄 Session
               </button>
               <Link href="/" className="text-gray-400 hover:text-white transition">← Back to Site</Link>
             </div>
@@ -939,7 +1057,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Analytics Tab - Keep same as before */}
+        {/* Analytics Tab */}
         {activeTab === 'analytics' && (
           <div className="bg-gray-800 rounded-xl p-6">
             <h2 className="text-xl font-bold mb-4">Recent Recommendations</h2>
@@ -963,7 +1081,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Categories Tab - Keep same as before */}
+        {/* Categories Tab */}
         {activeTab === 'categories' && (
           <div>
             <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
@@ -996,7 +1114,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Content Tab - Keep same as before */}
+        {/* Content Tab */}
         {activeTab === 'content' && (
           <div>
             <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
@@ -1050,10 +1168,10 @@ export default function AdminPage() {
           <div className="bg-gray-800 rounded-xl p-6">
             <h2 className="text-xl font-bold mb-4">System Settings</h2>
             <div className="space-y-4">
+              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Session Management</h3><p className="text-sm text-gray-400">Session stays active for 30 minutes of inactivity. Auto-refreshes data every 30 seconds.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Admin Management</h3><p className="text-sm text-gray-400">Admins are managed through the profiles table. Only users with role="admin" can access this panel.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Real-time Updates</h3><p className="text-sm text-gray-400">User stats, watchlist counts, and recommendations update automatically in real-time.</p></div>
               <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">TV Shows vs Movies</h3><p className="text-sm text-gray-400">TV shows are automatically marked with a TV badge when imported from TMDB.</p></div>
-              <div className="p-4 bg-gray-700/50 rounded-lg"><h3 className="font-semibold mb-2">Email Notifications</h3><p className="text-sm text-gray-400">Welcome emails and password reset emails are sent via Resend.</p></div>
             </div>
           </div>
         )}
