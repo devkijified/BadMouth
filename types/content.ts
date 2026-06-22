@@ -15,23 +15,14 @@ export interface ContentItem {
   runtime: string | null
   duration: string | null
   genre: string
-  stats_highly: number
+  stats_highly: number  // Keep for backwards compatibility
   stats_recommended: number
   stats_not: number
-  rating_scale?: number
+  rating: number  // NEW: 1-10 rating
+  rating_count: number  // NEW: number of ratings
   is_tv_show?: boolean
   created_at?: string
   updated_at?: string
-}
-
-export interface Category {
-  id: string
-  name: string
-  description: string
-  type: 'movie' | 'music'
-  is_active: boolean
-  display_order: number
-  created_at?: string
 }
 
 export interface Recommendation {
@@ -39,21 +30,12 @@ export interface Recommendation {
   user_id: string
   content_id: string
   content_type: 'movie' | 'music'
-  recommendation_tier: 'highly' | 'recommended' | 'not'
+  rating: number  // Changed from recommendation_tier to rating (1-10)
   comment?: string
   created_at?: string
   profiles?: {
     username: string
     avatar_url: string
   }
-  content?: ContentItem
-}
-
-export interface WatchlistItem {
-  id: string
-  user_id: string
-  content_id: string
-  content_type: 'movie' | 'music'
-  created_at?: string
   content?: ContentItem
 }
