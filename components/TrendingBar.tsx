@@ -4,14 +4,12 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { TrendingUp, Star } from 'lucide-react'
 import { ContentItem } from '@/types/content'
-import { useRouter } from 'next/navigation'
 
 interface TrendingBarProps {
-  onViewDetails?: (item: ContentItem) => void
+  onViewDetails: (item: ContentItem) => void  // Make it required
 }
 
 export default function TrendingBar({ onViewDetails }: TrendingBarProps) {
-  const router = useRouter()
   const [trendingItems, setTrendingItems] = useState<ContentItem[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -22,7 +20,6 @@ export default function TrendingBar({ onViewDetails }: TrendingBarProps) {
   const loadTrending = async () => {
     setLoading(true)
     try {
-      // Get top rated content across all types
       const { data, error } = await supabase
         .from('content')
         .select('*')
@@ -38,13 +35,9 @@ export default function TrendingBar({ onViewDetails }: TrendingBarProps) {
     }
   }
 
+  // Use onViewDetails directly - just like ContentRow does
   const handleItemClick = (item: ContentItem) => {
-    if (onViewDetails) {
-      onViewDetails(item)
-    } else {
-      // Navigate to home with details parameter
-      router.push(`/?details=${item.id}`)
-    }
+    onViewDetails(item)  // This opens the modal
   }
 
   if (loading) {
@@ -68,7 +61,6 @@ export default function TrendingBar({ onViewDetails }: TrendingBarProps) {
     return null
   }
 
-  // Create a marquee effect with duplicate items for seamless scrolling
   const displayItems = [...trendingItems, ...trendingItems]
 
   return (
