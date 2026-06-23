@@ -110,7 +110,7 @@ export default function AdminPage() {
     runtime: '',
     duration: '',
     genre: '',
-    rating: 0,
+    rating: 5.0,
     rating_count: 0,
     is_tv_show: false,
     category_ids: [] as string[]
@@ -371,8 +371,8 @@ export default function AdminPage() {
     let duration = formatDuration(track.duration)
     let genre = track.artist?.name?.split(' ')[0] || 'Music'
     
-    if (item.artist?.name) {
-      const artistName = item.artist.name.toLowerCase()
+    if (track.artist?.name) {
+      const artistName = track.artist.name.toLowerCase()
       if (artistName.includes('rock')) genre = 'Rock'
       else if (artistName.includes('pop')) genre = 'Pop'
       else if (artistName.includes('hip hop') || artistName.includes('rap')) genre = 'Hip Hop'
@@ -387,7 +387,7 @@ export default function AdminPage() {
       title: title,
       artist: artist,
       description: `"${title}" by ${artist}`,
-      long_description: `"${title}" by ${artist}. ${item.album?.title ? `From the album "${item.album.title}".` : ''} ${item.rank ? `Deezer rank: ${item.rank.toLocaleString()}.` : ''}`,
+      long_description: `"${title}" by ${artist}. ${track.album?.title ? `From the album "${track.album.title}".` : ''} ${track.rank ? `Deezer rank: ${track.rank.toLocaleString()}.` : ''}`,
       image_url: imageUrl,
       backdrop_url: imageUrl || '',
       type: 'music',
