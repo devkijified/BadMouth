@@ -15,7 +15,7 @@ export interface ContentItem {
   runtime: string | null
   duration: string | null
   genre: string
-  stats_highly: number  // Keep for backwards compatibility
+  stats_highly: number
   stats_recommended: number
   stats_not: number
   rating: number  // NEW: 1-10 rating
@@ -25,17 +25,36 @@ export interface ContentItem {
   updated_at?: string
 }
 
+export interface Category {
+  id: string
+  name: string
+  description: string
+  type: 'movie' | 'music'
+  is_active: boolean
+  display_order: number
+  created_at?: string
+}
+
 export interface Recommendation {
   id: string
   user_id: string
   content_id: string
   content_type: 'movie' | 'music'
-  rating: number  // Changed from recommendation_tier to rating (1-10)
+  rating: number  // Changed from recommendation_tier
   comment?: string
   created_at?: string
   profiles?: {
     username: string
     avatar_url: string
   }
+  content?: ContentItem
+}
+
+export interface WatchlistItem {
+  id: string
+  user_id: string
+  content_id: string
+  content_type: 'movie' | 'music'
+  created_at?: string
   content?: ContentItem
 }
