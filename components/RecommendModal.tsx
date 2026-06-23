@@ -41,10 +41,10 @@ export default function RecommendModal({
         .from('recommendations')
         .select('rating, comment')
         .eq('user_id', userId)
-        .eq('content_id', item.id)
-        .single()
+        .eq('content_id', item.id)  // content_id is TEXT, item.id is string
+        .maybeSingle()
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 is "not found"
+      if (error && error.code !== 'PGRST116') {
         console.error('Error checking existing rating:', error)
         return
       }
@@ -79,11 +79,12 @@ export default function RecommendModal({
         .from('recommendations')
         .select('id')
         .eq('user_id', userId)
-        .eq('content_id', item.id)
-        .single()
+        .eq('content_id', item.id)  // content_id is TEXT
+        .maybeSingle()
 
       if (checkError && checkError.code !== 'PGRST116') {
-        throw checkError
+        console.error('Check error:', checkError)
+        throw new Error(checkError.message)
       }
 
       let error
@@ -105,7 +106,7 @@ export default function RecommendModal({
           .from('recommendations')
           .insert({
             user_id: userId,
-            content_id: item.id,
+            content_id: item.id,  // content_id is TEXT
             content_type: item.type,
             rating: rating,
             comment: comment || null
@@ -113,25 +114,35 @@ export default function RecommendModal({
         error = insertError
       }
 
-      if (error) throw error
+      if (error) {
+        console.error('Save error:', error)
+        throw new Error(error.message)
+      }
 
       // Update content rating
-      const { data: allRatings } = await supabase
+      const { data: allRatings, error: ratingsError } = await supabase
         .from('recommendations')
         .select('rating')
-        .eq('content_id', item.id)
+        .eq('content_id', item.id)  // content_id is TEXT
 
-      if (allRatings) {
+      if (ratingsError) {
+        console.error('Ratings fetch error:', ratingsError)
+      } else if (allRatings && allRatings.length > 0) {
         const totalRatings = allRatings.length
-        const avgRating = allRatings.reduce((sum, r) => sum + r.rating, 0) / totalRatings
+        const avgRating = allRatings.reduce((sum, r) => sum + (r.rating || 0), 0) / totalRatings
         
-        await supabase
+        const { error: updateContentError } = await supabase
           .from('content')
           .update({
             rating: Math.round(avgRating * 10) / 10,
             rating_count: totalRatings
           })
-          .eq('id', item.id)
+          .eq('id', item.id)  // item.id is string (UUID)
+          .select()
+
+        if (updateContentError) {
+          console.error('Content update error:', updateContentError)
+        }
       }
 
       toast.success(`Rated "${item.title}" ${rating}/10!`)
@@ -140,9 +151,9 @@ export default function RecommendModal({
       setRating(0)
       setComment('')
       setExistingRating(null)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving rating:', error)
-      toast.error('Failed to save rating')
+      toast.error(error.message || 'Failed to save rating. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -177,7 +188,7 @@ export default function RecommendModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80">
       <div className="bg-gray-900 rounded-xl max-w-md w-full p-6">
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-3">
