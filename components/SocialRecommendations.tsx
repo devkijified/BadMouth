@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
-import { useAuth } from '@/hooks/useAuth'
-import { Star, User, ThumbsUp, MessageCircle } from 'lucide-react'
+import { Star } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 
 interface SocialRecommendationsProps {
@@ -12,7 +11,6 @@ interface SocialRecommendationsProps {
 }
 
 export default function SocialRecommendations({ onViewDetails, activeTab }: SocialRecommendationsProps) {
-  const { user } = useAuth()
   const [recommendations, setRecommendations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -23,12 +21,12 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
   const loadRecommendations = async () => {
     setLoading(true)
     try {
+      // Since content_id is TEXT, we need to join differently
       const { data, error } = await supabase
         .from('recommendations')
         .select(`
           *,
-          profiles(username, avatar_url),
-          content(id, title, image_url, artist, type, year, rating, rating_count)
+          profiles!user_id(username, avatar_url)
         `)
         .eq('content_type', activeTab)
         .order('created_at', { ascending: false })
@@ -41,9 +39,31 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
         return
       }
       
-      // Filter out recommendations where content is null (deleted)
-      const validData = data?.filter(rec => rec.content) || []
-      setRecommendations(validData)
+      // Fetch content data separately since content_id is TEXT
+      if (data && data.length > 0) {
+        const contentIds = data.map(rec => rec.content_id)
+        const { data: contentData, error: contentError } = await supabase
+          .from('content')
+          .select('id, title, image_url, artist, type, year, rating, rating_count')
+          .in('id', contentIds)
+
+        if (contentError) {
+          console.error('Error loading content:', contentError)
+          setRecommendations(data)
+          setLoading(false)
+          return
+        }
+
+        // Merge recommendations with content
+        const merged = data.map(rec => ({
+          ...rec,
+          content: contentData?.find(c => c.id === rec.content_id)
+        })).filter(rec => rec.content)
+
+        setRecommendations(merged)
+      } else {
+        setRecommendations([])
+      }
     } catch (error) {
       console.error('Error loading social recommendations:', error)
       setRecommendations([])
