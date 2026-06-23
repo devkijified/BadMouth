@@ -381,8 +381,27 @@ export default function AdminPage() {
   }
 
   // ============================================
-  // NETFLIX IMPORT FUNCTIONS - 250 per page
+  // NETFLIX IMPORT FUNCTIONS
   // ============================================
+  
+  // Get saved page from localStorage
+  const getSavedNetflixPage = (): number => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('netflix_import_page')
+      if (saved) {
+        return parseInt(saved, 10)
+      }
+    }
+    return 1
+  }
+
+  // Save current page to localStorage
+  const saveNetflixPage = (page: number) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('netflix_import_page', page.toString())
+    }
+  }
+
   const fetchNetflixMovies = async (page: number = 1) => {
     setNetflixImportLoading(true)
     setNetflixImportProgress(0)
@@ -396,7 +415,7 @@ export default function AdminPage() {
       if (data.results) {
         // Fetch full details for each movie to get director, cast, and trailer
         const enrichedResults = await Promise.all(
-          data.results.slice(0, 250).map(async (movie: any) => {
+          data.results.slice(0, 20).map(async (movie: any) => {
             try {
               const detailResponse = await fetch(
                 `https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}&append_to_response=credits,videos`
@@ -432,6 +451,7 @@ export default function AdminPage() {
         setNetflixTotalPages(data.total_pages)
         setNetflixImportTotal(data.total_results)
         setNetflixImportPage(page)
+        saveNetflixPage(page) // Save current page
         toast.success(`Loaded ${enrichedResults.length} movies from Netflix (Page ${page}/${data.total_pages})`)
       }
     } catch (error) {
@@ -1383,7 +1403,9 @@ export default function AdminPage() {
                 <button 
                   onClick={() => {
                     setShowNetflixImport(true)
-                    fetchNetflixMovies(1)
+                    // Load saved page or default to 1
+                    const savedPage = getSavedNetflixPage()
+                    fetchNetflixMovies(savedPage)
                   }} 
                   className="px-4 py-2 bg-red-600 rounded-lg flex items-center gap-2 hover:bg-red-700 transition"
                 >
@@ -1473,7 +1495,7 @@ export default function AdminPage() {
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Netflix Import</h3>
-                <p className="text-sm text-gray-400">Imports movies from Netflix with director, cast, trailers, and BADMOUTH-style descriptions.</p>
+                <p className="text-sm text-gray-400">Remembers the last page you were on. Imports movies with director, cast, trailers, and BADMOUTH-style descriptions.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">BADMOUTH Descriptions</h3>
@@ -1889,6 +1911,9 @@ export default function AdminPage() {
                     Showing page {netflixImportPage} of {netflixTotalPages} • {netflixImportData.length} movies on this page
                   </p>
                 )}
+                <p className="text-xs text-gray-500 mt-1">
+                  💾 Last page: {getSavedNetflixPage()}
+                </p>
               </div>
               <button 
                 onClick={() => setShowNetflixImport(false)} 
@@ -1916,7 +1941,10 @@ export default function AdminPage() {
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => fetchNetflixMovies(Math.max(1, netflixImportPage - 1))}
+                  onClick={() => {
+                    const newPage = Math.max(1, netflixImportPage - 1)
+                    fetchNetflixMovies(newPage)
+                  }}
                   disabled={netflixImportPage <= 1 || netflixImportLoading}
                   className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50 text-sm"
                 >
@@ -1926,11 +1954,24 @@ export default function AdminPage() {
                   Page {netflixImportPage} of {netflixTotalPages}
                 </span>
                 <button
-                  onClick={() => fetchNetflixMovies(Math.min(netflixTotalPages, netflixImportPage + 1))}
+                  onClick={() => {
+                    const newPage = Math.min(netflixTotalPages, netflixImportPage + 1)
+                    fetchNetflixMovies(newPage)
+                  }}
                   disabled={netflixImportPage >= netflixTotalPages || netflixImportLoading}
                   className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50 text-sm"
                 >
                   Next
+                </button>
+                <button
+                  onClick={() => {
+                    const savedPage = getSavedNetflixPage()
+                    fetchNetflixMovies(savedPage)
+                  }}
+                  disabled={netflixImportLoading}
+                  className="px-3 py-1 bg-teal-600 rounded hover:bg-teal-700 disabled:opacity-50 text-sm"
+                >
+                  ↺ Go to Saved Page
                 </button>
               </div>
               <button
@@ -1962,7 +2003,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Movie Grid - 250 per page */}
+            {/* Movie Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
               {netflixImportData.map((movie) => {
                 const isSelected = selectedNetflixMovies.has(movie.id.toString())
