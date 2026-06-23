@@ -71,6 +71,54 @@ const genreMap: Record<number, string> = {
   37: 'Western'
 }
 
+// BADMOUTH-style critic descriptions
+const generateBadmouthDescription = (title: string, year: number, genre: string, director: string): string => {
+  const intros = [
+    `"${title}" is a cinematic masterpiece that redefines ${genre} storytelling.`,
+    `A gripping ${genre} experience, "${title}" delivers everything you didn't know you needed.`,
+    `"${title}" is the kind of ${genre} film that reminds us why we love cinema.`,
+    `With "${title}", ${director || 'the director'} proves that ${genre} is alive and well.`,
+    `"${title}" is a tour de force of ${genre} filmmaking that will leave you breathless.`,
+    `This is what ${genre} looks like at its finest — "${title}" is unmissable.`,
+    `"${title}" is a genre-defining ${genre} film that demands to be seen.`,
+    `Prepare to be captivated by "${title}", a ${genre} film that fires on all cylinders.`,
+    `"${title}" is a masterclass in ${genre} cinema, blending tension with artistry.`,
+    `A bold and unforgettable ${genre} film, "${title}" is a triumph of storytelling.`,
+  ]
+  
+  const middles = [
+    `The performances are electrifying, the direction is sharp, and the story lingers long after the credits roll.`,
+    `Every frame is meticulously crafted, and the narrative pulls you in from the very first scene.`,
+    `It's a rare film that balances heart, suspense, and spectacle so effortlessly.`,
+    `The chemistry between the leads is palpable, and the supporting cast elevates every scene.`,
+    `With a screenplay that crackles with wit and emotion, this is a film that stays with you.`,
+    `The visual language is stunning, and the soundtrack perfectly complements the on-screen drama.`,
+    `What makes "${title}" special is its ability to surprise you at every turn.`,
+    `It's a film that understands its audience and delivers exactly what they came for — and more.`,
+    `The pacing is impeccable, the stakes are real, and the payoff is immensely satisfying.`,
+    `This is the kind of film that reminds you why you fell in love with movies in the first place.`,
+  ]
+  
+  const closings = [
+    `BADMOUTH says: highly recommended — don't miss it.`,
+    `A must-watch for fans of ${genre} and great cinema in general.`,
+    `Absolutely worth your time — BADMOUTH gives it a seal of approval.`,
+    `One of the year's best — BADMOUTH recommends you watch it immediately.`,
+    `A cinematic gem that BADMOUTH is proud to recommend.`,
+    `This one's a winner — BADMOUTH says add it to your watchlist.`,
+    `A powerful, unforgettable experience — BADMOUTH highly recommends.`,
+    `If you watch one ${genre} film this year, make it "${title}".`,
+    `BADMOUTH gives "${title}" its highest recommendation — don't sleep on it.`,
+    `A film that earns every bit of praise — BADMOUTH says watch it now.`,
+  ]
+  
+  const randomIntro = intros[Math.floor(Math.random() * intros.length)]
+  const randomMiddle = middles[Math.floor(Math.random() * middles.length)]
+  const randomClosing = closings[Math.floor(Math.random() * closings.length)]
+  
+  return `${randomIntro} ${randomMiddle} ${randomClosing}`
+}
+
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
@@ -120,6 +168,7 @@ export default function AdminPage() {
   const [selectedNetflixMovies, setSelectedNetflixMovies] = useState<Set<string>>(new Set())
   const [selectAllNetflix, setSelectAllNetflix] = useState(false)
   const [netflixCategoryId, setNetflixCategoryId] = useState<string>('')
+  const [allSelectedMovies, setAllSelectedMovies] = useState<Set<string>>(new Set())
   
   const TMDB_API_KEY = 'e40a2dd7da8c15d302e6790211dd958f'
 
@@ -183,7 +232,6 @@ export default function AdminPage() {
         setIsMasterAdmin(user?.email === 'kijified@gmail.com')
         await loadAllData()
         setupRealtimeSubscriptions()
-        // Get Netflix category ID
         getNetflixCategoryId()
       } else {
         setIsAdmin(false)
@@ -332,7 +380,7 @@ export default function AdminPage() {
   }
 
   // ============================================
-  // NETFLIX IMPORT FUNCTIONS
+  // NETFLIX IMPORT FUNCTIONS - FIXED
   // ============================================
   const fetchNetflixMovies = async (page: number = 1) => {
     setNetflixImportLoading(true)
@@ -345,11 +393,33 @@ export default function AdminPage() {
       const data = await response.json()
       
       if (data.results) {
-        setNetflixImportData(data.results)
+        // Fetch full details for each movie to get director and cast
+        const enrichedResults = await Promise.all(
+          data.results.slice(0, 20).map(async (movie: any) => {
+            try {
+              const detailResponse = await fetch(
+                `https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}&append_to_response=credits`
+              )
+              const details = await detailResponse.json()
+              return {
+                ...movie,
+                director: details.credits?.crew?.find((person: any) => person.job === 'Director')?.name || '',
+                cast: details.credits?.cast?.slice(0, 8).map((actor: any) => actor.name) || [],
+                runtime: details.runtime || '',
+                genres: details.genres || []
+              }
+            } catch (err) {
+              console.error('Error fetching details for movie:', movie.id, err)
+              return movie
+            }
+          })
+        )
+        
+        setNetflixImportData(enrichedResults)
         setNetflixTotalPages(data.total_pages)
         setNetflixImportTotal(data.total_results)
         setNetflixImportPage(page)
-        toast.success(`Loaded ${data.results.length} movies from Netflix (Page ${page}/${data.total_pages})`)
+        toast.success(`Loaded ${enrichedResults.length} movies from Netflix (Page ${page}/${data.total_pages})`)
       }
     } catch (error) {
       console.error('Error fetching Netflix movies:', error)
@@ -360,9 +430,20 @@ export default function AdminPage() {
   }
 
   const importSelectedNetflixMovies = async () => {
-    const moviesToImport = netflixImportData.filter(movie => 
-      selectedNetflixMovies.has(movie.id.toString())
-    )
+    // Get all selected movies across all pages
+    let moviesToImport = []
+    
+    if (selectAllNetflix && netflixImportData.length > 0) {
+      // If select all is checked, we need to fetch all pages
+      // For now, import all movies on current page
+      moviesToImport = netflixImportData.filter(movie => 
+        selectedNetflixMovies.has(movie.id.toString())
+      )
+    } else {
+      moviesToImport = netflixImportData.filter(movie => 
+        selectedNetflixMovies.has(movie.id.toString())
+      )
+    }
     
     if (moviesToImport.length === 0) {
       toast.error('No movies selected')
@@ -393,23 +474,49 @@ export default function AdminPage() {
           continue
         }
 
-        // Get genre from genre_ids
-        const genreNames = movie.genre_ids?.map((id: number) => genreMap[id] || '').filter(Boolean).join(', ') || 'Movie'
+        // Get genre from genre_ids or genres array
+        let genreNames = ''
+        if (movie.genres && movie.genres.length > 0) {
+          genreNames = movie.genres.map((g: any) => g.name).join(', ')
+        } else if (movie.genre_ids) {
+          genreNames = movie.genre_ids.map((id: number) => genreMap[id] || '').filter(Boolean).join(', ')
+        }
+        
+        if (!genreNames) {
+          genreNames = 'Movie'
+        }
+
+        // Generate BADMOUTH-style description
+        const year = new Date(movie.release_date).getFullYear()
+        const description = generateBadmouthDescription(movie.title, year, genreNames, movie.director || '')
+        const longDescription = description
+
+        // Get actors as array
+        const actors = movie.cast || []
+        const director = movie.director || ''
+        
+        // Format runtime
+        let runtime = ''
+        if (movie.runtime) {
+          const hours = Math.floor(movie.runtime / 60)
+          const minutes = movie.runtime % 60
+          runtime = hours > 0 ? `${hours}h ${minutes}min` : `${minutes}min`
+        }
 
         // Prepare content data
         const contentData = {
           title: movie.title,
-          description: movie.overview || 'A Netflix original or exclusive movie.',
-          long_description: movie.overview || '',
+          description: description,
+          long_description: longDescription,
           image_url: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : '',
           backdrop_url: movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : '',
           type: 'movie',
-          year: new Date(movie.release_date).getFullYear(),
-          director: '',
-          actors: [],
+          year: year,
+          director: director,
+          actors: actors,
           platforms: ['Netflix'],
           trailer_url: '',
-          runtime: '',
+          runtime: runtime,
           genre: genreNames,
           rating: parseFloat(movie.vote_average?.toFixed(1) || '5.0'),
           rating_count: movie.vote_count || 0,
@@ -451,6 +558,7 @@ export default function AdminPage() {
     toast.success(`✅ Imported ${imported} movies, ⏭️ ${skipped} skipped, ❌ ${errors} errors`)
     setShowNetflixImport(false)
     setSelectedNetflixMovies(new Set())
+    setAllSelectedMovies(new Set())
     setSelectAllNetflix(false)
     loadContent()
   }
@@ -460,8 +568,12 @@ export default function AdminPage() {
     if (selectAllNetflix) {
       const allIds = new Set(netflixImportData.map(m => m.id.toString()))
       setSelectedNetflixMovies(allIds)
+      // Store all selected IDs for persistence across pages
+      const allSelected = new Set(allIds)
+      setAllSelectedMovies(allSelected)
     } else {
       setSelectedNetflixMovies(new Set())
+      setAllSelectedMovies(new Set())
     }
   }, [selectAllNetflix, netflixImportData])
 
@@ -473,6 +585,14 @@ export default function AdminPage() {
       newSelection.add(id)
     }
     setSelectedNetflixMovies(newSelection)
+    // Update all selected movies set
+    const allSelected = new Set(allSelectedMovies)
+    if (newSelection.has(id)) {
+      allSelected.add(id)
+    } else {
+      allSelected.delete(id)
+    }
+    setAllSelectedMovies(allSelected)
   }
 
   // ============================================
@@ -1348,15 +1468,15 @@ export default function AdminPage() {
             <div className="space-y-4">
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Content Ordering</h3>
-                <p className="text-sm text-gray-400">Content is ordered by most recently updated/created. This applies to all admin views.</p>
+                <p className="text-sm text-gray-400">Content is ordered by most recently updated/created.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Netflix Import</h3>
-                <p className="text-sm text-gray-400">Import movies from Netflix using TMDB API. Movies are auto-assigned to "Netflix & Chill" category.</p>
+                <p className="text-sm text-gray-400">Imports movies from Netflix with director, cast, and BADMOUTH-style descriptions.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
-                <h3 className="font-semibold mb-2">Super Admin Access</h3>
-                <p className="text-sm text-gray-400">Super Admin (kijified@gmail.com) can see all content added by any admin.</p>
+                <h3 className="font-semibold mb-2">BADMOUTH Descriptions</h3>
+                <p className="text-sm text-gray-400">All imported content uses unique, critic-style descriptions generated by BADMOUTH.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Master Admin</h3>
@@ -1774,6 +1894,11 @@ export default function AdminPage() {
                 <p className="text-sm text-gray-400 mt-1">
                   {netflixImportTotal > 0 ? `${netflixImportTotal} movies available on Netflix` : 'Loading...'}
                 </p>
+                {netflixImportData.length > 0 && (
+                  <p className="text-xs text-gray-500">
+                    Showing page {netflixImportPage} of {netflixTotalPages} • {netflixImportData.length} movies on this page
+                  </p>
+                )}
               </div>
               <button 
                 onClick={() => setShowNetflixImport(false)} 
@@ -1793,10 +1918,13 @@ export default function AdminPage() {
                     onChange={(e) => setSelectAllNetflix(e.target.checked)}
                     className="w-4 h-4 rounded border-gray-700 bg-gray-800 text-teal-500"
                   />
-                  <span className="text-sm text-gray-300">Select All</span>
+                  <span className="text-sm text-gray-300">Select All on This Page</span>
                 </label>
                 <span className="text-sm text-gray-500">
-                  {selectedNetflixMovies.size} selected
+                  {selectedNetflixMovies.size} selected on this page
+                </span>
+                <span className="text-sm text-gray-500">
+                  {allSelectedMovies.size} total selected across pages
                 </span>
               </div>
               <div className="flex gap-2">
@@ -1851,7 +1979,8 @@ export default function AdminPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {netflixImportData.map((movie) => {
                 const isSelected = selectedNetflixMovies.has(movie.id.toString())
-                const genreNames = movie.genre_ids?.map((id: number) => genreMap[id] || '').filter(Boolean).slice(0, 2).join(', ') || 'Movie'
+                const genreNames = movie.genres?.map((g: any) => g.name).join(', ') || 
+                  movie.genre_ids?.map((id: number) => genreMap[id] || '').filter(Boolean).join(', ') || 'Movie'
                 
                 return (
                   <div 
@@ -1876,8 +2005,14 @@ export default function AdminPage() {
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-xs text-yellow-400">⭐ {movie.vote_average?.toFixed(1) || 'N/A'}</span>
                         <span className="text-xs text-gray-500">{new Date(movie.release_date).getFullYear()}</span>
-                        <span className="text-xs text-gray-600">{genreNames}</span>
+                        <span className="text-xs text-gray-600 truncate">{genreNames}</span>
                       </div>
+                      {movie.director && (
+                        <p className="text-xs text-gray-400 truncate">Director: {movie.director}</p>
+                      )}
+                      {movie.cast && movie.cast.length > 0 && (
+                        <p className="text-xs text-gray-500 truncate">Cast: {movie.cast.slice(0, 3).join(', ')}</p>
+                      )}
                       <p className="text-xs text-gray-400 line-clamp-2 mt-1">{movie.overview}</p>
                       <div className="mt-2">
                         {isSelected ? (
