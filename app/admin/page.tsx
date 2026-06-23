@@ -44,6 +44,8 @@ interface ContentItem {
   rating: number
   rating_count: number
   is_tv_show?: boolean
+  created_at?: string
+  updated_at?: string
 }
 
 export default function AdminPage() {
@@ -208,10 +210,12 @@ export default function AdminPage() {
   }
 
   const loadContent = async () => {
+    // Order by updated_at DESC (most recently updated first), then created_at DESC
     const { data } = await supabase
       .from('content')
       .select('*')
-      .order('rating', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .order('created_at', { ascending: false })
     setContent(data || [])
   }
 
@@ -599,6 +603,27 @@ export default function AdminPage() {
     setTmdbSearchResults([])
   }
 
+  // Load existing categories for the content being edited
+  const loadContentCategories = async (contentId: string) => {
+    try {
+      const { data } = await supabase
+        .from('content_categories')
+        .select('category_id')
+        .eq('content_id', contentId)
+      
+      if (data) {
+        const categoryIds = data.map(item => item.category_id)
+        setContentForm(prev => ({
+          ...prev,
+          category_ids: categoryIds
+        }))
+      }
+    } catch (error) {
+      console.error('Error loading content categories:', error)
+    }
+  }
+
+  // Modified saveContent to handle category assignments
   const saveContent = async () => {
     try {
       const dataToSave: any = {
@@ -615,6 +640,7 @@ export default function AdminPage() {
         rating: contentForm.rating || 5.0,
         rating_count: contentForm.rating_count || 0,
         is_tv_show: contentForm.is_tv_show || false,
+        updated_at: new Date().toISOString()
       }
       
       if (contentForm.type === 'movie') {
@@ -634,21 +660,46 @@ export default function AdminPage() {
       
       let contentId = editingItem?.id
       if (editingItem) {
-        await supabase.from('content').update(dataToSave).eq('id', editingItem.id)
+        // Update existing content
+        const { error } = await supabase
+          .from('content')
+          .update(dataToSave)
+          .eq('id', editingItem.id)
+        
+        if (error) throw error
+        contentId = editingItem.id
         toast.success('Content updated!')
       } else {
-        const { data } = await supabase.from('content').insert([dataToSave]).select()
+        // Insert new content
+        dataToSave.created_at = new Date().toISOString()
+        const { data, error } = await supabase
+          .from('content')
+          .insert([dataToSave])
+          .select()
+        
+        if (error) throw error
         contentId = data?.[0]?.id
         toast.success('Content added!')
       }
       
-      if (contentId && contentForm.category_ids.length) {
-        await supabase.from('content_categories').delete().eq('content_id', contentId)
-        const links = contentForm.category_ids.map(catId => ({
-          content_id: contentId,
-          category_id: catId
-        }))
-        await supabase.from('content_categories').insert(links)
+      // Handle category assignments
+      if (contentId) {
+        // Delete existing category assignments
+        await supabase
+          .from('content_categories')
+          .delete()
+          .eq('content_id', contentId)
+        
+        // Insert new category assignments
+        if (contentForm.category_ids.length > 0) {
+          const links = contentForm.category_ids.map(catId => ({
+            content_id: contentId,
+            category_id: catId
+          }))
+          await supabase
+            .from('content_categories')
+            .insert(links)
+        }
       }
       
       closeContentModal()
@@ -1059,6 +1110,8 @@ export default function AdminPage() {
                                 is_tv_show: item.is_tv_show || false, 
                                 category_ids: [] 
                               }); 
+                              // Load existing categories for this content
+                              loadContentCategories(item.id);
                               setShowContentModal(true); 
                             }} 
                             className="text-gray-400 hover:text-white"
@@ -1087,16 +1140,16 @@ export default function AdminPage() {
             <h2 className="text-xl font-bold mb-4">System Settings</h2>
             <div className="space-y-4">
               <div className="p-4 bg-gray-700/50 rounded-lg">
-                <h3 className="font-semibold mb-2">Rating System</h3>
-                <p className="text-sm text-gray-400">Content is rated on a 1-10 scale. Users can rate content from 1-10 stars.</p>
+                <h3 className="font-semibold mb-2">Content Ordering</h3>
+                <p className="text-sm text-gray-400">Content is ordered by most recently updated/created. This applies to all admin views.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
-                <h3 className="font-semibold mb-2">Admin Access</h3>
-                <p className="text-sm text-gray-400">Admin status is determined by the role field in the profiles table.</p>
+                <h3 className="font-semibold mb-2">Category Assignment</h3>
+                <p className="text-sm text-gray-400">When editing content, existing category assignments are automatically loaded.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
-                <h3 className="font-semibold mb-2">Deezer Search</h3>
-                <p className="text-sm text-gray-400">Search for tracks on Deezer using the proxy API route.</p>
+                <h3 className="font-semibold mb-2">Super Admin Access</h3>
+                <p className="text-sm text-gray-400">Super Admin (kijified@gmail.com) can see all content added by any admin.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Master Admin</h3>
@@ -1489,6 +1542,9 @@ export default function AdminPage() {
                     </label>
                   ))}
                 </div>
+                {editingItem && contentForm.category_ids.length === 0 && (
+                  <p className="text-xs text-gray-500 mt-2">No categories assigned. Select categories above.</p>
+                )}
               </div>
             </div>
             <div className="flex gap-2 mt-6">
