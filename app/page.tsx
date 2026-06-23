@@ -839,7 +839,7 @@ export default function HomePage() {
               onRecommend={handleRecommend}
               activeTab={activeTab} 
             />
-            <TrendingBar />
+            <TrendingBar onViewDetails={handleViewDetails} />
             <QuickStats userId={user.id} />
             <div className="container mx-auto px-4">
               <HomeFeed 
@@ -869,6 +869,7 @@ export default function HomePage() {
               onRecommend={handleRecommend}
               activeTab={activeTab} 
             />
+            <TrendingBar onViewDetails={handleViewDetails} />
             <div className="container mx-auto px-4">
               {categories.filter(c => c.name === '🔥 Trending Now').map((category) => (
                 <ContentRow 
@@ -909,6 +910,7 @@ export default function HomePage() {
               onRecommend={handleRecommend}
               activeTab={activeTab} 
             />
+            <TrendingBar onViewDetails={handleViewDetails} />
             <div className="container mx-auto px-4">
               {categories.length > 0 ? (
                 categories.map((category) => (
@@ -943,7 +945,7 @@ export default function HomePage() {
         )}
       </main>
 
-      {/* Details Modal */}
+      {/* Details Modal with Rate Button */}
       {showDetailsModal && selectedContent && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 overflow-y-auto">
           <div className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
@@ -971,6 +973,17 @@ export default function HomePage() {
                   based on {selectedContent.rating_count || 0} ratings
                 </span>
               </div>
+
+              {/* Rate Button in Details Modal */}
+              <button
+                onClick={() => {
+                  setShowDetailsModal(false)
+                  handleRecommend(selectedContent)
+                }}
+                className="w-full mb-4 py-2.5 bg-gradient-to-r from-teal-600 to-blue-600 rounded-lg font-semibold hover:opacity-90 transition flex items-center justify-center gap-2"
+              >
+                <Star size={18} className="fill-white" /> Rate This {selectedContent.type === 'movie' ? 'Movie' : 'Song'}
+              </button>
               
               <div className="flex gap-6 mb-4 p-3 bg-gray-800/50 rounded-lg">
                 <div className="text-center">
