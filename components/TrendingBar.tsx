@@ -4,8 +4,14 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { TrendingUp, Star } from 'lucide-react'
 import { ContentItem } from '@/types/content'
+import { useRouter } from 'next/navigation'
 
-export default function TrendingBar() {
+interface TrendingBarProps {
+  onViewDetails?: (item: ContentItem) => void
+}
+
+export default function TrendingBar({ onViewDetails }: TrendingBarProps) {
+  const router = useRouter()
   const [trendingItems, setTrendingItems] = useState<ContentItem[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -29,6 +35,15 @@ export default function TrendingBar() {
       console.error('Error loading trending:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleItemClick = (item: ContentItem) => {
+    if (onViewDetails) {
+      onViewDetails(item)
+    } else {
+      // Navigate to home with details parameter
+      router.push(`/?details=${item.id}`)
     }
   }
 
@@ -67,11 +82,15 @@ export default function TrendingBar() {
         <div className="relative overflow-hidden flex-1">
           <div className="animate-scroll flex gap-8 whitespace-nowrap">
             {displayItems.map((item, index) => (
-              <div key={`${item.id}-${index}`} className="flex items-center gap-3">
+              <div 
+                key={`${item.id}-${index}`} 
+                className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => handleItemClick(item)}
+              >
                 <span className="text-xs text-gray-500 font-mono">
                   #{index + 1}
                 </span>
-                <span className="text-sm font-medium text-white hover:text-teal-400 transition cursor-pointer">
+                <span className="text-sm font-medium text-white hover:text-teal-400 transition">
                   {item.title}
                 </span>
                 <div className="flex items-center gap-1">
