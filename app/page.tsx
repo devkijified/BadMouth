@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
 import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield, Star, ThumbsUp, Trash2, Loader2 } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import HeroCarousel from '@/components/HeroCarousel'
 import ContentRow from '@/components/ContentRow'
 import SocialRecommendations from '@/components/SocialRecommendations'
@@ -21,6 +21,7 @@ import toast from 'react-hot-toast'
 
 export default function HomePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { user, signOut, loading: authLoading } = useAuth()
   const [currentPage, setCurrentPage] = useState<'home' | 'movies' | 'music'>('home')
   const [activeTab, setActiveTab] = useState<'movie' | 'music'>('movie')
@@ -59,33 +60,6 @@ export default function HomePage() {
 
   const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller', 'Hip Hop', 'R&B', 'Electronic', 'Jazz']
 
-  // Check if user is admin
-  useEffect(() => {
-    const checkAdminStatus = async () => {
-      if (!user) {
-        setIsAdmin(false)
-        return
-      }
-      
-      try {
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single()
-        
-        if (error) throw error
-        
-        setIsAdmin(profile?.role === 'admin')
-      } catch (error) {
-        console.error('Error checking admin status:', error)
-        setIsAdmin(false)
-      }
-    }
-    
-    checkAdminStatus()
-  }, [user])
-
   const closeAllPanels = () => {
     setShowWatchlist(false)
     setShowProfile(false)
@@ -123,6 +97,64 @@ export default function HomePage() {
     }
   }
 
+  // Check if user is admin
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      if (!user) {
+        setIsAdmin(false)
+        return
+      }
+      
+      try {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+        
+        if (error) throw error
+        
+        setIsAdmin(profile?.role === 'admin')
+        console.log('Admin status:', profile?.role === 'admin')
+      } catch (error) {
+        console.error('Error checking admin status:', error)
+        setIsAdmin(false)
+      }
+    }
+    
+    checkAdminStatus()
+  }, [user])
+
+  // Handle details URL parameter - opens modal automatically
+  useEffect(() => {
+    const contentId = searchParams.get('details')
+    if (contentId && !showDetailsModal) {
+      const fetchAndShowDetails = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('content')
+            .select('*')
+            .eq('id', contentId)
+            .single()
+
+          if (data && !error) {
+            setSelectedContent(data)
+            setShowDetailsModal(true)
+            // Remove the parameter from URL without refreshing
+            router.replace('/', { scroll: false })
+          } else {
+            console.error('Content not found:', error)
+            toast.error('Content not found')
+          }
+        } catch (error) {
+          console.error('Error fetching content:', error)
+        }
+      }
+      fetchAndShowDetails()
+    }
+  }, [searchParams, router, showDetailsModal])
+
+  // Load user's own recommendations for profile modal
   const loadMyRecommendations = async () => {
     if (!user) return
     setLoadingRecs(true)
@@ -945,7 +977,7 @@ export default function HomePage() {
         )}
       </main>
 
-      {/* Details Modal with Rate Button */}
+      {/* Details Modal */}
       {showDetailsModal && selectedContent && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 overflow-y-auto">
           <div className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
@@ -974,7 +1006,6 @@ export default function HomePage() {
                 </span>
               </div>
 
-              {/* Rate Button in Details Modal */}
               <button
                 onClick={() => {
                   setShowDetailsModal(false)
