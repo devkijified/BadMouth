@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { Star, Film, Music, Users, Heart, TrendingUp } from 'lucide-react'
+import { ContentItem } from '@/types/content'
 import toast from 'react-hot-toast'
 
 interface QuickStatsProps {
@@ -28,33 +29,43 @@ export default function QuickStats({ userId }: QuickStatsProps) {
     setLoading(true)
     try {
       // Get content counts
-      const { count: movieCount } = await supabase
+      const { count: movieCount, error: movieError } = await supabase
         .from('content')
         .select('*', { count: 'exact', head: true })
         .eq('type', 'movie')
 
-      const { count: musicCount } = await supabase
+      if (movieError) console.error('Movie count error:', movieError)
+
+      const { count: musicCount, error: musicError } = await supabase
         .from('content')
         .select('*', { count: 'exact', head: true })
         .eq('type', 'music')
 
+      if (musicError) console.error('Music count error:', musicError)
+
       // Get user's watchlist count
-      const { count: watchlistCount } = await supabase
+      const { count: watchlistCount, error: watchlistError } = await supabase
         .from('watchlist')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId)
 
+      if (watchlistError) console.error('Watchlist count error:', watchlistError)
+
       // Get user's ratings count
-      const { count: ratingsCount } = await supabase
+      const { count: ratingsCount, error: ratingsError } = await supabase
         .from('recommendations')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId)
 
+      if (ratingsError) console.error('Ratings count error:', ratingsError)
+
       // Get average rating of user's recommendations
-      const { data: userRatings } = await supabase
+      const { data: userRatings, error: avgError } = await supabase
         .from('recommendations')
         .select('rating')
         .eq('user_id', userId)
+
+      if (avgError) console.error('Avg rating error:', avgError)
 
       let avgRating = 0
       if (userRatings && userRatings.length > 0) {
@@ -62,11 +73,13 @@ export default function QuickStats({ userId }: QuickStatsProps) {
       }
 
       // Get top rated content overall
-      const { data: topRated } = await supabase
+      const { data: topRated, error: topError } = await supabase
         .from('content')
         .select('*')
         .order('rating', { ascending: false })
         .limit(1)
+
+      if (topError) console.error('Top rated error:', topError)
 
       setStats({
         totalMovies: movieCount || 0,
