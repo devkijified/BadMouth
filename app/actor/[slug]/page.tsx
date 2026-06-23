@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
-import { ArrowLeft, Star, Film, Music, Calendar, User, Heart, MessageCircle, ThumbsUp, Loader2 } from 'lucide-react'
+import { ArrowLeft, Star, Film, Music, Heart, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { ContentItem } from '@/types/content'
 import toast from 'react-hot-toast'
@@ -25,7 +25,6 @@ export default function ActorPage({ params }: ActorPageProps) {
   const [loading, setLoading] = useState(true)
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set())
 
-  // Decode the slug
   useEffect(() => {
     const decoded = decodeURIComponent(params.slug)
     setActorName(decoded)
@@ -35,7 +34,7 @@ export default function ActorPage({ params }: ActorPageProps) {
   const loadActorData = async (name: string) => {
     setLoading(true)
     try {
-      // Search for content where actor appears or artist matches
+      // Search for movies where actor appears
       const { data: movieData, error: movieError } = await supabase
         .from('content')
         .select('*')
@@ -45,6 +44,7 @@ export default function ActorPage({ params }: ActorPageProps) {
 
       if (movieError) throw movieError
 
+      // Search for music where artist matches
       const { data: musicData, error: musicError } = await supabase
         .from('content')
         .select('*')
@@ -62,7 +62,6 @@ export default function ActorPage({ params }: ActorPageProps) {
         setActorData({
           name: name,
           image: movieData[0].image_url,
-          // Add more actor info if available
         })
       } else if (musicData && musicData.length > 0) {
         setActorData({
@@ -102,6 +101,7 @@ export default function ActorPage({ params }: ActorPageProps) {
     return item.rating || 0
   }
 
+  // 👇 This navigates to home with details parameter - modal opens automatically
   const handleViewDetails = (item: ContentItem) => {
     router.push(`/?details=${item.id}`)
   }
@@ -141,11 +141,6 @@ export default function ActorPage({ params }: ActorPageProps) {
         toast.success(`✨ "${item.title}" added to watchlist!`)
       }
     }
-  }
-
-  const handleRecommend = (item: ContentItem) => {
-    // Open recommend modal or navigate to recommend page
-    router.push(`/?recommend=${item.id}`)
   }
 
   const isInWatchlist = (id: string) => watchlistIds.has(id)
