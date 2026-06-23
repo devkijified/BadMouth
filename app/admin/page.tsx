@@ -41,6 +41,8 @@ interface ContentItem {
   stats_highly: number
   stats_recommended: number
   stats_not: number
+  rating: number
+  rating_count: number
   is_tv_show?: boolean
 }
 
@@ -107,9 +109,8 @@ export default function AdminPage() {
     runtime: '',
     duration: '',
     genre: '',
-    stats_highly: 0,
-    stats_recommended: 0,
-    stats_not: 0,
+    rating: 0,
+    rating_count: 0,
     is_tv_show: false,
     category_ids: [] as string[]
   })
@@ -207,7 +208,7 @@ export default function AdminPage() {
     const { data } = await supabase
       .from('content')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('rating', { ascending: false })
     setContent(data || [])
   }
 
@@ -248,7 +249,7 @@ export default function AdminPage() {
     try {
       const { data } = await supabase
         .from('recommendations')
-        .select('*, profiles(username), content(title)')
+        .select('*, profiles(username), content(title, rating)')
         .order('created_at', { ascending: false })
         .limit(50)
       setRecommendations(data || [])
@@ -367,7 +368,6 @@ export default function AdminPage() {
     let duration = formatDuration(item.duration)
     let genre = item.artist?.name?.split(' ')[0] || 'Music'
     
-    // Try to get genre from album or artist
     if (item.artist?.name) {
       const artistName = item.artist.name.toLowerCase()
       if (artistName.includes('rock')) genre = 'Rock'
@@ -393,9 +393,8 @@ export default function AdminPage() {
       genre: genre,
       platforms: 'Spotify, Apple Music, Deezer, YouTube Music',
       trailer_url: '',
-      stats_highly: Math.floor(Math.random() * 1000) + 500,
-      stats_recommended: Math.floor(Math.random() * 500) + 200,
-      stats_not: 0,
+      rating: 0,
+      rating_count: 0,
       is_tv_show: false,
       category_ids: []
     })
@@ -532,9 +531,8 @@ export default function AdminPage() {
         trailer_url: trailerUrl || '',
         runtime: runtime,
         genre: genre,
-        stats_highly: Math.floor(Math.random() * 1000) + 500,
-        stats_recommended: Math.floor(Math.random() * 500) + 200,
-        stats_not: 0,
+        rating: 0,
+        rating_count: 0,
         is_tv_show: isTVShow,
         category_ids: []
       })
@@ -588,7 +586,7 @@ export default function AdminPage() {
       title: '', description: '', long_description: '', image_url: '', backdrop_url: '',
       type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '',
       platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', 
-      stats_highly: 0, stats_recommended: 0, stats_not: 0, is_tv_show: false, category_ids: []
+      rating: 0, rating_count: 0, is_tv_show: false, category_ids: []
     })
     setShowDeezerSearch(false)
     setDeezerSearchQuery('')
@@ -611,9 +609,8 @@ export default function AdminPage() {
         platforms: contentForm.platforms.split(',').map(p => p.trim()),
         trailer_url: contentForm.trailer_url || null,
         genre: contentForm.genre,
-        stats_highly: contentForm.stats_highly,
-        stats_recommended: contentForm.stats_recommended,
-        stats_not: contentForm.stats_not,
+        rating: contentForm.rating || 0,
+        rating_count: contentForm.rating_count || 0,
         is_tv_show: contentForm.is_tv_show || false,
       }
       
@@ -886,9 +883,10 @@ export default function AdminPage() {
                     <div>
                       <p className="font-medium">{rec.profiles?.username || 'Anonymous'}</p>
                       <p className="text-sm text-gray-400">Recommended: {rec.content?.title || 'Unknown'}</p>
+                      <p className="text-xs text-yellow-400">⭐ {rec.content?.rating || 0}/10</p>
                     </div>
-                    <span className={`px-2 py-1 rounded-full text-xs ${rec.recommendation_tier === 'highly' ? 'bg-teal-600/20 text-teal-400' : rec.recommendation_tier === 'recommended' ? 'bg-blue-600/20 text-blue-400' : 'bg-gray-600/20 text-gray-400'}`}>
-                      {rec.recommendation_tier === 'highly' ? '🔥 HIGHLY' : rec.recommendation_tier === 'recommended' ? '👍 RECOMMENDED' : '👎 NOT'}
+                    <span className="px-2 py-1 rounded-full text-xs bg-yellow-600/20 text-yellow-400">
+                      ⭐ {rec.rating || 0}/10
                     </span>
                   </div>
                 ))
@@ -995,7 +993,7 @@ export default function AdminPage() {
                       title: '', description: '', long_description: '', image_url: '', backdrop_url: '',
                       type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '',
                       platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', 
-                      stats_highly: 0, stats_recommended: 0, stats_not: 0, is_tv_show: false, category_ids: []
+                      rating: 0, rating_count: 0, is_tv_show: false, category_ids: []
                     }); 
                   }} 
                   className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"
@@ -1017,6 +1015,10 @@ export default function AdminPage() {
                         </div>
                       </div>
                     )}
+                    <div className="absolute top-2 right-2 z-10 bg-black/70 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Star size={10} className="text-yellow-400 fill-yellow-400" />
+                      <span className="text-white text-[10px] font-bold">{item.rating?.toFixed(1) || 0}</span>
+                    </div>
                     <img src={item.image_url} alt={item.title} className="w-full h-40 object-cover" />
                     <div className="p-4">
                       <h3 className="font-bold">{item.title}</h3>
@@ -1026,9 +1028,8 @@ export default function AdminPage() {
                       <p className="text-sm text-gray-300 line-clamp-2">{item.description}</p>
                       <div className="flex justify-between mt-3">
                         <span className="text-xs flex gap-2">
-                          <span className="text-teal-400">🔥 {item.stats_highly}</span>
-                          <span className="text-blue-400">👍 {item.stats_recommended}</span>
-                          <span className="text-gray-400">👎 {item.stats_not}</span>
+                          <span className="text-yellow-400">⭐ {item.rating?.toFixed(1) || 0}</span>
+                          <span className="text-gray-400">({item.rating_count || 0} ratings)</span>
                         </span>
                         <div className="flex gap-2">
                           <button 
@@ -1045,6 +1046,8 @@ export default function AdminPage() {
                                 trailer_url: item.trailer_url || '', 
                                 runtime: item.runtime || '', 
                                 duration: item.duration || '', 
+                                rating: item.rating || 0,
+                                rating_count: item.rating_count || 0,
                                 is_tv_show: item.is_tv_show || false, 
                                 category_ids: [] 
                               }); 
@@ -1076,16 +1079,16 @@ export default function AdminPage() {
             <h2 className="text-xl font-bold mb-4">System Settings</h2>
             <div className="space-y-4">
               <div className="p-4 bg-gray-700/50 rounded-lg">
+                <h3 className="font-semibold mb-2">Rating System</h3>
+                <p className="text-sm text-gray-400">Content is rated on a 1-10 scale. Users can rate content from 1-10 stars.</p>
+              </div>
+              <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Admin Access</h3>
-                <p className="text-sm text-gray-400">Admin status is determined by the role field in the profiles table. Only users with role="admin" can access this panel.</p>
+                <p className="text-sm text-gray-400">Admin status is determined by the role field in the profiles table.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Deezer Search</h3>
-                <p className="text-sm text-gray-400">Search for tracks on Deezer using the proxy API route. Click "Import" to add to your content library.</p>
-              </div>
-              <div className="p-4 bg-gray-700/50 rounded-lg">
-                <h3 className="font-semibold mb-2">TMDB Search</h3>
-                <p className="text-sm text-gray-400">Search for movies and TV shows. Automatically fetches trailers, cast, and watch providers.</p>
+                <p className="text-sm text-gray-400">Search for tracks on Deezer using the proxy API route.</p>
               </div>
             </div>
           </div>
@@ -1427,28 +1430,31 @@ export default function AdminPage() {
                 className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
               />
               
-              <div className="grid grid-cols-3 gap-2">
-                <input 
-                  type="number" 
-                  placeholder="🔥 Highly" 
-                  value={contentForm.stats_highly} 
-                  onChange={e => setContentForm({ ...contentForm, stats_highly: parseInt(e.target.value) })} 
-                  className="p-2 bg-gray-800 border border-gray-700 rounded" 
-                />
-                <input 
-                  type="number" 
-                  placeholder="👍 Recommended" 
-                  value={contentForm.stats_recommended} 
-                  onChange={e => setContentForm({ ...contentForm, stats_recommended: parseInt(e.target.value) })} 
-                  className="p-2 bg-gray-800 border border-gray-700 rounded" 
-                />
-                <input 
-                  type="number" 
-                  placeholder="👎 Not" 
-                  value={contentForm.stats_not} 
-                  onChange={e => setContentForm({ ...contentForm, stats_not: parseInt(e.target.value) })} 
-                  className="p-2 bg-gray-800 border border-gray-700 rounded" 
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Rating (1-10)</label>
+                  <input 
+                    type="number" 
+                    placeholder="Rating (1-10)" 
+                    value={contentForm.rating || 0} 
+                    onChange={e => setContentForm({ ...contentForm, rating: parseFloat(e.target.value) || 0 })} 
+                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                    min="0"
+                    max="10"
+                    step="0.1"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Rating Count</label>
+                  <input 
+                    type="number" 
+                    placeholder="Number of ratings" 
+                    value={contentForm.rating_count || 0} 
+                    onChange={e => setContentForm({ ...contentForm, rating_count: parseInt(e.target.value) || 0 })} 
+                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                    min="0"
+                  />
+                </div>
               </div>
               
               <div>
