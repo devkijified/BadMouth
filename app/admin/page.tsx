@@ -48,6 +48,29 @@ interface ContentItem {
   updated_at?: string
 }
 
+// Genre mapping for TMDB genre IDs
+const genreMap: Record<number, string> = {
+  28: 'Action',
+  12: 'Adventure',
+  16: 'Animation',
+  35: 'Comedy',
+  80: 'Crime',
+  99: 'Documentary',
+  18: 'Drama',
+  10751: 'Family',
+  14: 'Fantasy',
+  36: 'History',
+  27: 'Horror',
+  10402: 'Music',
+  9648: 'Mystery',
+  10749: 'Romance',
+  878: 'Science Fiction',
+  10770: 'TV Movie',
+  53: 'Thriller',
+  10752: 'War',
+  37: 'Western'
+}
+
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
@@ -85,6 +108,18 @@ export default function AdminPage() {
   const [tmdbSearchQuery, setTmdbSearchQuery] = useState('')
   const [searchingTmdb, setSearchingTmdb] = useState(false)
   const [tmdbSearchType, setTmdbSearchType] = useState<'movie' | 'tv'>('movie')
+  
+  // Netflix Import states
+  const [showNetflixImport, setShowNetflixImport] = useState(false)
+  const [netflixImportData, setNetflixImportData] = useState<any[]>([])
+  const [netflixImportLoading, setNetflixImportLoading] = useState(false)
+  const [netflixImportPage, setNetflixImportPage] = useState(1)
+  const [netflixTotalPages, setNetflixTotalPages] = useState(0)
+  const [netflixImportProgress, setNetflixImportProgress] = useState(0)
+  const [netflixImportTotal, setNetflixImportTotal] = useState(0)
+  const [selectedNetflixMovies, setSelectedNetflixMovies] = useState<Set<string>>(new Set())
+  const [selectAllNetflix, setSelectAllNetflix] = useState(false)
+  const [netflixCategoryId, setNetflixCategoryId] = useState<string>('')
   
   const TMDB_API_KEY = 'e40a2dd7da8c15d302e6790211dd958f'
 
@@ -145,10 +180,11 @@ export default function AdminPage() {
       if (profile?.role === 'admin') {
         setIsAdmin(true)
         setAdminChecked(true)
-        // Check if this is the master admin
         setIsMasterAdmin(user?.email === 'kijified@gmail.com')
         await loadAllData()
         setupRealtimeSubscriptions()
+        // Get Netflix category ID
+        getNetflixCategoryId()
       } else {
         setIsAdmin(false)
         setAdminChecked(true)
@@ -162,6 +198,18 @@ export default function AdminPage() {
       router.push('/')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const getNetflixCategoryId = async () => {
+    const { data } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('name', 'Netflix & Chill')
+      .maybeSingle()
+    
+    if (data) {
+      setNetflixCategoryId(data.id)
     }
   }
 
@@ -210,13 +258,30 @@ export default function AdminPage() {
   }
 
   const loadContent = async () => {
-    // Order by updated_at DESC (most recently updated first), then created_at DESC
-    const { data } = await supabase
-      .from('content')
-      .select('*')
-      .order('updated_at', { ascending: false })
-      .order('created_at', { ascending: false })
-    setContent(data || [])
+    try {
+      const { data, error } = await supabase
+        .from('content')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        const { data: fallbackData } = await supabase
+          .from('content')
+          .select('*')
+          .order('rating', { ascending: false })
+        setContent(fallbackData || [])
+        return
+      }
+
+      setContent(data || [])
+    } catch (error) {
+      console.error('Error loading content:', error)
+      const { data: fallbackData } = await supabase
+        .from('content')
+        .select('*')
+      setContent(fallbackData || [])
+    }
   }
 
   const loadUsers = async () => {
@@ -266,58 +331,152 @@ export default function AdminPage() {
     }
   }
 
-  const deleteAllContent = async () => {
-    if (!confirm('⚠️ WARNING: This will delete ALL content. This action cannot be undone. Are you absolutely sure?')) return
+  // ============================================
+  // NETFLIX IMPORT FUNCTIONS
+  // ============================================
+  const fetchNetflixMovies = async (page: number = 1) => {
+    setNetflixImportLoading(true)
+    setNetflixImportProgress(0)
     
     try {
-      await supabase.from('recommendations').delete().neq('id', '')
-      await supabase.from('content').delete().neq('id', '')
-      toast.success('All content deleted successfully!')
-      loadContent()
-      loadRecommendations()
+      const response = await fetch(
+        `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&with_watch_providers=8&watch_region=US&page=${page}&sort_by=popularity.desc`
+      )
+      const data = await response.json()
+      
+      if (data.results) {
+        setNetflixImportData(data.results)
+        setNetflixTotalPages(data.total_pages)
+        setNetflixImportTotal(data.total_results)
+        setNetflixImportPage(page)
+        toast.success(`Loaded ${data.results.length} movies from Netflix (Page ${page}/${data.total_pages})`)
+      }
     } catch (error) {
-      console.error('Error deleting content:', error)
-      toast.error('Failed to delete all content')
+      console.error('Error fetching Netflix movies:', error)
+      toast.error('Failed to fetch Netflix movies')
+    } finally {
+      setNetflixImportLoading(false)
     }
   }
 
-  const deleteAllUsers = async () => {
-    if (!confirm('⚠️ WARNING: This will delete ALL users except you. This action cannot be undone. Are you absolutely sure?')) return
+  const importSelectedNetflixMovies = async () => {
+    const moviesToImport = netflixImportData.filter(movie => 
+      selectedNetflixMovies.has(movie.id.toString())
+    )
     
-    try {
-      await supabase.from('profiles').delete().neq('id', user?.id)
-      toast.success('All users deleted successfully!')
-      loadUsers()
-    } catch (error) {
-      console.error('Error deleting users:', error)
-      toast.error('Failed to delete users')
+    if (moviesToImport.length === 0) {
+      toast.error('No movies selected')
+      return
     }
+
+    if (!confirm(`Import ${moviesToImport.length} movies to database? This will check for duplicates.`)) {
+      return
+    }
+
+    setNetflixImportLoading(true)
+    let imported = 0
+    let skipped = 0
+    let errors = 0
+
+    for (const movie of moviesToImport) {
+      try {
+        // Check if content already exists by title and year
+        const { data: existing } = await supabase
+          .from('content')
+          .select('id')
+          .eq('title', movie.title)
+          .eq('year', new Date(movie.release_date).getFullYear())
+          .maybeSingle()
+
+        if (existing) {
+          skipped++
+          continue
+        }
+
+        // Get genre from genre_ids
+        const genreNames = movie.genre_ids?.map((id: number) => genreMap[id] || '').filter(Boolean).join(', ') || 'Movie'
+
+        // Prepare content data
+        const contentData = {
+          title: movie.title,
+          description: movie.overview || 'A Netflix original or exclusive movie.',
+          long_description: movie.overview || '',
+          image_url: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : '',
+          backdrop_url: movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : '',
+          type: 'movie',
+          year: new Date(movie.release_date).getFullYear(),
+          director: '',
+          actors: [],
+          platforms: ['Netflix'],
+          trailer_url: '',
+          runtime: '',
+          genre: genreNames,
+          rating: parseFloat(movie.vote_average?.toFixed(1) || '5.0'),
+          rating_count: movie.vote_count || 0,
+          is_tv_show: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+
+        // Insert content
+        const { data: inserted, error: insertError } = await supabase
+          .from('content')
+          .insert([contentData])
+          .select()
+
+        if (insertError) {
+          console.error('Insert error:', insertError)
+          errors++
+          continue
+        }
+
+        // Assign to Netflix & Chill category
+        if (inserted && netflixCategoryId) {
+          await supabase
+            .from('content_categories')
+            .insert({
+              content_id: inserted[0].id,
+              category_id: netflixCategoryId
+            })
+        }
+
+        imported++
+        setNetflixImportProgress(imported + skipped + errors)
+      } catch (error) {
+        console.error('Import error:', error)
+        errors++
+      }
+    }
+
+    toast.success(`✅ Imported ${imported} movies, ⏭️ ${skipped} skipped, ❌ ${errors} errors`)
+    setShowNetflixImport(false)
+    setSelectedNetflixMovies(new Set())
+    setSelectAllNetflix(false)
+    loadContent()
   }
 
-  const makeUserAdmin = async (userId: string, currentRole: string) => {
-    const newRole = currentRole === 'admin' ? 'user' : 'admin'
-    const action = newRole === 'admin' ? 'make admin' : 'remove admin'
-    
-    if (!confirm(`Are you sure you want to ${action} this user?`)) return
-    
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ role: newRole })
-        .eq('id', userId)
-
-      if (error) throw error
-
-      toast.success(`User role updated to ${newRole}`)
-      loadUsers()
-    } catch (error) {
-      console.error('Error updating user role:', error)
-      toast.error('Failed to update user role')
+  // Toggle select all
+  useEffect(() => {
+    if (selectAllNetflix) {
+      const allIds = new Set(netflixImportData.map(m => m.id.toString()))
+      setSelectedNetflixMovies(allIds)
+    } else {
+      setSelectedNetflixMovies(new Set())
     }
+  }, [selectAllNetflix, netflixImportData])
+
+  const toggleNetflixSelection = (id: string) => {
+    const newSelection = new Set(selectedNetflixMovies)
+    if (newSelection.has(id)) {
+      newSelection.delete(id)
+    } else {
+      newSelection.add(id)
+    }
+    setSelectedNetflixMovies(newSelection)
   }
 
   // ============================================
-  // DEEZER SEARCH - Using Next.js API Route (No CORS)
+  // DEEZER SEARCH
   // ============================================
   const searchDeezer = async () => {
     if (!deezerSearchQuery.trim()) {
@@ -332,8 +491,6 @@ export default function AdminPage() {
       const query = encodeURIComponent(deezerSearchQuery.trim())
       const url = `/api/deezer?q=${query}`
       
-      console.log('Searching Deezer via proxy:', url)
-      
       const response = await fetch(url)
       
       if (!response.ok) {
@@ -342,7 +499,6 @@ export default function AdminPage() {
       }
 
       const data = await response.json()
-      console.log('Deezer results:', data)
 
       if (data.data && data.data.length > 0) {
         setDeezerSearchResults(data.data)
@@ -603,7 +759,6 @@ export default function AdminPage() {
     setTmdbSearchResults([])
   }
 
-  // Load existing categories for the content being edited
   const loadContentCategories = async (contentId: string) => {
     try {
       const { data } = await supabase
@@ -623,7 +778,6 @@ export default function AdminPage() {
     }
   }
 
-  // Modified saveContent to handle category assignments
   const saveContent = async () => {
     try {
       const dataToSave: any = {
@@ -660,7 +814,6 @@ export default function AdminPage() {
       
       let contentId = editingItem?.id
       if (editingItem) {
-        // Update existing content
         const { error } = await supabase
           .from('content')
           .update(dataToSave)
@@ -670,7 +823,6 @@ export default function AdminPage() {
         contentId = editingItem.id
         toast.success('Content updated!')
       } else {
-        // Insert new content
         dataToSave.created_at = new Date().toISOString()
         const { data, error } = await supabase
           .from('content')
@@ -682,15 +834,12 @@ export default function AdminPage() {
         toast.success('Content added!')
       }
       
-      // Handle category assignments
       if (contentId) {
-        // Delete existing category assignments
         await supabase
           .from('content_categories')
           .delete()
           .eq('content_id', contentId)
         
-        // Insert new category assignments
         if (contentForm.category_ids.length > 0) {
           const links = contentForm.category_ids.map(catId => ({
             content_id: contentId,
@@ -720,6 +869,56 @@ export default function AdminPage() {
         console.error('Delete content error:', error)
         toast.error('Failed to delete content')
       }
+    }
+  }
+
+  const deleteAllContent = async () => {
+    if (!confirm('⚠️ WARNING: This will delete ALL content. This action cannot be undone. Are you absolutely sure?')) return
+    
+    try {
+      await supabase.from('recommendations').delete().neq('id', '')
+      await supabase.from('content').delete().neq('id', '')
+      toast.success('All content deleted successfully!')
+      loadContent()
+      loadRecommendations()
+    } catch (error) {
+      console.error('Error deleting content:', error)
+      toast.error('Failed to delete all content')
+    }
+  }
+
+  const deleteAllUsers = async () => {
+    if (!confirm('⚠️ WARNING: This will delete ALL users except you. This action cannot be undone. Are you absolutely sure?')) return
+    
+    try {
+      await supabase.from('profiles').delete().neq('id', user?.id)
+      toast.success('All users deleted successfully!')
+      loadUsers()
+    } catch (error) {
+      console.error('Error deleting users:', error)
+      toast.error('Failed to delete users')
+    }
+  }
+
+  const makeUserAdmin = async (userId: string, currentRole: string) => {
+    const newRole = currentRole === 'admin' ? 'user' : 'admin'
+    const action = newRole === 'admin' ? 'make admin' : 'remove admin'
+    
+    if (!confirm(`Are you sure you want to ${action} this user?`)) return
+    
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: newRole })
+        .eq('id', userId)
+
+      if (error) throw error
+
+      toast.success(`User role updated to ${newRole}`)
+      loadUsers()
+    } catch (error) {
+      console.error('Error updating user role:', error)
+      toast.error('Failed to update user role')
     }
   }
 
@@ -906,7 +1105,6 @@ export default function AdminPage() {
                         <td className="px-4 py-3"><span className="text-blue-400">👍 {userItem.recommendations_count || 0}</span></td>
                         <td className="px-4 py-3 text-sm">{userItem.created_at ? new Date(userItem.created_at).toLocaleDateString() : 'N/A'}</td>
                         <td className="px-4 py-3">
-                          {/* Only show Make Admin button for master admin */}
                           {isMasterAdmin && (
                             <button 
                               onClick={() => makeUserAdmin(userItem.id, userItem.role || 'user')}
@@ -1059,6 +1257,16 @@ export default function AdminPage() {
                 >
                   <Plus size={16} /> Add Content
                 </button>
+                {/* Netflix Import Button */}
+                <button 
+                  onClick={() => {
+                    setShowNetflixImport(true)
+                    fetchNetflixMovies(1)
+                  }} 
+                  className="px-4 py-2 bg-red-600 rounded-lg flex items-center gap-2 hover:bg-red-700 transition"
+                >
+                  <Tv size={16} /> Import Netflix
+                </button>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1110,7 +1318,6 @@ export default function AdminPage() {
                                 is_tv_show: item.is_tv_show || false, 
                                 category_ids: [] 
                               }); 
-                              // Load existing categories for this content
                               loadContentCategories(item.id);
                               setShowContentModal(true); 
                             }} 
@@ -1144,8 +1351,8 @@ export default function AdminPage() {
                 <p className="text-sm text-gray-400">Content is ordered by most recently updated/created. This applies to all admin views.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
-                <h3 className="font-semibold mb-2">Category Assignment</h3>
-                <p className="text-sm text-gray-400">When editing content, existing category assignments are automatically loaded.</p>
+                <h3 className="font-semibold mb-2">Netflix Import</h3>
+                <p className="text-sm text-gray-400">Import movies from Netflix using TMDB API. Movies are auto-assigned to "Netflix & Chill" category.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Super Admin Access</h3>
@@ -1382,7 +1589,6 @@ export default function AdminPage() {
                 </>
               ) : (
                 <>
-                  {/* DEEZER SEARCH SECTION */}
                   <div className="mb-2">
                     <button 
                       type="button" 
@@ -1551,6 +1757,149 @@ export default function AdminPage() {
               <button onClick={saveContent} className="flex-1 py-2 bg-teal-600 rounded hover:bg-teal-700 transition">Save</button>
               <button onClick={closeContentModal} className="flex-1 py-2 bg-gray-700 rounded hover:bg-gray-600 transition">Cancel</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Netflix Import Modal */}
+      {showNetflixImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 overflow-y-auto">
+          <div className="bg-gray-900 rounded-xl max-w-6xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4 sticky top-0 bg-gray-900 z-10 pb-4 border-b border-gray-700">
+              <div>
+                <div className="flex items-center gap-3">
+                  <Tv size={24} className="text-red-600" />
+                  <h2 className="text-xl font-bold">Import Netflix Movies</h2>
+                </div>
+                <p className="text-sm text-gray-400 mt-1">
+                  {netflixImportTotal > 0 ? `${netflixImportTotal} movies available on Netflix` : 'Loading...'}
+                </p>
+              </div>
+              <button 
+                onClick={() => setShowNetflixImport(false)} 
+                className="p-1 hover:bg-gray-800 rounded"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Controls */}
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectAllNetflix}
+                    onChange={(e) => setSelectAllNetflix(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-700 bg-gray-800 text-teal-500"
+                  />
+                  <span className="text-sm text-gray-300">Select All</span>
+                </label>
+                <span className="text-sm text-gray-500">
+                  {selectedNetflixMovies.size} selected
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => fetchNetflixMovies(Math.max(1, netflixImportPage - 1))}
+                  disabled={netflixImportPage <= 1 || netflixImportLoading}
+                  className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50 text-sm"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-gray-400 self-center">
+                  Page {netflixImportPage} of {netflixTotalPages}
+                </span>
+                <button
+                  onClick={() => fetchNetflixMovies(Math.min(netflixTotalPages, netflixImportPage + 1))}
+                  disabled={netflixImportPage >= netflixTotalPages || netflixImportLoading}
+                  className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50 text-sm"
+                >
+                  Next
+                </button>
+              </div>
+              <button
+                onClick={importSelectedNetflixMovies}
+                disabled={selectedNetflixMovies.size === 0 || netflixImportLoading}
+                className="px-4 py-2 bg-red-600 rounded-lg hover:bg-red-700 transition disabled:opacity-50 flex items-center gap-2"
+              >
+                {netflixImportLoading && netflixImportProgress > 0 ? <Loader2 className="w-4 h-4 animate-spin" /> : <Tv size={16} />}
+                {netflixImportLoading && netflixImportProgress > 0 
+                  ? `Importing... (${netflixImportProgress})` 
+                  : `Import Selected (${selectedNetflixMovies.size})`
+                }
+              </button>
+            </div>
+
+            {/* Progress */}
+            {netflixImportLoading && netflixImportProgress > 0 && (
+              <div className="mb-4">
+                <div className="flex justify-between text-sm text-gray-400 mb-1">
+                  <span>Importing...</span>
+                  <span>{netflixImportProgress} processed</span>
+                </div>
+                <div className="w-full bg-gray-700 rounded-full h-2">
+                  <div 
+                    className="bg-teal-500 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(100, (netflixImportProgress / Math.max(1, selectedNetflixMovies.size)) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Movie Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {netflixImportData.map((movie) => {
+                const isSelected = selectedNetflixMovies.has(movie.id.toString())
+                const genreNames = movie.genre_ids?.map((id: number) => genreMap[id] || '').filter(Boolean).slice(0, 2).join(', ') || 'Movie'
+                
+                return (
+                  <div 
+                    key={movie.id} 
+                    className={`bg-gray-800 rounded-lg overflow-hidden border-2 transition cursor-pointer hover:scale-105 ${
+                      isSelected 
+                        ? 'border-teal-500' 
+                        : 'border-transparent hover:border-gray-600'
+                    }`}
+                    onClick={() => toggleNetflixSelection(movie.id.toString())}
+                  >
+                    <img 
+                      src={movie.poster_path ? `https://image.tmdb.org/t/p/w200${movie.poster_path}` : '/placeholder-poster.jpg'}
+                      alt={movie.title}
+                      className="w-full h-56 object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=200&name=' + encodeURIComponent(movie.title)
+                      }}
+                    />
+                    <div className="p-3">
+                      <h3 className="font-semibold text-sm truncate">{movie.title}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-yellow-400">⭐ {movie.vote_average?.toFixed(1) || 'N/A'}</span>
+                        <span className="text-xs text-gray-500">{new Date(movie.release_date).getFullYear()}</span>
+                        <span className="text-xs text-gray-600">{genreNames}</span>
+                      </div>
+                      <p className="text-xs text-gray-400 line-clamp-2 mt-1">{movie.overview}</p>
+                      <div className="mt-2">
+                        {isSelected ? (
+                          <span className="text-teal-400 text-xs flex items-center gap-1">
+                            ✓ Selected for import
+                          </span>
+                        ) : (
+                          <span className="text-gray-500 text-xs">Click to select</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {netflixImportData.length === 0 && !netflixImportLoading && (
+              <div className="text-center py-12 text-gray-500">
+                <Tv size={48} className="mx-auto mb-4 opacity-50" />
+                <p>No movies found. Try refreshing.</p>
+              </div>
+            )}
           </div>
         </div>
       )}
