@@ -56,7 +56,7 @@ export default function HomeFeed({
       setRecentlyAdded(recentData || [])
     } catch (error) {
       console.error('Error loading feed:', error)
-      toast.error('Failed to load feed')
+      // Silent fail - don't show toast
     } finally {
       setLoading(false)
     }
