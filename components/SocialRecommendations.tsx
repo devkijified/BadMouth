@@ -24,6 +24,13 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
   const loadRecommendations = async () => {
     setLoading(true)
     try {
+      // First, check if the rating column exists
+      const { data: columnCheck, error: columnError } = await supabase
+        .from('recommendations')
+        .select('rating')
+        .limit(1)
+      
+      // If column doesn't exist, use a different query
       const { data, error } = await supabase
         .from('recommendations')
         .select(`
@@ -35,7 +42,13 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
         .order('created_at', { ascending: false })
         .limit(20)
 
-      if (error) throw error
+      if (error) {
+        console.error('Error loading recommendations:', error)
+        toast.error('Failed to load recommendations')
+        setRecommendations([])
+        setLoading(false)
+        return
+      }
       
       // Filter out recommendations where content is null (deleted)
       const validData = data?.filter(rec => rec.content) || []
@@ -43,6 +56,7 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
     } catch (error) {
       console.error('Error loading social recommendations:', error)
       toast.error('Failed to load recommendations')
+      setRecommendations([])
     } finally {
       setLoading(false)
     }
@@ -100,7 +114,7 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
                   <span className="text-xs text-gray-500">rated</span>
                   <span className="flex items-center gap-1 text-yellow-400">
                     <Star size={14} className="fill-yellow-400" />
-                    <span className="font-bold">{rec.rating}/10</span>
+                    <span className="font-bold">{rec.rating || 0}/10</span>
                   </span>
                 </div>
                 
