@@ -71,45 +71,45 @@ const genreMap: Record<number, string> = {
   37: 'Western'
 }
 
-// BADMOUTH-style critic descriptions
-const generateBadmouthDescription = (title: string, year: number, genre: string, director: string): string => {
+// BADMOUTH-style critic descriptions - real and punchy
+const generateBadmouthDescription = (title: string, year: number, genre: string, director: string, cast: string[], plot: string): string => {
   const intros = [
-    `"${title}" is a cinematic masterpiece that redefines ${genre} storytelling.`,
-    `A gripping ${genre} experience, "${title}" delivers everything you didn't know you needed.`,
-    `"${title}" is the kind of ${genre} film that reminds us why we love cinema.`,
-    `With "${title}", ${director || 'the director'} proves that ${genre} is alive and well.`,
-    `"${title}" is a tour de force of ${genre} filmmaking that will leave you breathless.`,
-    `This is what ${genre} looks like at its finest — "${title}" is unmissable.`,
-    `"${title}" is a genre-defining ${genre} film that demands to be seen.`,
-    `Prepare to be captivated by "${title}", a ${genre} film that fires on all cylinders.`,
-    `"${title}" is a masterclass in ${genre} cinema, blending tension with artistry.`,
-    `A bold and unforgettable ${genre} film, "${title}" is a triumph of storytelling.`,
+    `"${title}" is the kind of ${genre} film that makes you question everything you thought you knew about cinema.`,
+    `Let's be real — "${title}" doesn't just push boundaries, it obliterates them.`,
+    `If you're looking for a ${genre} movie that actually has something to say, "${title}" is it.`,
+    `"${title}" arrives with the kind of swagger that makes other ${genre} films look like student projects.`,
+    `Here's the thing about "${title}" — it's not just a ${genre} movie, it's a statement.`,
+    `Some films entertain, others challenge — "${title}" does both while making it look effortless.`,
+    `"${title}" is the kind of ${genre} film that reminds you why you fell in love with movies in the first place.`,
+    `You haven't seen a ${genre} film like "${title}" — trust me, you haven't.`,
+    `"${title}" walks the line between brilliant and unhinged, and it's absolutely glorious.`,
+    `This is ${genre} filmmaking at its most confident — "${title}" knows exactly what it is and owns it.`,
   ]
   
   const middles = [
-    `The performances are electrifying, the direction is sharp, and the story lingers long after the credits roll.`,
-    `Every frame is meticulously crafted, and the narrative pulls you in from the very first scene.`,
-    `It's a rare film that balances heart, suspense, and spectacle so effortlessly.`,
-    `The chemistry between the leads is palpable, and the supporting cast elevates every scene.`,
-    `With a screenplay that crackles with wit and emotion, this is a film that stays with you.`,
-    `The visual language is stunning, and the soundtrack perfectly complements the on-screen drama.`,
-    `What makes "${title}" special is its ability to surprise you at every turn.`,
-    `It's a film that understands its audience and delivers exactly what they came for — and more.`,
-    `The pacing is impeccable, the stakes are real, and the payoff is immensely satisfying.`,
-    `This is the kind of film that reminds you why you fell in love with movies in the first place.`,
+    `The script crackles with wit and danger, every line landing like a punch to the gut.`,
+    `What makes it work is the way it refuses to play by the rules — it's unpredictable, messy, and utterly compelling.`,
+    `The performances are electric, with ${cast.slice(0, 2).join(' and ')} delivering career-best work.`,
+    `It's the kind of film that gets under your skin and stays there, long after the credits roll.`,
+    `The direction is sharp, the pacing relentless, and the payoff? Absolutely worth the ride.`,
+    `There's a scene in this film that will have you talking for days — you'll know it when you see it.`,
+    `It balances tension and release with the precision of a master craftsman.`,
+    `The visual language is stunning — every frame feels meticulously composed.`,
+    `What sets it apart is its refusal to explain itself — it trusts the audience to keep up.`,
+    `It's messy, it's bold, and it's exactly what ${genre} cinema needed right now.`,
   ]
   
   const closings = [
-    `BADMOUTH says: highly recommended — don't miss it.`,
-    `A must-watch for fans of ${genre} and great cinema in general.`,
-    `Absolutely worth your time — BADMOUTH gives it a seal of approval.`,
-    `One of the year's best — BADMOUTH recommends you watch it immediately.`,
-    `A cinematic gem that BADMOUTH is proud to recommend.`,
-    `This one's a winner — BADMOUTH says add it to your watchlist.`,
-    `A powerful, unforgettable experience — BADMOUTH highly recommends.`,
-    `If you watch one ${genre} film this year, make it "${title}".`,
-    `BADMOUTH gives "${title}" its highest recommendation — don't sleep on it.`,
-    `A film that earns every bit of praise — BADMOUTH says watch it now.`,
+    `BADMOUTH says: don't walk, run to watch this one.`,
+    `It's not just recommended — it's required viewing. BADMOUTH approves.`,
+    `If this isn't on your watchlist already, you're doing it wrong. BADMOUTH says watch it now.`,
+    `A genuine standout — BADMOUTH gives it the highest praise.`,
+    `This is why we love movies. BADMOUTH says: go watch it immediately.`,
+    `Absolutely essential viewing. BADMOUTH can't recommend it enough.`,
+    `One of the year's best — and BADMOUTH doesn't say that lightly.`,
+    `If you only watch one ${genre} film this year, make it "${title}". BADMOUTH guarantees it.`,
+    `This one's special. BADMOUTH says: drop everything and watch it.`,
+    `A film that earns every bit of praise. BADMOUTH gives it a standing ovation.`,
   ]
   
   const randomIntro = intros[Math.floor(Math.random() * intros.length)]
@@ -393,20 +393,32 @@ export default function AdminPage() {
       const data = await response.json()
       
       if (data.results) {
-        // Fetch full details for each movie to get director and cast
+        // Fetch full details for each movie to get director, cast, and trailer
         const enrichedResults = await Promise.all(
           data.results.slice(0, 20).map(async (movie: any) => {
             try {
               const detailResponse = await fetch(
-                `https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}&append_to_response=credits`
+                `https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}&append_to_response=credits,videos`
               )
               const details = await detailResponse.json()
+              
+              // Get trailer URL
+              let trailerUrl = ''
+              const trailer = details.videos?.results?.find(
+                (video: any) => video.type === 'Trailer' && video.site === 'YouTube'
+              )
+              if (trailer) {
+                trailerUrl = `https://www.youtube.com/embed/${trailer.key}`
+              }
+              
               return {
                 ...movie,
                 director: details.credits?.crew?.find((person: any) => person.job === 'Director')?.name || '',
                 cast: details.credits?.cast?.slice(0, 8).map((actor: any) => actor.name) || [],
                 runtime: details.runtime || '',
-                genres: details.genres || []
+                genres: details.genres || [],
+                trailer_url: trailerUrl,
+                overview: details.overview || movie.overview || ''
               }
             } catch (err) {
               console.error('Error fetching details for movie:', movie.id, err)
@@ -431,19 +443,9 @@ export default function AdminPage() {
 
   const importSelectedNetflixMovies = async () => {
     // Get all selected movies across all pages
-    let moviesToImport = []
-    
-    if (selectAllNetflix && netflixImportData.length > 0) {
-      // If select all is checked, we need to fetch all pages
-      // For now, import all movies on current page
-      moviesToImport = netflixImportData.filter(movie => 
-        selectedNetflixMovies.has(movie.id.toString())
-      )
-    } else {
-      moviesToImport = netflixImportData.filter(movie => 
-        selectedNetflixMovies.has(movie.id.toString())
-      )
-    }
+    const moviesToImport = netflixImportData.filter(movie => 
+      selectedNetflixMovies.has(movie.id.toString())
+    )
     
     if (moviesToImport.length === 0) {
       toast.error('No movies selected')
@@ -474,25 +476,32 @@ export default function AdminPage() {
           continue
         }
 
-        // Get genre from genre_ids or genres array
+        // Get genre from genres or genre_ids
         let genreNames = ''
         if (movie.genres && movie.genres.length > 0) {
           genreNames = movie.genres.map((g: any) => g.name).join(', ')
         } else if (movie.genre_ids) {
           genreNames = movie.genre_ids.map((id: number) => genreMap[id] || '').filter(Boolean).join(', ')
         }
-        
         if (!genreNames) {
           genreNames = 'Movie'
         }
 
-        // Generate BADMOUTH-style description
+        // Generate BADMOUTH-style critic description
         const year = new Date(movie.release_date).getFullYear()
-        const description = generateBadmouthDescription(movie.title, year, genreNames, movie.director || '')
+        const cast = movie.cast || []
+        const description = generateBadmouthDescription(
+          movie.title, 
+          year, 
+          genreNames, 
+          movie.director || '', 
+          cast,
+          movie.overview || ''
+        )
         const longDescription = description
 
         // Get actors as array
-        const actors = movie.cast || []
+        const actors = cast
         const director = movie.director || ''
         
         // Format runtime
@@ -503,7 +512,10 @@ export default function AdminPage() {
           runtime = hours > 0 ? `${hours}h ${minutes}min` : `${minutes}min`
         }
 
-        // Prepare content data
+        // Get trailer URL
+        const trailerUrl = movie.trailer_url || ''
+
+        // Prepare content data - NO rating_count
         const contentData = {
           title: movie.title,
           description: description,
@@ -515,11 +527,11 @@ export default function AdminPage() {
           director: director,
           actors: actors,
           platforms: ['Netflix'],
-          trailer_url: '',
+          trailer_url: trailerUrl,
           runtime: runtime,
           genre: genreNames,
           rating: parseFloat(movie.vote_average?.toFixed(1) || '5.0'),
-          rating_count: movie.vote_count || 0,
+          rating_count: 0, // Always 0 - we don't show this
           is_tv_show: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -563,20 +575,17 @@ export default function AdminPage() {
     loadContent()
   }
 
-  // Toggle select all
+  // Toggle select all on current page
   useEffect(() => {
     if (selectAllNetflix) {
       const allIds = new Set(netflixImportData.map(m => m.id.toString()))
       setSelectedNetflixMovies(allIds)
-      // Store all selected IDs for persistence across pages
-      const allSelected = new Set(allIds)
-      setAllSelectedMovies(allSelected)
     } else {
       setSelectedNetflixMovies(new Set())
-      setAllSelectedMovies(new Set())
     }
   }, [selectAllNetflix, netflixImportData])
 
+  // Toggle individual selection
   const toggleNetflixSelection = (id: string) => {
     const newSelection = new Set(selectedNetflixMovies)
     if (newSelection.has(id)) {
@@ -585,14 +594,6 @@ export default function AdminPage() {
       newSelection.add(id)
     }
     setSelectedNetflixMovies(newSelection)
-    // Update all selected movies set
-    const allSelected = new Set(allSelectedMovies)
-    if (newSelection.has(id)) {
-      allSelected.add(id)
-    } else {
-      allSelected.delete(id)
-    }
-    setAllSelectedMovies(allSelected)
   }
 
   // ============================================
@@ -912,7 +913,7 @@ export default function AdminPage() {
         trailer_url: contentForm.trailer_url || null,
         genre: contentForm.genre,
         rating: contentForm.rating || 5.0,
-        rating_count: contentForm.rating_count || 0,
+        rating_count: 0, // Always 0 - we don't show this
         is_tv_show: contentForm.is_tv_show || false,
         updated_at: new Date().toISOString()
       }
@@ -1416,7 +1417,6 @@ export default function AdminPage() {
                       <div className="flex justify-between mt-3">
                         <span className="text-xs flex gap-2">
                           <span className="text-yellow-400">⭐ {item.rating?.toFixed(1) || 5.0}</span>
-                          <span className="text-gray-400">({item.rating_count || 0} ratings)</span>
                         </span>
                         <div className="flex gap-2">
                           <button 
@@ -1434,7 +1434,7 @@ export default function AdminPage() {
                                 runtime: item.runtime || '', 
                                 duration: item.duration || '', 
                                 rating: item.rating || 5.0,
-                                rating_count: item.rating_count || 0,
+                                rating_count: 0,
                                 is_tv_show: item.is_tv_show || false, 
                                 category_ids: [] 
                               }); 
@@ -1472,11 +1472,11 @@ export default function AdminPage() {
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Netflix Import</h3>
-                <p className="text-sm text-gray-400">Imports movies from Netflix with director, cast, and BADMOUTH-style descriptions.</p>
+                <p className="text-sm text-gray-400">Imports movies from Netflix with director, cast, trailers, and BADMOUTH-style descriptions.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">BADMOUTH Descriptions</h3>
-                <p className="text-sm text-gray-400">All imported content uses unique, critic-style descriptions generated by BADMOUTH.</p>
+                <p className="text-sm text-gray-400">All imported content uses unique, punchy critic-style descriptions generated by BADMOUTH.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Master Admin</h3>
@@ -1835,17 +1835,6 @@ export default function AdminPage() {
                     step="0.1"
                   />
                 </div>
-                <div>
-                  <label className="text-xs text-gray-400 block mb-1">Rating Count</label>
-                  <input 
-                    type="number" 
-                    placeholder="Number of ratings" 
-                    value={contentForm.rating_count || 0} 
-                    onChange={e => setContentForm({ ...contentForm, rating_count: parseInt(e.target.value) || 0 })} 
-                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
-                    min="0"
-                  />
-                </div>
               </div>
               
               <div>
@@ -1922,9 +1911,6 @@ export default function AdminPage() {
                 </label>
                 <span className="text-sm text-gray-500">
                   {selectedNetflixMovies.size} selected on this page
-                </span>
-                <span className="text-sm text-gray-500">
-                  {allSelectedMovies.size} total selected across pages
                 </span>
               </div>
               <div className="flex gap-2">
@@ -2012,6 +1998,9 @@ export default function AdminPage() {
                       )}
                       {movie.cast && movie.cast.length > 0 && (
                         <p className="text-xs text-gray-500 truncate">Cast: {movie.cast.slice(0, 3).join(', ')}</p>
+                      )}
+                      {movie.trailer_url && (
+                        <p className="text-xs text-teal-400">🎬 Trailer available</p>
                       )}
                       <p className="text-xs text-gray-400 line-clamp-2 mt-1">{movie.overview}</p>
                       <div className="mt-2">
