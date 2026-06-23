@@ -65,6 +65,34 @@ export default function HomePage() {
 
   const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller', 'Hip Hop', 'R&B', 'Electronic', 'Jazz']
 
+  // Check if user is admin
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      if (!user) {
+        setIsAdmin(false)
+        return
+      }
+      
+      try {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+        
+        if (error) throw error
+        
+        setIsAdmin(profile?.role === 'admin')
+        console.log('Admin status:', profile?.role === 'admin')
+      } catch (error) {
+        console.error('Error checking admin status:', error)
+        setIsAdmin(false)
+      }
+    }
+    
+    checkAdminStatus()
+  }, [user])
+
   const closeAllPanels = () => {
     setShowWatchlist(false)
     setShowProfile(false)
@@ -102,63 +130,19 @@ export default function HomePage() {
     }
   }
 
-  // Check if user is admin
-  useEffect(() => {
-    const checkAdminStatus = async () => {
-      if (!user) {
-        setIsAdmin(false)
-        return
-      }
-      
-      try {
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single()
-        
-        if (error) throw error
-        
-        setIsAdmin(profile?.role === 'admin')
-        console.log('Admin status:', profile?.role === 'admin')
-      } catch (error) {
-        console.error('Error checking admin status:', error)
-        setIsAdmin(false)
-      }
-    }
-    
-    checkAdminStatus()
-  }, [user])
-
-  // Load user's own recommendations for profile modal
   const loadMyRecommendations = async () => {
     if (!user) return
     setLoadingRecs(true)
     try {
       const { data: recsData, error } = await supabase
         .from('recommendations')
-        .select('*')
+        .select('*, content(id, title, image_url, artist, type, year, rating)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(10)
       
       if (error) throw error
-      
-      if (recsData && recsData.length > 0) {
-        const contentIds = recsData.map(rec => rec.content_id)
-        const { data: contentData } = await supabase
-          .from('content')
-          .select('id, title, image_url, artist, type, year')
-          .in('id', contentIds)
-        
-        const merged = recsData.map(rec => ({
-          ...rec,
-          content: contentData?.find(c => c.id === rec.content_id)
-        }))
-        setMyRecommendations(merged)
-      } else {
-        setMyRecommendations([])
-      }
+      setMyRecommendations(recsData || [])
     } catch (error) {
       console.error('Error loading recommendations:', error)
     } finally {
@@ -166,7 +150,6 @@ export default function HomePage() {
     }
   }
 
-  // Delete a recommendation
   const deleteRecommendation = async (recId: string, contentTitle: string) => {
     if (!confirm(`Remove your recommendation for "${contentTitle}"?`)) return
     
@@ -189,7 +172,6 @@ export default function HomePage() {
     if (currentPage === 'music') loadMusicData()
   }
 
-  // Load watchlist from Supabase
   const loadWatchlistFromSupabase = async () => {
     if (!user) return
     
@@ -224,7 +206,6 @@ export default function HomePage() {
     }
   }
 
-  // Add to watchlist
   const addToWatchlist = async (item: ContentItem) => {
     if (!user) {
       toast.error('Please sign in to add to watchlist')
@@ -316,7 +297,7 @@ export default function HomePage() {
         .from('content')
         .select('*')
         .eq('type', 'movie')
-        .order('stats_highly', { ascending: false })
+        .order('rating', { ascending: false })
       
       const contentWithImages = (contentData || []).map(item => ({
         ...item,
@@ -334,7 +315,7 @@ export default function HomePage() {
         const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
         byCategory[category.name] = contentWithImages
           .filter(c => contentIds.includes(c.id))
-          .sort((a, b) => (b.stats_highly || 0) - (a.stats_highly || 0))
+          .sort((a, b) => (b.rating || 0) - (a.rating || 0))
       }
       setContentByCategory(byCategory)
     } catch (error) {
@@ -362,7 +343,7 @@ export default function HomePage() {
         .from('content')
         .select('*')
         .eq('type', 'music')
-        .order('stats_highly', { ascending: false })
+        .order('rating', { ascending: false })
       
       if (selectedGenre !== 'all') {
         contentQuery = contentQuery.eq('genre', selectedGenre)
@@ -386,7 +367,7 @@ export default function HomePage() {
         const contentIds = relations?.filter(r => r.category_id === category.id).map(r => r.content_id) || []
         byCategory[category.name] = contentWithImages
           .filter(c => contentIds.includes(c.id))
-          .sort((a, b) => (b.stats_highly || 0) - (a.stats_highly || 0))
+          .sort((a, b) => (b.rating || 0) - (a.rating || 0))
       }
       setContentByCategory(byCategory)
     } catch (error) {
@@ -405,14 +386,14 @@ export default function HomePage() {
         .from('content')
         .select('*')
         .eq('type', 'movie')
-        .order('stats_highly', { ascending: false })
+        .order('rating', { ascending: false })
         .limit(10)
       
       const { data: musicData } = await supabase
         .from('content')
         .select('*')
         .eq('type', 'music')
-        .order('stats_highly', { ascending: false })
+        .order('rating', { ascending: false })
         .limit(10)
       
       const moviesWithImages = (moviesData || []).map(item => ({
@@ -575,14 +556,7 @@ export default function HomePage() {
   }
 
   const getRating = (item: ContentItem) => {
-    if (item.rating_scale && item.rating_scale > 0) return item.rating_scale
-    const highly = item.stats_highly || 0
-    const recommended = item.stats_recommended || 0
-    const not = item.stats_not || 0
-    const total = highly + recommended + not
-    if (total === 0) return 0
-    const rating = (highly * 10 + recommended * 7) / total
-    return Number(rating.toFixed(1))
+    return item.rating || 0
   }
 
   return (
@@ -668,7 +642,6 @@ export default function HomePage() {
             <button onClick={toggleProfile} className="p-1 hover:bg-gray-800 rounded"><X size={16} /></button>
           </div>
           
-          {/* User Info */}
           <div className="p-4 text-center border-b border-gray-700">
             <img 
               src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} 
@@ -679,7 +652,6 @@ export default function HomePage() {
             <p className="text-xs text-gray-400">{user.email}</p>
           </div>
           
-          {/* Stats */}
           <div className="grid grid-cols-2 gap-3 p-4 border-b border-gray-700">
             <div className="bg-gray-800 rounded-lg p-2 text-center">
               <Heart size={16} className="text-red-500 mx-auto mb-1" />
@@ -687,59 +659,48 @@ export default function HomePage() {
               <p className="text-xs text-gray-400">Watchlist</p>
             </div>
             <div className="bg-gray-800 rounded-lg p-2 text-center">
-              <ThumbsUp size={16} className="text-teal-500 mx-auto mb-1" />
+              <Star size={16} className="text-yellow-400 mx-auto mb-1" />
               <p className="text-xl font-bold">{myRecommendations.length}</p>
-              <p className="text-xs text-gray-400">Recommendations</p>
+              <p className="text-xs text-gray-400">Ratings</p>
             </div>
           </div>
           
-          {/* My Recommendations List */}
           <div className="max-h-60 overflow-y-auto">
             <div className="p-3 border-b border-gray-700">
-              <p className="text-sm font-semibold mb-2">My Recommendations</p>
+              <p className="text-sm font-semibold mb-2">My Ratings</p>
               {loadingRecs ? (
                 <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-teal-500" /></div>
               ) : myRecommendations.length === 0 ? (
-                <p className="text-xs text-gray-500 text-center py-4">No recommendations yet</p>
+                <p className="text-xs text-gray-500 text-center py-4">No ratings yet</p>
               ) : (
                 <div className="space-y-2">
-                  {myRecommendations.map((rec) => {
-                    const tier = tierConfig[rec.recommendation_tier as keyof typeof tierConfig]
-                    return (
-                      <div key={rec.id} className="bg-gray-800 rounded-lg p-2 text-sm">
-                        <div className="flex justify-between items-start">
-                          <div 
-                            className="flex-1 cursor-pointer" 
-                            onClick={() => handleViewDetails({ 
-                              id: rec.content_id, 
-                              title: rec.content?.title || 'Unknown', 
-                              type: rec.content_type,
-                              image_url: rec.content?.image_url,
-                              artist: rec.content?.artist
-                            } as ContentItem)}
-                          >
-                            <p className="font-medium text-xs truncate">{rec.content?.title || 'Unknown'}</p>
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <span className="text-xs">{tier?.emoji || '👍'}</span>
-                              <span className="text-xs text-gray-400">{rec.content?.artist || (rec.content_type === 'movie' ? 'Movie' : 'Music')}</span>
-                            </div>
+                  {myRecommendations.map((rec) => (
+                    <div key={rec.id} className="bg-gray-800 rounded-lg p-2 text-sm">
+                      <div className="flex justify-between items-start">
+                        <div 
+                          className="flex-1 cursor-pointer" 
+                          onClick={() => handleViewDetails(rec.content)}
+                        >
+                          <p className="font-medium text-xs truncate">{rec.content?.title || 'Unknown'}</p>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="text-xs text-yellow-400">⭐ {rec.rating}/10</span>
+                            <span className="text-xs text-gray-400">{rec.content?.artist || (rec.content_type === 'movie' ? 'Movie' : 'Music')}</span>
                           </div>
-                          <button 
-                            onClick={() => deleteRecommendation(rec.id, rec.content?.title || 'this content')}
-                            className="text-gray-500 hover:text-red-500 transition ml-2"
-                          >
-                            <Trash2 size={14} />
-                          </button>
                         </div>
+                        <button 
+                          onClick={() => deleteRecommendation(rec.id, rec.content?.title || 'this content')}
+                          className="text-gray-500 hover:text-red-500 transition ml-2"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
-                    )
-                  })}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           </div>
           
-          {/* Sign Out Button */}
           <div className="p-4">
             <button onClick={signOut} className="w-full py-2 bg-red-600 rounded-lg text-sm hover:bg-red-700 transition">
               Sign Out
@@ -814,7 +775,6 @@ export default function HomePage() {
                 )}
               </button>
 
-              {/* ✅ DYNAMIC ADMIN CHECK - NO HARDCODING */}
               {isAdmin && (
                 <Link href="/admin" className="text-gray-300 hover:text-teal-500 transition">
                   <Shield size={20} />
@@ -864,14 +824,11 @@ export default function HomePage() {
               <button onClick={() => { toggleWatchlist(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">❤️ Watchlist ({watchlistCount})</button>
               <button onClick={() => { toggleProfile(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">👤 Profile</button>
               <button onClick={() => { toggleNotifications(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🔔 Notifications</button>
-              
-              {/* ✅ DYNAMIC ADMIN LINK IN SIDEBAR */}
               {isAdmin && (
                 <Link href="/admin" onClick={() => setIsSidebarOpen(false)} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg flex items-center gap-2">
                   <Shield size={16} /> Admin
                 </Link>
               )}
-              
               <button onClick={signOut} className="w-full text-left p-3 text-red-500 hover:bg-gray-800 rounded-lg flex items-center gap-2">
                 <LogOut size={16} /> Sign Out
               </button>
@@ -1015,28 +972,28 @@ export default function HomePage() {
               
               <div className="flex items-center gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg">
                 <Star size={20} className="text-yellow-400 fill-yellow-400" />
-                <span className="text-2xl font-bold">{getRating(selectedContent)}</span>
+                <span className="text-2xl font-bold">{getRating(selectedContent).toFixed(1)}</span>
                 <span className="text-gray-400">/10</span>
                 <span className="text-xs text-gray-500 ml-2">
-                  based on {(selectedContent.stats_highly || 0) + (selectedContent.stats_recommended || 0) + (selectedContent.stats_not || 0)} votes
+                  based on {selectedContent.rating_count || 0} ratings
                 </span>
               </div>
               
               <div className="flex gap-6 mb-4 p-3 bg-gray-800/50 rounded-lg">
                 <div className="text-center">
-                  <div className="text-2xl text-teal-500">🔥</div>
-                  <div className="text-xs text-gray-400 mt-1">HIGHLY RECOMMENDED</div>
-                  <div className="font-bold">{selectedContent.stats_highly || 0}</div>
+                  <div className="text-2xl text-yellow-400">⭐</div>
+                  <div className="text-xs text-gray-400 mt-1">RATING</div>
+                  <div className="font-bold">{getRating(selectedContent).toFixed(1)}/10</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl text-blue-500">👍</div>
-                  <div className="text-xs text-gray-400 mt-1">RECOMMENDED</div>
-                  <div className="font-bold">{selectedContent.stats_recommended || 0}</div>
+                  <div className="text-2xl text-blue-500">👤</div>
+                  <div className="text-xs text-gray-400 mt-1">RATINGS</div>
+                  <div className="font-bold">{selectedContent.rating_count || 0}</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl text-gray-500">👎</div>
-                  <div className="text-xs text-gray-400 mt-1">NOT RECOMMENDED</div>
-                  <div className="font-bold">{selectedContent.stats_not || 0}</div>
+                  <div className="text-2xl text-gray-500">📅</div>
+                  <div className="text-xs text-gray-400 mt-1">YEAR</div>
+                  <div className="font-bold">{selectedContent.year}</div>
                 </div>
               </div>
               
