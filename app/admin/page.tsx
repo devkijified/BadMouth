@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { 
   Plus, Edit, Trash2, Film, Music, Layers, Shield, X, 
   Users, TrendingUp, Settings, Heart, Star, Search as SearchIcon,
-  Loader2, Tv, AlertTriangle, RefreshCw
+  Loader2, Tv, AlertTriangle, RefreshCw, Check
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -71,7 +71,31 @@ const genreMap: Record<number, string> = {
   37: 'Western'
 }
 
-// BADMOUTH-style critic descriptions - More human, more punchy
+// Category names for Netflix import
+const NETFLIX_CATEGORIES = [
+  '🔥 Trending Now',
+  'Watch in a Weekend',
+  'Sci-Fi Adventures',
+  'Made in Nollywood',
+  'YouTube Special',
+  'Netflix & Chill',
+  'Only On Apple TV',
+  'TV Shows You Shouldn\'t miss',
+  '😢 Waterworks Guaranteed',
+  '🤯 Mind-Benders',
+  '🇳🇬 Nollywood Chaos',
+  '🗣️ Movie Night Arguments',
+  '🎯 Underrated Gems',
+  '🏆 Award Winners',
+  '🎥 Cinema Classics',
+  '🌍 World Cinema',
+  '🏁 Instant Hook',
+  '🍿 Feel-Good Movies',
+  '😱 Edge of Your Seat',
+  '😂 Laugh Out Loud'
+]
+
+// BADMOUTH-style critic descriptions
 const generateBadmouthDescription = (title: string, year: number, genre: string, director: string, cast: string[], plot: string): string => {
   
   const intros = [
@@ -169,7 +193,9 @@ export default function AdminPage() {
   const [selectedNetflixMovies, setSelectedNetflixMovies] = useState<Set<string>>(new Set())
   const [selectAllNetflix, setSelectAllNetflix] = useState(false)
   const [netflixCategoryId, setNetflixCategoryId] = useState<string>('')
-  const [allSelectedMovies, setAllSelectedMovies] = useState<Set<string>>(new Set())
+  const [allCategories, setAllCategories] = useState<any[]>([])
+  const [autoAssignEnabled, setAutoAssignEnabled] = useState(true)
+  const [movieCategoryMap, setMovieCategoryMap] = useState<Record<string, string[]>>({})
   
   const TMDB_API_KEY = 'e40a2dd7da8c15d302e6790211dd958f'
 
@@ -233,7 +259,7 @@ export default function AdminPage() {
         setIsMasterAdmin(user?.email === 'kijified@gmail.com')
         await loadAllData()
         setupRealtimeSubscriptions()
-        getNetflixCategoryId()
+        loadNetflixCategories()
       } else {
         setIsAdmin(false)
         setAdminChecked(true)
@@ -250,15 +276,19 @@ export default function AdminPage() {
     }
   }
 
-  const getNetflixCategoryId = async () => {
+  const loadNetflixCategories = async () => {
     const { data } = await supabase
       .from('categories')
-      .select('id')
-      .eq('name', 'Netflix & Chill')
-      .maybeSingle()
+      .select('*')
+      .in('name', NETFLIX_CATEGORIES)
+      .eq('type', 'movie')
     
     if (data) {
-      setNetflixCategoryId(data.id)
+      setAllCategories(data)
+      const netflixChill = data.find(c => c.name === 'Netflix & Chill')
+      if (netflixChill) {
+        setNetflixCategoryId(netflixChill.id)
+      }
     }
   }
 
@@ -381,10 +411,9 @@ export default function AdminPage() {
   }
 
   // ============================================
-  // NETFLIX IMPORT FUNCTIONS
+  // NETFLIX IMPORT FUNCTIONS WITH AUTO-CATEGORIZATION
   // ============================================
   
-  // Get saved page from localStorage
   const getSavedNetflixPage = (): number => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('netflix_import_page')
@@ -395,7 +424,6 @@ export default function AdminPage() {
     return 1
   }
 
-  // Save current page to localStorage
   const saveNetflixPage = (page: number) => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('netflix_import_page', page.toString())
@@ -413,7 +441,6 @@ export default function AdminPage() {
       const data = await response.json()
       
       if (data.results) {
-        // Fetch full details for each movie to get director, cast, and trailer
         const enrichedResults = await Promise.all(
           data.results.slice(0, 20).map(async (movie: any) => {
             try {
@@ -422,7 +449,6 @@ export default function AdminPage() {
               )
               const details = await detailResponse.json()
               
-              // Get trailer URL
               let trailerUrl = ''
               const trailer = details.videos?.results?.find(
                 (video: any) => video.type === 'Trailer' && video.site === 'YouTube'
@@ -451,7 +477,7 @@ export default function AdminPage() {
         setNetflixTotalPages(data.total_pages)
         setNetflixImportTotal(data.total_results)
         setNetflixImportPage(page)
-        saveNetflixPage(page) // Save current page
+        saveNetflixPage(page)
         toast.success(`Loaded ${enrichedResults.length} movies from Netflix (Page ${page}/${data.total_pages})`)
       }
     } catch (error) {
@@ -462,8 +488,112 @@ export default function AdminPage() {
     }
   }
 
+  // Auto-categorization function
+  const getCategoryId = (name: string): string | null => {
+    const cat = allCategories.find(c => c.name === name)
+    return cat ? cat.id : null
+  }
+
+  const autoAssignCategories = (movie: any): string[] => {
+    const categories = new Set<string>()
+    
+    // 1. Always add Netflix & Chill
+    const netflixChill = getCategoryId('Netflix & Chill')
+    if (netflixChill) categories.add(netflixChill)
+    
+    // 2. Add "🔥 Trending Now" for highly rated movies
+    if (movie.vote_average > 7.5) {
+      const trending = getCategoryId('🔥 Trending Now')
+      if (trending) categories.add(trending)
+    }
+    
+    // 3. Add "🏆 Award Winners" for high ratings
+    if (movie.vote_average > 8) {
+      const award = getCategoryId('🏆 Award Winners')
+      if (award) categories.add(award)
+    }
+    
+    // 4. Add "🎯 Underrated Gems" for low vote count but good rating
+    if (movie.vote_average > 7 && movie.vote_count < 500) {
+      const underrated = getCategoryId('🎯 Underrated Gems')
+      if (underrated) categories.add(underrated)
+    }
+    
+    // 5. Add genre-based categories
+    if (movie.genres) {
+      const genreNames = movie.genres.map((g: any) => g.name)
+      
+      if (genreNames.some(g => ['Comedy', 'Romance'].includes(g))) {
+        const feelGood = getCategoryId('🍿 Feel-Good Movies')
+        if (feelGood) categories.add(feelGood)
+      }
+      
+      if (genreNames.some(g => ['Thriller', 'Horror', 'Mystery'].includes(g))) {
+        const edge = getCategoryId('😱 Edge of Your Seat')
+        if (edge) categories.add(edge)
+      }
+      
+      if (genreNames.some(g => ['Comedy', 'Satire'].includes(g))) {
+        const laugh = getCategoryId('😂 Laugh Out Loud')
+        if (laugh) categories.add(laugh)
+      }
+      
+      if (genreNames.some(g => ['Science Fiction', 'Mystery'].includes(g))) {
+        const mind = getCategoryId('🤯 Mind-Benders')
+        if (mind) categories.add(mind)
+      }
+      
+      if (genreNames.some(g => ['Drama', 'Romance'].includes(g)) && movie.vote_average > 7) {
+        const cry = getCategoryId('😢 Waterworks Guaranteed')
+        if (cry) categories.add(cry)
+      }
+      
+      if (genreNames.some(g => ['Action', 'Crime'].includes(g)) && movie.vote_average > 7) {
+        const gems = getCategoryId('🎯 Underrated Gems')
+        if (gems) categories.add(gems)
+      }
+      
+      if (genreNames.some(g => ['Drama', 'Crime'].includes(g)) && movie.vote_average > 7) {
+        const nollywood = getCategoryId('Made in Nollywood')
+        if (nollywood) categories.add(nollywood)
+      }
+    }
+    
+    // 6. Add "🎥 Cinema Classics" for older movies
+    const year = new Date(movie.release_date).getFullYear()
+    if (year < 2000 && movie.vote_average > 7) {
+      const classics = getCategoryId('🎥 Cinema Classics')
+      if (classics) categories.add(classics)
+    }
+    
+    // 7. Add "🌍 World Cinema" for non-English
+    if (movie.original_language && movie.original_language !== 'en') {
+      const world = getCategoryId('🌍 World Cinema')
+      if (world) categories.add(world)
+    }
+    
+    // 8. Add "🏁 Instant Hook" for high popularity
+    if (movie.popularity > 50) {
+      const hook = getCategoryId('🏁 Instant Hook')
+      if (hook) categories.add(hook)
+    }
+    
+    // 9. Add "🌍 Afrobeats Takeover" for African content
+    if (movie.origin_country && movie.origin_country.some((c: string) => ['NG', 'ZA', 'GH'].includes(c))) {
+      const afrobeats = getCategoryId('🌍 Afrobeats Takeover')
+      if (afrobeats) categories.add(afrobeats)
+    }
+    
+    // 10. Add "📅 Throwback Thursday" for movies from 2000-2010
+    if (year >= 2000 && year <= 2010 && movie.vote_average > 6.5) {
+      const throwback = getCategoryId('📅 Throwback Thursday')
+      if (throwback) categories.add(throwback)
+    }
+    
+    return Array.from(categories)
+  }
+
   const importSelectedNetflixMovies = async () => {
-    // Get all selected movies across all pages
     const moviesToImport = netflixImportData.filter(movie => 
       selectedNetflixMovies.has(movie.id.toString())
     )
@@ -473,7 +603,7 @@ export default function AdminPage() {
       return
     }
 
-    if (!confirm(`Import ${moviesToImport.length} movies to database? This will check for duplicates.`)) {
+    if (!confirm(`Import ${moviesToImport.length} movies with auto-categorization?`)) {
       return
     }
 
@@ -508,7 +638,6 @@ export default function AdminPage() {
           genreNames = 'Movie'
         }
 
-        // Generate BADMOUTH-style critic description
         const year = new Date(movie.release_date).getFullYear()
         const cast = movie.cast || []
         const description = generateBadmouthDescription(
@@ -521,11 +650,9 @@ export default function AdminPage() {
         )
         const longDescription = description
 
-        // Get actors as array
         const actors = cast
         const director = movie.director || ''
         
-        // Format runtime
         let runtime = ''
         if (movie.runtime) {
           const hours = Math.floor(movie.runtime / 60)
@@ -533,10 +660,8 @@ export default function AdminPage() {
           runtime = hours > 0 ? `${hours}h ${minutes}min` : `${minutes}min`
         }
 
-        // Get trailer URL
         const trailerUrl = movie.trailer_url || ''
 
-        // Prepare content data - NO rating_count
         const contentData = {
           title: movie.title,
           description: description,
@@ -558,7 +683,6 @@ export default function AdminPage() {
           updated_at: new Date().toISOString()
         }
 
-        // Insert content
         const { data: inserted, error: insertError } = await supabase
           .from('content')
           .insert([contentData])
@@ -570,14 +694,19 @@ export default function AdminPage() {
           continue
         }
 
-        // Assign to Netflix & Chill category
-        if (inserted && netflixCategoryId) {
-          await supabase
-            .from('content_categories')
-            .insert({
+        // Auto-assign categories
+        if (inserted) {
+          const assignedCategories = autoAssignCategories(movie)
+          
+          if (assignedCategories.length > 0) {
+            const links = assignedCategories.map(catId => ({
               content_id: inserted[0].id,
-              category_id: netflixCategoryId
-            })
+              category_id: catId
+            }))
+            await supabase
+              .from('content_categories')
+              .insert(links)
+          }
         }
 
         imported++
@@ -591,12 +720,10 @@ export default function AdminPage() {
     toast.success(`✅ Imported ${imported} movies, ⏭️ ${skipped} skipped, ❌ ${errors} errors`)
     setShowNetflixImport(false)
     setSelectedNetflixMovies(new Set())
-    setAllSelectedMovies(new Set())
     setSelectAllNetflix(false)
     loadContent()
   }
 
-  // Toggle select all on current page
   useEffect(() => {
     if (selectAllNetflix) {
       const allIds = new Set(netflixImportData.map(m => m.id.toString()))
@@ -606,7 +733,6 @@ export default function AdminPage() {
     }
   }, [selectAllNetflix, netflixImportData])
 
-  // Toggle individual selection
   const toggleNetflixSelection = (id: string) => {
     const newSelection = new Set(selectedNetflixMovies)
     if (newSelection.has(id)) {
@@ -1403,7 +1529,6 @@ export default function AdminPage() {
                 <button 
                   onClick={() => {
                     setShowNetflixImport(true)
-                    // Load saved page or default to 1
                     const savedPage = getSavedNetflixPage()
                     fetchNetflixMovies(savedPage)
                   }} 
@@ -1495,11 +1620,11 @@ export default function AdminPage() {
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Netflix Import</h3>
-                <p className="text-sm text-gray-400">Remembers the last page you were on. Imports movies with director, cast, trailers, and BADMOUTH-style descriptions.</p>
+                <p className="text-sm text-gray-400">Movies are auto-categorized based on genre, rating, year, and more. No manual selection needed.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">BADMOUTH Descriptions</h3>
-                <p className="text-sm text-gray-400">All imported content uses unique, punchy critic-style descriptions generated by BADMOUTH.</p>
+                <p className="text-sm text-gray-400">All imported content uses unique, punchy critic-style descriptions.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Master Admin</h3>
@@ -1893,7 +2018,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Netflix Import Modal */}
+      {/* Netflix Import Modal - Auto-Categorization Version */}
       {showNetflixImport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 overflow-y-auto">
           <div className="bg-gray-900 rounded-xl max-w-7xl w-full p-6 max-h-[90vh] overflow-y-auto">
@@ -1914,6 +2039,14 @@ export default function AdminPage() {
                 <p className="text-xs text-gray-500 mt-1">
                   💾 Last page: {getSavedNetflixPage()}
                 </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs bg-teal-600/20 text-teal-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Check size={12} /> Auto-Categorization ON
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    Movies will be auto-assigned to relevant categories
+                  </span>
+                </div>
               </div>
               <button 
                 onClick={() => setShowNetflixImport(false)} 
@@ -1936,7 +2069,7 @@ export default function AdminPage() {
                   <span className="text-sm text-gray-300">Select All on This Page</span>
                 </label>
                 <span className="text-sm text-gray-500">
-                  {selectedNetflixMovies.size} selected on this page
+                  {selectedNetflixMovies.size} selected
                 </span>
               </div>
               <div className="flex gap-2">
@@ -1982,9 +2115,40 @@ export default function AdminPage() {
                 {netflixImportLoading && netflixImportProgress > 0 ? <Loader2 className="w-4 h-4 animate-spin" /> : <Tv size={16} />}
                 {netflixImportLoading && netflixImportProgress > 0 
                   ? `Importing... (${netflixImportProgress})` 
-                  : `Import Selected (${selectedNetflixMovies.size})`
+                  : `Import ${selectedNetflixMovies.size} Movies`
                 }
               </button>
+            </div>
+
+            {/* Auto-Categorization Info */}
+            <div className="mb-4 p-3 bg-gray-800/50 rounded-lg">
+              <p className="text-xs text-gray-400">
+                🎯 <span className="font-semibold text-gray-300">Auto-Categorization Rules:</span>
+                <br />
+                • <span className="text-teal-400">Netflix & Chill</span> — Always assigned to every movie
+                <br />
+                • <span className="text-yellow-400">🔥 Trending Now</span> — Rating &gt; 7.5
+                <br />
+                • <span className="text-yellow-400">🏆 Award Winners</span> — Rating &gt; 8.0
+                <br />
+                • <span className="text-blue-400">🍿 Feel-Good Movies</span> — Comedy, Romance
+                <br />
+                • <span className="text-red-400">😱 Edge of Your Seat</span> — Thriller, Horror, Mystery
+                <br />
+                • <span className="text-purple-400">🤯 Mind-Benders</span> — Sci-Fi, Mystery
+                <br />
+                • <span className="text-pink-400">😢 Waterworks Guaranteed</span> — Drama, Romance (Rating &gt; 7)
+                <br />
+                • <span className="text-orange-400">🎯 Underrated Gems</span> — Rating &gt; 7, Vote Count &lt; 500
+                <br />
+                • <span className="text-indigo-400">🎥 Cinema Classics</span> — Year &lt; 2000, Rating &gt; 7
+                <br />
+                • <span className="text-green-400">🌍 World Cinema</span> — Non-English films
+                <br />
+                • <span className="text-cyan-400">🏁 Instant Hook</span> — Popularity &gt; 50
+                <br />
+                • <span className="text-amber-400">Made in Nollywood</span> — African origin
+              </p>
             </div>
 
             {/* Progress */}
@@ -2010,6 +2174,14 @@ export default function AdminPage() {
                 const genreNames = movie.genres?.map((g: any) => g.name).join(', ') || 
                   movie.genre_ids?.map((id: number) => genreMap[id] || '').filter(Boolean).join(', ') || 'Movie'
                 
+                // Show which categories this movie would get
+                const assignedCategories = autoAssignCategories(movie)
+                const categoryNames = assignedCategories
+                  .map(id => allCategories.find(c => c.id === id)?.name)
+                  .filter(Boolean)
+                  .slice(0, 3)
+                  .join(', ')
+                
                 return (
                   <div 
                     key={movie.id} 
@@ -2034,10 +2206,16 @@ export default function AdminPage() {
                         <span className="text-[10px] text-yellow-400">⭐ {movie.vote_average?.toFixed(1) || 'N/A'}</span>
                         <span className="text-[10px] text-gray-500">{new Date(movie.release_date).getFullYear()}</span>
                       </div>
+                      {categoryNames && (
+                        <p className="text-[8px] text-gray-500 truncate mt-0.5">
+                          📂 {categoryNames}
+                          {assignedCategories.length > 3 && ` +${assignedCategories.length - 3}`}
+                        </p>
+                      )}
                       <div className="mt-1">
                         {isSelected ? (
                           <span className="text-teal-400 text-[10px] flex items-center gap-0.5">
-                            ✓ Selected
+                            ✓ Selected for import
                           </span>
                         ) : (
                           <span className="text-gray-500 text-[10px]">Click to select</span>
