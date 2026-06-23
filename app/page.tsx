@@ -19,12 +19,6 @@ import WatchlistBasedRecommendations from '@/components/WatchlistBasedRecommenda
 import { ContentItem, Category } from '@/types/content'
 import toast from 'react-hot-toast'
 
-const tierConfig = {
-  highly: { emoji: '🔥', label: 'HIGHLY RECOMMENDED', color: 'bg-teal-600/20 text-teal-400 border-teal-600' },
-  recommended: { emoji: '👍', label: 'RECOMMENDED', color: 'bg-blue-600/20 text-blue-400 border-blue-600' },
-  not: { emoji: '👎', label: 'NOT RECOMMENDED', color: 'bg-gray-600/20 text-gray-400 border-gray-600' }
-}
-
 export default function HomePage() {
   const router = useRouter()
   const { user, signOut, loading: authLoading } = useAuth()
@@ -83,7 +77,6 @@ export default function HomePage() {
         if (error) throw error
         
         setIsAdmin(profile?.role === 'admin')
-        console.log('Admin status:', profile?.role === 'admin')
       } catch (error) {
         console.error('Error checking admin status:', error)
         setIsAdmin(false)
@@ -151,7 +144,7 @@ export default function HomePage() {
   }
 
   const deleteRecommendation = async (recId: string, contentTitle: string) => {
-    if (!confirm(`Remove your recommendation for "${contentTitle}"?`)) return
+    if (!confirm(`Remove your rating for "${contentTitle}"?`)) return
     
     const { error } = await supabase
       .from('recommendations')
@@ -159,12 +152,12 @@ export default function HomePage() {
       .eq('id', recId)
     
     if (error) {
-      toast.error('Failed to delete recommendation')
+      toast.error('Failed to delete rating')
       return
     }
     
     setMyRecommendations(prev => prev.filter(r => r.id !== recId))
-    toast.success(`Removed recommendation for "${contentTitle}"`)
+    toast.success(`Removed rating for "${contentTitle}"`)
     
     // Refresh content stats
     if (currentPage === 'home') loadHomeData()
