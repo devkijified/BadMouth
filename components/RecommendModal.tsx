@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { X, Star } from 'lucide-react'
 import { ContentItem } from '@/types/content'
@@ -25,6 +25,43 @@ export default function RecommendModal({
   const [comment, setComment] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [hoverRating, setHoverRating] = useState(0)
+  const [existingRating, setExistingRating] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (isOpen && item && userId) {
+      checkExistingRating()
+    }
+  }, [isOpen, item, userId])
+
+  const checkExistingRating = async () => {
+    if (!item || !userId) return
+    
+    try {
+      const { data, error } = await supabase
+        .from('recommendations')
+        .select('rating, comment')
+        .eq('user_id', userId)
+        .eq('content_id', item.id)
+        .single()
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 is "not found"
+        console.error('Error checking existing rating:', error)
+        return
+      }
+
+      if (data) {
+        setExistingRating(data.rating)
+        setRating(data.rating)
+        setComment(data.comment || '')
+      } else {
+        setExistingRating(null)
+        setRating(0)
+        setComment('')
+      }
+    } catch (error) {
+      console.error('Error checking existing rating:', error)
+    }
+  }
 
   if (!isOpen || !item) return null
 
@@ -37,18 +74,22 @@ export default function RecommendModal({
     setIsLoading(true)
 
     try {
-      // Check if user already recommended this
-      const { data: existing } = await supabase
+      // Check if user already rated this
+      const { data: existing, error: checkError } = await supabase
         .from('recommendations')
         .select('id')
         .eq('user_id', userId)
         .eq('content_id', item.id)
         .single()
 
+      if (checkError && checkError.code !== 'PGRST116') {
+        throw checkError
+      }
+
       let error
 
       if (existing) {
-        // Update existing recommendation
+        // Update existing rating
         const { error: updateError } = await supabase
           .from('recommendations')
           .update({ 
@@ -59,7 +100,7 @@ export default function RecommendModal({
           .eq('id', existing.id)
         error = updateError
       } else {
-        // Insert new recommendation
+        // Insert new rating
         const { error: insertError } = await supabase
           .from('recommendations')
           .insert({
@@ -75,20 +116,19 @@ export default function RecommendModal({
       if (error) throw error
 
       // Update content rating
-      // First get current ratings
-      const { data: currentRatings } = await supabase
+      const { data: allRatings } = await supabase
         .from('recommendations')
         .select('rating')
         .eq('content_id', item.id)
 
-      if (currentRatings) {
-        const totalRatings = currentRatings.length
-        const avgRating = currentRatings.reduce((sum, r) => sum + r.rating, 0) / totalRatings
+      if (allRatings) {
+        const totalRatings = allRatings.length
+        const avgRating = allRatings.reduce((sum, r) => sum + r.rating, 0) / totalRatings
         
         await supabase
           .from('content')
           .update({
-            rating: Math.round(avgRating * 10) / 10, // Round to 1 decimal
+            rating: Math.round(avgRating * 10) / 10,
             rating_count: totalRatings
           })
           .eq('id', item.id)
@@ -99,8 +139,9 @@ export default function RecommendModal({
       onClose()
       setRating(0)
       setComment('')
+      setExistingRating(null)
     } catch (error) {
-      console.error('Error saving recommendation:', error)
+      console.error('Error saving rating:', error)
       toast.error('Failed to save rating')
     } finally {
       setIsLoading(false)
@@ -160,7 +201,7 @@ export default function RecommendModal({
         <div className="space-y-4">
           <div>
             <label className="text-sm text-gray-400 block mb-2">
-              Rate this {item.type === 'movie' ? 'movie' : 'song'} (1-10)
+              {existingRating ? 'Update your rating' : 'Rate this'} (1-10)
             </label>
             <div className="flex justify-center gap-1 flex-wrap">
               {renderStars()}
@@ -170,6 +211,9 @@ export default function RecommendModal({
                 {hoverRating || rating || '?'}
               </span>
               <span className="text-gray-400"> / 10</span>
+              {existingRating && (
+                <p className="text-xs text-gray-500 mt-1">Current rating: {existingRating}/10</p>
+              )}
             </div>
           </div>
 
@@ -191,7 +235,7 @@ export default function RecommendModal({
             disabled={isLoading || rating === 0}
             className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-lg font-semibold hover:opacity-90 transition disabled:opacity-50"
           >
-            {isLoading ? 'Saving...' : `Submit ${rating}/10 Rating`}
+            {isLoading ? 'Saving...' : existingRating ? `Update ${rating}/10 Rating` : `Submit ${rating}/10 Rating`}
           </button>
         </div>
       </div>
