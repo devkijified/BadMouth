@@ -4,10 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
-import { ArrowLeft, Star, Film, Music, Heart, Loader2, User } from 'lucide-react'  // 👈 Add User here
-import Link from 'next/link'
-import { ContentItem } from '@/types/content'
-import toast from 'react-hot-toast'
+import { ArrowLeft, Star, Film, Music, Heart, Loader2, User } from 'lucide-react'
 import Link from 'next/link'
 import { ContentItem } from '@/types/content'
 import toast from 'react-hot-toast'
@@ -37,7 +34,6 @@ export default function ActorPage({ params }: ActorPageProps) {
   const loadActorData = async (name: string) => {
     setLoading(true)
     try {
-      // Search for movies where actor appears
       const { data: movieData, error: movieError } = await supabase
         .from('content')
         .select('*')
@@ -47,7 +43,6 @@ export default function ActorPage({ params }: ActorPageProps) {
 
       if (movieError) throw movieError
 
-      // Search for music where artist matches
       const { data: musicData, error: musicError } = await supabase
         .from('content')
         .select('*')
@@ -60,7 +55,6 @@ export default function ActorPage({ params }: ActorPageProps) {
       setMovies(movieData || [])
       setMusic(musicData || [])
       
-      // Set actor data from first result
       if (movieData && movieData.length > 0) {
         setActorData({
           name: name,
@@ -73,7 +67,6 @@ export default function ActorPage({ params }: ActorPageProps) {
         })
       }
 
-      // Load watchlist
       if (user) {
         loadWatchlist()
       }
@@ -104,7 +97,6 @@ export default function ActorPage({ params }: ActorPageProps) {
     return item.rating || 0
   }
 
-  // 👇 This navigates to home with details parameter - modal opens automatically
   const handleViewDetails = (item: ContentItem) => {
     router.push(`/?details=${item.id}`)
   }
@@ -161,7 +153,6 @@ export default function ActorPage({ params }: ActorPageProps) {
 
   return (
     <div className="min-h-screen bg-black">
-      {/* Header */}
       <div className="bg-gray-900 border-b border-gray-800 sticky top-0 z-50">
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
@@ -180,7 +171,6 @@ export default function ActorPage({ params }: ActorPageProps) {
         </div>
       </div>
 
-      {/* Actor Header */}
       <div className="relative">
         {actorData?.image && (
           <div className="w-full h-64 md:h-96 bg-gradient-to-r from-gray-900 to-gray-800 relative overflow-hidden">
@@ -223,9 +213,7 @@ export default function ActorPage({ params }: ActorPageProps) {
         </div>
       </div>
 
-      {/* Content */}
       <div className="container mx-auto px-4 py-8">
-        {/* Movies Section */}
         {movies.length > 0 && (
           <div className="mb-12">
             <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
@@ -268,7 +256,6 @@ export default function ActorPage({ params }: ActorPageProps) {
           </div>
         )}
 
-        {/* Music Section */}
         {music.length > 0 && (
           <div className="mb-12">
             <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
@@ -319,7 +306,6 @@ export default function ActorPage({ params }: ActorPageProps) {
           </div>
         )}
 
-        {/* Back button */}
         <div className="text-center mt-8">
           <button onClick={() => router.back()} className="px-6 py-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition">
             Go Back
