@@ -50,6 +50,7 @@ export default function AdminPage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
   const [isAdmin, setIsAdmin] = useState(false)
+  const [isMasterAdmin, setIsMasterAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
   const [adminChecked, setAdminChecked] = useState(false)
   const [activeTab, setActiveTab] = useState<'categories' | 'content' | 'users' | 'analytics' | 'settings'>('users')
@@ -142,6 +143,8 @@ export default function AdminPage() {
       if (profile?.role === 'admin') {
         setIsAdmin(true)
         setAdminChecked(true)
+        // Check if this is the master admin
+        setIsMasterAdmin(user?.email === 'kijified@gmail.com')
         await loadAllData()
         setupRealtimeSubscriptions()
       } else {
@@ -360,13 +363,13 @@ export default function AdminPage() {
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
-  const importFromDeezer = (item: any) => {
-    let title = item.title || 'Unknown Track'
-    let artist = item.artist?.name || 'Unknown Artist'
-    let imageUrl = item.album?.cover_xl || item.album?.cover_big || ''
-    let year = item.release_date ? new Date(item.release_date).getFullYear() : new Date().getFullYear()
-    let duration = formatDuration(item.duration)
-    let genre = item.artist?.name?.split(' ')[0] || 'Music'
+  const importFromDeezer = (track: any) => {
+    let title = track.title || 'Unknown Track'
+    let artist = track.artist?.name || 'Unknown Artist'
+    let imageUrl = track.album?.cover_xl || track.album?.cover_big || ''
+    let year = track.release_date ? new Date(track.release_date).getFullYear() : new Date().getFullYear()
+    let duration = formatDuration(track.duration)
+    let genre = track.artist?.name?.split(' ')[0] || 'Music'
     
     if (item.artist?.name) {
       const artistName = item.artist.name.toLowerCase()
@@ -393,7 +396,7 @@ export default function AdminPage() {
       genre: genre,
       platforms: 'Spotify, Apple Music, Deezer, YouTube Music',
       trailer_url: '',
-      rating: 0,
+      rating: 5.0,
       rating_count: 0,
       is_tv_show: false,
       category_ids: []
@@ -531,7 +534,7 @@ export default function AdminPage() {
         trailer_url: trailerUrl || '',
         runtime: runtime,
         genre: genre,
-        rating: 0,
+        rating: 5.0,
         rating_count: 0,
         is_tv_show: isTVShow,
         category_ids: []
@@ -586,7 +589,7 @@ export default function AdminPage() {
       title: '', description: '', long_description: '', image_url: '', backdrop_url: '',
       type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '',
       platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', 
-      rating: 0, rating_count: 0, is_tv_show: false, category_ids: []
+      rating: 5.0, rating_count: 0, is_tv_show: false, category_ids: []
     })
     setShowDeezerSearch(false)
     setDeezerSearchQuery('')
@@ -609,7 +612,7 @@ export default function AdminPage() {
         platforms: contentForm.platforms.split(',').map(p => p.trim()),
         trailer_url: contentForm.trailer_url || null,
         genre: contentForm.genre,
-        rating: contentForm.rating || 0,
+        rating: contentForm.rating || 5.0,
         rating_count: contentForm.rating_count || 0,
         is_tv_show: contentForm.is_tv_show || false,
       }
@@ -768,22 +771,24 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Danger Zone */}
-        <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-4 mb-8">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="text-red-500" size={20} />
-            <h3 className="text-lg font-semibold text-red-500">Danger Zone</h3>
+        {/* Danger Zone - Only for master admin */}
+        {isMasterAdmin && (
+          <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-4 mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="text-red-500" size={20} />
+              <h3 className="text-lg font-semibold text-red-500">Danger Zone</h3>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button onClick={deleteAllContent} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition text-sm font-semibold">
+                Delete All Content
+              </button>
+              <button onClick={deleteAllUsers} className="px-4 py-2 bg-red-600/70 hover:bg-red-700 rounded-lg transition text-sm font-semibold">
+                Delete All Users
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">⚠️ These actions cannot be undone</p>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <button onClick={deleteAllContent} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition text-sm font-semibold">
-              Delete All Content
-            </button>
-            <button onClick={deleteAllUsers} className="px-4 py-2 bg-red-600/70 hover:bg-red-700 rounded-lg transition text-sm font-semibold">
-              Delete All Users
-            </button>
-          </div>
-          <p className="text-xs text-gray-500 mt-2">⚠️ These actions cannot be undone</p>
-        </div>
+        )}
 
         {/* Navigation Tabs */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-800">
@@ -850,16 +855,19 @@ export default function AdminPage() {
                         <td className="px-4 py-3"><span className="text-blue-400">👍 {userItem.recommendations_count || 0}</span></td>
                         <td className="px-4 py-3 text-sm">{userItem.created_at ? new Date(userItem.created_at).toLocaleDateString() : 'N/A'}</td>
                         <td className="px-4 py-3">
-                          <button 
-                            onClick={() => makeUserAdmin(userItem.id, userItem.role || 'user')}
-                            className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
-                              userItem.role === 'admin' 
-                                ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30' 
-                                : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'
-                            }`}
-                          >
-                            {userItem.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
-                          </button>
+                          {/* Only show Make Admin button for master admin */}
+                          {isMasterAdmin && (
+                            <button 
+                              onClick={() => makeUserAdmin(userItem.id, userItem.role || 'user')}
+                              className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
+                                userItem.role === 'admin' 
+                                  ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30' 
+                                  : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'
+                              }`}
+                            >
+                              {userItem.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -993,7 +1001,7 @@ export default function AdminPage() {
                       title: '', description: '', long_description: '', image_url: '', backdrop_url: '',
                       type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '',
                       platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', 
-                      rating: 0, rating_count: 0, is_tv_show: false, category_ids: []
+                      rating: 5.0, rating_count: 0, is_tv_show: false, category_ids: []
                     }); 
                   }} 
                   className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"
@@ -1017,7 +1025,7 @@ export default function AdminPage() {
                     )}
                     <div className="absolute top-2 right-2 z-10 bg-black/70 px-2 py-0.5 rounded-full flex items-center gap-1">
                       <Star size={10} className="text-yellow-400 fill-yellow-400" />
-                      <span className="text-white text-[10px] font-bold">{item.rating?.toFixed(1) || 0}</span>
+                      <span className="text-white text-[10px] font-bold">{item.rating?.toFixed(1) || 5.0}</span>
                     </div>
                     <img src={item.image_url} alt={item.title} className="w-full h-40 object-cover" />
                     <div className="p-4">
@@ -1028,7 +1036,7 @@ export default function AdminPage() {
                       <p className="text-sm text-gray-300 line-clamp-2">{item.description}</p>
                       <div className="flex justify-between mt-3">
                         <span className="text-xs flex gap-2">
-                          <span className="text-yellow-400">⭐ {item.rating?.toFixed(1) || 0}</span>
+                          <span className="text-yellow-400">⭐ {item.rating?.toFixed(1) || 5.0}</span>
                           <span className="text-gray-400">({item.rating_count || 0} ratings)</span>
                         </span>
                         <div className="flex gap-2">
@@ -1046,7 +1054,7 @@ export default function AdminPage() {
                                 trailer_url: item.trailer_url || '', 
                                 runtime: item.runtime || '', 
                                 duration: item.duration || '', 
-                                rating: item.rating || 0,
+                                rating: item.rating || 5.0,
                                 rating_count: item.rating_count || 0,
                                 is_tv_show: item.is_tv_show || false, 
                                 category_ids: [] 
@@ -1089,6 +1097,10 @@ export default function AdminPage() {
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Deezer Search</h3>
                 <p className="text-sm text-gray-400">Search for tracks on Deezer using the proxy API route.</p>
+              </div>
+              <div className="p-4 bg-gray-700/50 rounded-lg">
+                <h3 className="font-semibold mb-2">Master Admin</h3>
+                <p className="text-sm text-gray-400">Only the master admin (kijified@gmail.com) can see the Danger Zone and manage user roles.</p>
               </div>
             </div>
           </div>
@@ -1436,8 +1448,8 @@ export default function AdminPage() {
                   <input 
                     type="number" 
                     placeholder="Rating (1-10)" 
-                    value={contentForm.rating || 0} 
-                    onChange={e => setContentForm({ ...contentForm, rating: parseFloat(e.target.value) || 0 })} 
+                    value={contentForm.rating || 5.0} 
+                    onChange={e => setContentForm({ ...contentForm, rating: parseFloat(e.target.value) || 5.0 })} 
                     className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
                     min="0"
                     max="10"
