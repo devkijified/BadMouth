@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
 import { Star, User, ThumbsUp, MessageCircle } from 'lucide-react'
 import { ContentItem } from '@/types/content'
-import toast from 'react-hot-toast'
 
 interface SocialRecommendationsProps {
   onViewDetails: (item: ContentItem) => void
@@ -24,13 +23,6 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
   const loadRecommendations = async () => {
     setLoading(true)
     try {
-      // First, check if the rating column exists
-      const { data: columnCheck, error: columnError } = await supabase
-        .from('recommendations')
-        .select('rating')
-        .limit(1)
-      
-      // If column doesn't exist, use a different query
       const { data, error } = await supabase
         .from('recommendations')
         .select(`
@@ -44,7 +36,6 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
 
       if (error) {
         console.error('Error loading recommendations:', error)
-        toast.error('Failed to load recommendations')
         setRecommendations([])
         setLoading(false)
         return
@@ -55,7 +46,6 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
       setRecommendations(validData)
     } catch (error) {
       console.error('Error loading social recommendations:', error)
-      toast.error('Failed to load recommendations')
       setRecommendations([])
     } finally {
       setLoading(false)
@@ -98,7 +88,6 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
             onClick={() => onViewDetails(rec.content)}
           >
             <div className="flex items-start gap-3">
-              {/* Avatar */}
               <img 
                 src={rec.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${rec.profiles?.username || 'anonymous'}`} 
                 alt={rec.profiles?.username || 'Anonymous'} 
@@ -106,7 +95,6 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
               />
               
               <div className="flex-1 min-w-0">
-                {/* Header */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-sm">
                     {rec.profiles?.username || 'Anonymous'}
@@ -118,7 +106,6 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
                   </span>
                 </div>
                 
-                {/* Content */}
                 <div className="flex items-center gap-2 mt-1">
                   <img 
                     src={rec.content?.image_url} 
@@ -135,20 +122,14 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
                   </div>
                 </div>
                 
-                {/* Comment */}
                 {rec.comment && (
                   <p className="text-sm text-gray-300 mt-2 line-clamp-2">
                     "{rec.comment}"
                   </p>
                 )}
                 
-                {/* Footer */}
                 <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
                   <span>{new Date(rec.created_at).toLocaleDateString()}</span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1">
-                    <ThumbsUp size={12} /> {rec.content?.rating_count || 0} ratings
-                  </span>
                 </div>
               </div>
               
