@@ -494,105 +494,105 @@ export default function AdminPage() {
     return cat ? cat.id : null
   }
 
-  const autoAssignCategories = (movie: any): string[] => {
-    const categories = new Set<string>()
-    
-    // 1. Always add Netflix & Chill
-    const netflixChill = getCategoryId('Netflix & Chill')
-    if (netflixChill) categories.add(netflixChill)
-    
-    // 2. Add "🔥 Trending Now" for highly rated movies
-    if (movie.vote_average > 7.5) {
-      const trending = getCategoryId('🔥 Trending Now')
-      if (trending) categories.add(trending)
-    }
-    
-    // 3. Add "🏆 Award Winners" for high ratings
-    if (movie.vote_average > 8) {
-      const award = getCategoryId('🏆 Award Winners')
-      if (award) categories.add(award)
-    }
-    
-    // 4. Add "🎯 Underrated Gems" for low vote count but good rating
-    if (movie.vote_average > 7 && movie.vote_count < 500) {
-      const underrated = getCategoryId('🎯 Underrated Gems')
-      if (underrated) categories.add(underrated)
-    }
-    
-    // 5. Add genre-based categories
-    if (movie.genres) {
-      const genreNames = movie.genres.map((g: any) => g.name)
-      
-      if (genreNames.some(g => ['Comedy', 'Romance'].includes(g))) {
-        const feelGood = getCategoryId('🍿 Feel-Good Movies')
-        if (feelGood) categories.add(feelGood)
-      }
-      
-      if (genreNames.some(g => ['Thriller', 'Horror', 'Mystery'].includes(g))) {
-        const edge = getCategoryId('😱 Edge of Your Seat')
-        if (edge) categories.add(edge)
-      }
-      
-      if (genreNames.some(g => ['Comedy', 'Satire'].includes(g))) {
-        const laugh = getCategoryId('😂 Laugh Out Loud')
-        if (laugh) categories.add(laugh)
-      }
-      
-      if (genreNames.some(g => ['Science Fiction', 'Mystery'].includes(g))) {
-        const mind = getCategoryId('🤯 Mind-Benders')
-        if (mind) categories.add(mind)
-      }
-      
-      if (genreNames.some(g => ['Drama', 'Romance'].includes(g)) && movie.vote_average > 7) {
-        const cry = getCategoryId('😢 Waterworks Guaranteed')
-        if (cry) categories.add(cry)
-      }
-      
-      if (genreNames.some(g => ['Action', 'Crime'].includes(g)) && movie.vote_average > 7) {
-        const gems = getCategoryId('🎯 Underrated Gems')
-        if (gems) categories.add(gems)
-      }
-      
-      if (genreNames.some(g => ['Drama', 'Crime'].includes(g)) && movie.vote_average > 7) {
-        const nollywood = getCategoryId('Made in Nollywood')
-        if (nollywood) categories.add(nollywood)
-      }
-    }
-    
-    // 6. Add "🎥 Cinema Classics" for older movies
-    const year = new Date(movie.release_date).getFullYear()
-    if (year < 2000 && movie.vote_average > 7) {
-      const classics = getCategoryId('🎥 Cinema Classics')
-      if (classics) categories.add(classics)
-    }
-    
-    // 7. Add "🌍 World Cinema" for non-English
-    if (movie.original_language && movie.original_language !== 'en') {
-      const world = getCategoryId('🌍 World Cinema')
-      if (world) categories.add(world)
-    }
-    
-    // 8. Add "🏁 Instant Hook" for high popularity
-    if (movie.popularity > 50) {
-      const hook = getCategoryId('🏁 Instant Hook')
-      if (hook) categories.add(hook)
-    }
-    
-    // 9. Add "🌍 Afrobeats Takeover" for African content
-    if (movie.origin_country && movie.origin_country.some((c: string) => ['NG', 'ZA', 'GH'].includes(c))) {
-      const afrobeats = getCategoryId('🌍 Afrobeats Takeover')
-      if (afrobeats) categories.add(afrobeats)
-    }
-    
-    // 10. Add "📅 Throwback Thursday" for movies from 2000-2010
-    if (year >= 2000 && year <= 2010 && movie.vote_average > 6.5) {
-      const throwback = getCategoryId('📅 Throwback Thursday')
-      if (throwback) categories.add(throwback)
-    }
-    
-    return Array.from(categories)
+ const autoAssignCategories = (movie: any): string[] => {
+  const categories = new Set<string>()
+  
+  // 1. Always add Netflix & Chill
+  const netflixChill = getCategoryId('Netflix & Chill')
+  if (netflixChill) categories.add(netflixChill)
+  
+  // 2. Add "🔥 Trending Now" for highly rated movies
+  if (movie.vote_average > 7.5) {
+    const trending = getCategoryId('🔥 Trending Now')
+    if (trending) categories.add(trending)
   }
-
+  
+  // 3. Add "🏆 Award Winners" for high ratings
+  if (movie.vote_average > 8) {
+    const award = getCategoryId('🏆 Award Winners')
+    if (award) categories.add(award)
+  }
+  
+  // 4. Add "🎯 Underrated Gems" for low vote count but good rating
+  if (movie.vote_average > 7 && movie.vote_count < 500) {
+    const underrated = getCategoryId('🎯 Underrated Gems')
+    if (underrated) categories.add(underrated)
+  }
+  
+  // 5. Add genre-based categories
+  if (movie.genres) {
+    const genreNames = movie.genres.map((g: any) => g.name)
+    
+    if (genreNames.some((g: string) => ['Comedy', 'Romance'].includes(g))) {
+      const feelGood = getCategoryId('🍿 Feel-Good Movies')
+      if (feelGood) categories.add(feelGood)
+    }
+    
+    if (genreNames.some((g: string) => ['Thriller', 'Horror', 'Mystery'].includes(g))) {
+      const edge = getCategoryId('😱 Edge of Your Seat')
+      if (edge) categories.add(edge)
+    }
+    
+    if (genreNames.some((g: string) => ['Comedy', 'Satire'].includes(g))) {
+      const laugh = getCategoryId('😂 Laugh Out Loud')
+      if (laugh) categories.add(laugh)
+    }
+    
+    if (genreNames.some((g: string) => ['Science Fiction', 'Mystery'].includes(g))) {
+      const mind = getCategoryId('🤯 Mind-Benders')
+      if (mind) categories.add(mind)
+    }
+    
+    if (genreNames.some((g: string) => ['Drama', 'Romance'].includes(g)) && movie.vote_average > 7) {
+      const cry = getCategoryId('😢 Waterworks Guaranteed')
+      if (cry) categories.add(cry)
+    }
+    
+    if (genreNames.some((g: string) => ['Action', 'Crime'].includes(g)) && movie.vote_average > 7) {
+      const gems = getCategoryId('🎯 Underrated Gems')
+      if (gems) categories.add(gems)
+    }
+    
+    if (genreNames.some((g: string) => ['Drama', 'Crime'].includes(g)) && movie.vote_average > 7) {
+      const nollywood = getCategoryId('Made in Nollywood')
+      if (nollywood) categories.add(nollywood)
+    }
+  }
+  
+  // 6. Add "🎥 Cinema Classics" for older movies
+  const year = new Date(movie.release_date).getFullYear()
+  if (year < 2000 && movie.vote_average > 7) {
+    const classics = getCategoryId('🎥 Cinema Classics')
+    if (classics) categories.add(classics)
+  }
+  
+  // 7. Add "🌍 World Cinema" for non-English
+  if (movie.original_language && movie.original_language !== 'en') {
+    const world = getCategoryId('🌍 World Cinema')
+    if (world) categories.add(world)
+  }
+  
+  // 8. Add "🏁 Instant Hook" for high popularity
+  if (movie.popularity > 50) {
+    const hook = getCategoryId('🏁 Instant Hook')
+    if (hook) categories.add(hook)
+  }
+  
+  // 9. Add "🌍 Afrobeats Takeover" for African content
+  if (movie.origin_country && movie.origin_country.some((c: string) => ['NG', 'ZA', 'GH'].includes(c))) {
+    const afrobeats = getCategoryId('🌍 Afrobeats Takeover')
+    if (afrobeats) categories.add(afrobeats)
+  }
+  
+  // 10. Add "📅 Throwback Thursday" for movies from 2000-2010
+  if (year >= 2000 && year <= 2010 && movie.vote_average > 6.5) {
+    const throwback = getCategoryId('📅 Throwback Thursday')
+    if (throwback) categories.add(throwback)
+  }
+  
+  return Array.from(categories)
+}
+  
   const importSelectedNetflixMovies = async () => {
     const moviesToImport = netflixImportData.filter(movie => 
       selectedNetflixMovies.has(movie.id.toString())
