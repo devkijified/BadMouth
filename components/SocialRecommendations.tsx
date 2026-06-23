@@ -1,61 +1,20 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
-import { ThumbsUp, MessageCircle, Share2, Loader2 } from 'lucide-react'
+import { useAuth } from '@/hooks/useAuth'
+import { Star, User, ThumbsUp, MessageCircle } from 'lucide-react'
 import { ContentItem } from '@/types/content'
+import toast from 'react-hot-toast'
 
 interface SocialRecommendationsProps {
   onViewDetails: (item: ContentItem) => void
   activeTab: 'movie' | 'music'
 }
 
-interface Recommendation {
-  id: string
-  user_id: string
-  content_id: string
-  content_type: string
-  recommendation_tier: string
-  comment: string
-  created_at: string
-  updated_at?: string
-  profiles: {
-    id: string
-    username: string
-    avatar_url: string
-  }
-  content: {
-    id: string
-    title: string
-    image_url: string
-    type: string
-    artist: string
-    description: string
-    year: number
-    genre: string
-    stats_highly: number
-    stats_recommended: number
-    stats_not: number
-    rating_scale: number
-    platforms?: string[]
-    director?: string
-    actors?: string[]
-    runtime?: string
-    duration?: string
-    trailer_url?: string
-  }
-}
-
-const tierConfig = {
-  highly: { emoji: '🔥', label: 'HIGHLY RECOMMENDED', color: 'bg-teal-600/20 text-teal-400 border-teal-600' },
-  recommended: { emoji: '👍', label: 'RECOMMENDED', color: 'bg-blue-600/20 text-blue-400 border-blue-600' },
-  not: { emoji: '👎', label: 'NOT RECOMMENDED', color: 'bg-gray-600/20 text-gray-400 border-gray-600' }
-}
-
 export default function SocialRecommendations({ onViewDetails, activeTab }: SocialRecommendationsProps) {
   const { user } = useAuth()
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([])
+  const [recommendations, setRecommendations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -65,122 +24,25 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
   const loadRecommendations = async () => {
     setLoading(true)
     try {
-      // Step 1: Get recommendations
-      const { data: recsData, error: recsError } = await supabase
+      const { data, error } = await supabase
         .from('recommendations')
-        .select('*')
+        .select(`
+          *,
+          profiles(username, avatar_url),
+          content(id, title, image_url, artist, type, year, rating, rating_count)
+        `)
         .eq('content_type', activeTab)
         .order('created_at', { ascending: false })
         .limit(20)
+
+      if (error) throw error
       
-      if (recsError) {
-        console.error('Error loading recommendations:', recsError)
-        setRecommendations([])
-        setLoading(false)
-        return
-      }
-      
-      if (!recsData || recsData.length === 0) {
-        console.log('No recommendations found for type:', activeTab)
-        setRecommendations([])
-        setLoading(false)
-        return
-      }
-      
-      console.log('Found recommendations:', recsData.length)
-      
-      // Step 2: Get unique user IDs
-      const userIdMap: Record<string, boolean> = {}
-      recsData.forEach(rec => {
-        userIdMap[rec.user_id] = true
-      })
-      const userIds = Object.keys(userIdMap)
-      
-      // Step 3: Get profiles
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url')
-        .in('id', userIds)
-      
-      if (profilesError) {
-        console.error('Error loading profiles:', profilesError)
-      }
-      
-      // Step 4: Get unique content IDs
-      const contentIdMap: Record<string, boolean> = {}
-      recsData.forEach(rec => {
-        contentIdMap[rec.content_id] = true
-      })
-      const contentIds = Object.keys(contentIdMap)
-      
-      // Step 5: Get content details with all fields
-      const { data: contentsData, error: contentsError } = await supabase
-        .from('content')
-        .select('*')
-        .in('id', contentIds)
-      
-      if (contentsError) {
-        console.error('Error loading content:', contentsError)
-      }
-      
-      // Create maps for quick lookup
-      const profileMap: Record<string, any> = {}
-      profilesData?.forEach(profile => {
-        profileMap[profile.id] = profile
-      })
-      
-      const contentMap: Record<string, any> = {}
-      contentsData?.forEach(content => {
-        contentMap[content.id] = content
-      })
-      
-      // Step 6: Merge all data
-      const merged: Recommendation[] = recsData.map(rec => {
-        const profile = profileMap[rec.user_id]
-        const content = contentMap[rec.content_id]
-        
-        return {
-          id: rec.id,
-          user_id: rec.user_id,
-          content_id: rec.content_id,
-          content_type: rec.content_type,
-          recommendation_tier: rec.recommendation_tier,
-          comment: rec.comment || '',
-          created_at: rec.created_at,
-          updated_at: rec.updated_at,
-          profiles: {
-            id: profile?.id || '',
-            username: profile?.username || 'Anonymous',
-            avatar_url: profile?.avatar_url || null
-          },
-          content: {
-            id: content?.id || '',
-            title: content?.title || 'Unknown Content',
-            image_url: content?.image_url || '',
-            type: content?.type || rec.content_type,
-            artist: content?.artist || '',
-            description: content?.description || '',
-            year: content?.year || 0,
-            genre: content?.genre || '',
-            stats_highly: content?.stats_highly || 0,
-            stats_recommended: content?.stats_recommended || 0,
-            stats_not: content?.stats_not || 0,
-            rating_scale: content?.rating_scale || 0,
-            platforms: content?.platforms || [],
-            director: content?.director || null,
-            actors: content?.actors || [],
-            runtime: content?.runtime || null,
-            duration: content?.duration || null,
-            trailer_url: content?.trailer_url || null
-          }
-        }
-      })
-      
-      console.log('Merged recommendations:', merged.length)
-      setRecommendations(merged)
+      // Filter out recommendations where content is null (deleted)
+      const validData = data?.filter(rec => rec.content) || []
+      setRecommendations(validData)
     } catch (error) {
-      console.error('Error in loadRecommendations:', error)
-      setRecommendations([])
+      console.error('Error loading social recommendations:', error)
+      toast.error('Failed to load recommendations')
     } finally {
       setLoading(false)
     }
@@ -189,123 +51,105 @@ export default function SocialRecommendations({ onViewDetails, activeTab }: Soci
   if (loading) {
     return (
       <div className="mb-8">
-        <div className="flex items-center gap-2 mb-4 px-4">
-          <MessageCircle size={20} className="text-teal-500" />
-          <h2 className="text-xl md:text-2xl font-semibold">BadMouthers Recommendations</h2>
-        </div>
-        <div className="space-y-4 px-4">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="bg-gray-800/50 rounded-xl p-4 animate-pulse">
-              <div className="flex gap-3">
-                <div className="w-10 h-10 bg-gray-700 rounded-full" />
-                <div className="flex-1">
-                  <div className="h-4 bg-gray-700 rounded w-1/3 mb-2" />
-                  <div className="h-3 bg-gray-700 rounded w-full mb-2" />
-                  <div className="h-3 bg-gray-700 rounded w-2/3" />
-                </div>
-              </div>
-            </div>
-          ))}
+        <h2 className="text-lg sm:text-xl md:text-2xl font-semibold mb-3 px-4">
+          Community Ratings
+        </h2>
+        <div className="flex justify-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-500"></div>
         </div>
       </div>
     )
   }
 
   if (recommendations.length === 0) {
-    return (
-      <div className="mb-8">
-        <div className="flex items-center gap-2 mb-4 px-4">
-          <MessageCircle size={20} className="text-teal-500" />
-          <h2 className="text-xl md:text-2xl font-semibold">BadMouthers Recommendations</h2>
-        </div>
-        <div className="text-center py-12 text-gray-500 bg-gray-800/30 rounded-xl mx-4">
-          <MessageCircle size={48} className="mx-auto mb-3 opacity-50" />
-          <p className="text-sm">No recommendations yet.</p>
-          <p className="text-xs text-gray-600 mt-1">Be the first to recommend something!</p>
-        </div>
-      </div>
-    )
+    return null
   }
 
   return (
     <div className="mb-8">
-      <div className="flex items-center gap-2 mb-4 px-4">
-        <MessageCircle size={20} className="text-teal-500" />
-        <h2 className="text-xl md:text-2xl font-semibold">BadMouthers Recommendations</h2>
-        <span className="text-sm text-gray-500">({recommendations.length})</span>
+      <div className="flex justify-between items-center mb-3 px-4">
+        <h2 className="text-lg sm:text-xl md:text-2xl font-semibold">
+          Community Ratings
+        </h2>
+        <span className="text-xs text-gray-400">
+          {recommendations.length} ratings
+        </span>
       </div>
 
-      <div className="space-y-4 px-4">
-        {recommendations.map((rec) => {
-          const tier = tierConfig[rec.recommendation_tier as keyof typeof tierConfig] || tierConfig.recommended
-          const username = rec.profiles?.username || 'Anonymous'
-          const avatarUrl = rec.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`
-          const isCurrentUser = user?.id === rec.user_id
-          
-          const fullContent: ContentItem = {
-            id: rec.content.id,
-            title: rec.content.title,
-            description: rec.content.description,
-            long_description: rec.content.description,
-            image_url: rec.content.image_url,
-            backdrop_url: rec.content.image_url,
-            type: rec.content.type as 'movie' | 'music',
-            year: rec.content.year,
-            director: rec.content.director || null,
-            artist: rec.content.artist,
-            actors: rec.content.actors || null,
-            platforms: rec.content.platforms || [],
-            trailer_url: rec.content.trailer_url || null,
-            runtime: rec.content.runtime || null,
-            duration: rec.content.duration || null,
-            genre: rec.content.genre,
-            stats_highly: rec.content.stats_highly,
-            stats_recommended: rec.content.stats_recommended,
-            stats_not: rec.content.stats_not,
-            rating_scale: rec.content.rating_scale
-          }
-          
-          return (
-            <div 
-              key={rec.id} 
-              className={`bg-gray-800/50 rounded-xl p-4 border-l-4 ${tier.color.replace('border-', 'border-l-')} hover:bg-gray-800 transition cursor-pointer ${isCurrentUser ? 'ring-1 ring-teal-500/50' : ''}`}
-              onClick={() => onViewDetails(fullContent)}
-            >
-              <div className="flex gap-3">
-                <img src={avatarUrl} alt={username} className="w-10 h-10 rounded-full" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="font-semibold text-sm">{username}</span>
-                    {isCurrentUser && (
-                      <span className="text-[10px] px-1.5 py-0.5 bg-teal-600/30 text-teal-400 rounded-full ml-1">You</span>
-                    )}
-                    <span className="text-xs text-gray-500">• {new Date(rec.created_at).toLocaleDateString()}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${tier.color}`}>
-                      {tier.emoji} {tier.label}
-                    </span>
-                  </div>
-                  <h3 className="font-bold mb-1 truncate">{rec.content.title}</h3>
-                  {rec.content.artist && <p className="text-xs text-gray-400 mb-2">{rec.content.artist}</p>}
-                  {rec.comment && <p className="text-sm text-gray-400 mb-3 line-clamp-2">{rec.comment}</p>}
-                  <div className="flex gap-4">
-                    <button 
-                      onClick={(e) => { e.stopPropagation() }} 
-                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"
-                    >
-                      <ThumbsUp size={14} /> Like
-                    </button>
-                    <button 
-                      onClick={(e) => { e.stopPropagation() }} 
-                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"
-                    >
-                      <Share2 size={14} /> Share
-                    </button>
+      <div className="space-y-3 px-4">
+        {recommendations.map((rec) => (
+          <div 
+            key={rec.id} 
+            className="bg-gray-800/50 rounded-lg p-3 hover:bg-gray-800 transition cursor-pointer"
+            onClick={() => onViewDetails(rec.content)}
+          >
+            <div className="flex items-start gap-3">
+              {/* Avatar */}
+              <img 
+                src={rec.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${rec.profiles?.username || 'anonymous'}`} 
+                alt={rec.profiles?.username || 'Anonymous'} 
+                className="w-10 h-10 rounded-full flex-shrink-0" 
+              />
+              
+              <div className="flex-1 min-w-0">
+                {/* Header */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-sm">
+                    {rec.profiles?.username || 'Anonymous'}
+                  </span>
+                  <span className="text-xs text-gray-500">rated</span>
+                  <span className="flex items-center gap-1 text-yellow-400">
+                    <Star size={14} className="fill-yellow-400" />
+                    <span className="font-bold">{rec.rating}/10</span>
+                  </span>
+                </div>
+                
+                {/* Content */}
+                <div className="flex items-center gap-2 mt-1">
+                  <img 
+                    src={rec.content?.image_url} 
+                    alt={rec.content?.title} 
+                    className="w-8 h-8 rounded object-cover flex-shrink-0" 
+                  />
+                  <div>
+                    <p className="font-medium text-sm truncate">
+                      {rec.content?.title || 'Unknown'}
+                    </p>
+                    <p className="text-xs text-gray-400 truncate">
+                      {rec.content?.artist || rec.content?.director || 'Unknown'}
+                    </p>
                   </div>
                 </div>
+                
+                {/* Comment */}
+                {rec.comment && (
+                  <p className="text-sm text-gray-300 mt-2 line-clamp-2">
+                    "{rec.comment}"
+                  </p>
+                )}
+                
+                {/* Footer */}
+                <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                  <span>{new Date(rec.created_at).toLocaleDateString()}</span>
+                  <span>•</span>
+                  <span className="flex items-center gap-1">
+                    <ThumbsUp size={12} /> {rec.content?.rating_count || 0} ratings
+                  </span>
+                </div>
               </div>
+              
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onViewDetails(rec.content)
+                }}
+                className="text-teal-400 hover:text-teal-300 transition text-sm whitespace-nowrap"
+              >
+                View →
+              </button>
             </div>
-          )
-        })}
+          </div>
+        ))}
       </div>
     </div>
   )
