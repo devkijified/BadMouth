@@ -71,45 +71,46 @@ const genreMap: Record<number, string> = {
   37: 'Western'
 }
 
-// BADMOUTH-style critic descriptions - real and punchy
+// BADMOUTH-style critic descriptions - More human, more punchy
 const generateBadmouthDescription = (title: string, year: number, genre: string, director: string, cast: string[], plot: string): string => {
+  
   const intros = [
-    `"${title}" is the kind of ${genre} film that makes you question everything you thought you knew about cinema.`,
-    `Let's be real — "${title}" doesn't just push boundaries, it obliterates them.`,
-    `If you're looking for a ${genre} movie that actually has something to say, "${title}" is it.`,
-    `"${title}" arrives with the kind of swagger that makes other ${genre} films look like student projects.`,
-    `Here's the thing about "${title}" — it's not just a ${genre} movie, it's a statement.`,
-    `Some films entertain, others challenge — "${title}" does both while making it look effortless.`,
-    `"${title}" is the kind of ${genre} film that reminds you why you fell in love with movies in the first place.`,
-    `You haven't seen a ${genre} film like "${title}" — trust me, you haven't.`,
-    `"${title}" walks the line between brilliant and unhinged, and it's absolutely glorious.`,
-    `This is ${genre} filmmaking at its most confident — "${title}" knows exactly what it is and owns it.`,
+    `"${title}" hits you like a freight train — and I mean that in the best possible way.`,
+    `There's something about "${title}" that feels dangerous, like it knows it's too good for you.`,
+    `You know that feeling when a film just clicks? That's "${title}" from start to finish.`,
+    `"${title}" doesn't just tell a story — it grabs you by the collar and makes you pay attention.`,
+    `This is the kind of film that makes you want to text your friends at 2am: "You HAVE to see this."`,
+    `"${title}" is what happens when a director decides to go for broke — and it works spectacularly.`,
+    `Some films are made to be watched. "${title}" is made to be experienced.`,
+    `Let's be honest — "${title}" is the reason we still go to the movies.`,
+    `"${title}" walks a tightrope between brilliance and madness, and it never once looks down.`,
+    `This is cinema as a contact sport — raw, unflinching, and utterly unforgettable.`,
   ]
   
   const middles = [
-    `The script crackles with wit and danger, every line landing like a punch to the gut.`,
-    `What makes it work is the way it refuses to play by the rules — it's unpredictable, messy, and utterly compelling.`,
-    `The performances are electric, with ${cast.slice(0, 2).join(' and ')} delivering career-best work.`,
-    `It's the kind of film that gets under your skin and stays there, long after the credits roll.`,
-    `The direction is sharp, the pacing relentless, and the payoff? Absolutely worth the ride.`,
-    `There's a scene in this film that will have you talking for days — you'll know it when you see it.`,
-    `It balances tension and release with the precision of a master craftsman.`,
-    `The visual language is stunning — every frame feels meticulously composed.`,
-    `What sets it apart is its refusal to explain itself — it trusts the audience to keep up.`,
-    `It's messy, it's bold, and it's exactly what ${genre} cinema needed right now.`,
+    `The script crackles with the kind of dialogue that makes you wish you'd written it yourself.`,
+    `What makes it work is the way it refuses to be boxed in — it's messy, unpredictable, and that's exactly why it's brilliant.`,
+    `${cast.slice(0, 2).join(' and ')} deliver career-best work, and the supporting cast? Chef's kiss.`,
+    `It's the kind of film that lingers — you'll be thinking about it for days, maybe weeks.`,
+    `The direction is precise, the pacing is relentless, and the emotional payoff? Absolutely devastating in the best way.`,
+    `There's a scene in this film that will stop you dead in your tracks — you'll know it when you see it.`,
+    `It balances tension and humor with the kind of confidence that only comes from a filmmaker who knows exactly what they're doing.`,
+    `Every frame feels deliberate, every line of dialogue lands, and every performance elevates the material.`,
+    `What sets it apart is how it trusts its audience — it doesn't overexplain, it just lets you feel.`,
+    `It's bold, it's uncompromising, and it's exactly what ${genre} cinema needed right now.`,
   ]
   
   const closings = [
-    `BADMOUTH says: don't walk, run to watch this one.`,
-    `It's not just recommended — it's required viewing. BADMOUTH approves.`,
-    `If this isn't on your watchlist already, you're doing it wrong. BADMOUTH says watch it now.`,
-    `A genuine standout — BADMOUTH gives it the highest praise.`,
-    `This is why we love movies. BADMOUTH says: go watch it immediately.`,
-    `Absolutely essential viewing. BADMOUTH can't recommend it enough.`,
-    `One of the year's best — and BADMOUTH doesn't say that lightly.`,
+    `BADMOUTH says: don't just watch this — devour it.`,
+    `If this film doesn't make it onto your year-end list, you're not paying attention. BADMOUTH approves.`,
+    `This is the kind of film that reminds you why you fell in love with movies. BADMOUTH says: go. Now.`,
+    `A genuine knockout. BADMOUTH gives it the highest possible recommendation.`,
+    `This is cinema at its most vital. BADMOUTH says: drop everything and watch it.`,
+    `Absolutely essential. BADMOUTH can't recommend it enough — seriously, what are you waiting for?`,
+    `One of the year's undeniable best. BADMOUTH doesn't say that lightly.`,
     `If you only watch one ${genre} film this year, make it "${title}". BADMOUTH guarantees it.`,
-    `This one's special. BADMOUTH says: drop everything and watch it.`,
-    `A film that earns every bit of praise. BADMOUTH gives it a standing ovation.`,
+    `This one's special. BADMOUTH says: watch it with someone you love, then talk about it for hours.`,
+    `A film that earns every bit of praise. BADMOUTH is giving it a standing ovation.`,
   ]
   
   const randomIntro = intros[Math.floor(Math.random() * intros.length)]
@@ -380,7 +381,7 @@ export default function AdminPage() {
   }
 
   // ============================================
-  // NETFLIX IMPORT FUNCTIONS - FIXED
+  // NETFLIX IMPORT FUNCTIONS - 250 per page
   // ============================================
   const fetchNetflixMovies = async (page: number = 1) => {
     setNetflixImportLoading(true)
@@ -395,7 +396,7 @@ export default function AdminPage() {
       if (data.results) {
         // Fetch full details for each movie to get director, cast, and trailer
         const enrichedResults = await Promise.all(
-          data.results.slice(0, 20).map(async (movie: any) => {
+          data.results.slice(0, 250).map(async (movie: any) => {
             try {
               const detailResponse = await fetch(
                 `https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}&append_to_response=credits,videos`
@@ -531,7 +532,7 @@ export default function AdminPage() {
           runtime: runtime,
           genre: genreNames,
           rating: parseFloat(movie.vote_average?.toFixed(1) || '5.0'),
-          rating_count: 0, // Always 0 - we don't show this
+          rating_count: 0,
           is_tv_show: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -913,7 +914,7 @@ export default function AdminPage() {
         trailer_url: contentForm.trailer_url || null,
         genre: contentForm.genre,
         rating: contentForm.rating || 5.0,
-        rating_count: 0, // Always 0 - we don't show this
+        rating_count: 0,
         is_tv_show: contentForm.is_tv_show || false,
         updated_at: new Date().toISOString()
       }
@@ -1873,7 +1874,7 @@ export default function AdminPage() {
       {/* Netflix Import Modal */}
       {showNetflixImport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 overflow-y-auto">
-          <div className="bg-gray-900 rounded-xl max-w-6xl w-full p-6 max-h-[90vh] overflow-y-auto">
+          <div className="bg-gray-900 rounded-xl max-w-7xl w-full p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4 sticky top-0 bg-gray-900 z-10 pb-4 border-b border-gray-700">
               <div>
                 <div className="flex items-center gap-3">
@@ -1961,8 +1962,8 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Movie Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {/* Movie Grid - 250 per page */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
               {netflixImportData.map((movie) => {
                 const isSelected = selectedNetflixMovies.has(movie.id.toString())
                 const genreNames = movie.genres?.map((g: any) => g.name).join(', ') || 
@@ -1981,35 +1982,24 @@ export default function AdminPage() {
                     <img 
                       src={movie.poster_path ? `https://image.tmdb.org/t/p/w200${movie.poster_path}` : '/placeholder-poster.jpg'}
                       alt={movie.title}
-                      className="w-full h-56 object-cover"
+                      className="w-full h-48 object-cover"
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=200&name=' + encodeURIComponent(movie.title)
                       }}
                     />
-                    <div className="p-3">
-                      <h3 className="font-semibold text-sm truncate">{movie.title}</h3>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-yellow-400">⭐ {movie.vote_average?.toFixed(1) || 'N/A'}</span>
-                        <span className="text-xs text-gray-500">{new Date(movie.release_date).getFullYear()}</span>
-                        <span className="text-xs text-gray-600 truncate">{genreNames}</span>
+                    <div className="p-2">
+                      <h3 className="font-semibold text-xs truncate">{movie.title}</h3>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="text-[10px] text-yellow-400">⭐ {movie.vote_average?.toFixed(1) || 'N/A'}</span>
+                        <span className="text-[10px] text-gray-500">{new Date(movie.release_date).getFullYear()}</span>
                       </div>
-                      {movie.director && (
-                        <p className="text-xs text-gray-400 truncate">Director: {movie.director}</p>
-                      )}
-                      {movie.cast && movie.cast.length > 0 && (
-                        <p className="text-xs text-gray-500 truncate">Cast: {movie.cast.slice(0, 3).join(', ')}</p>
-                      )}
-                      {movie.trailer_url && (
-                        <p className="text-xs text-teal-400">🎬 Trailer available</p>
-                      )}
-                      <p className="text-xs text-gray-400 line-clamp-2 mt-1">{movie.overview}</p>
-                      <div className="mt-2">
+                      <div className="mt-1">
                         {isSelected ? (
-                          <span className="text-teal-400 text-xs flex items-center gap-1">
-                            ✓ Selected for import
+                          <span className="text-teal-400 text-[10px] flex items-center gap-0.5">
+                            ✓ Selected
                           </span>
                         ) : (
-                          <span className="text-gray-500 text-xs">Click to select</span>
+                          <span className="text-gray-500 text-[10px]">Click to select</span>
                         )}
                       </div>
                     </div>
