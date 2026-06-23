@@ -47,13 +47,9 @@ export default function ContentRow({
   if (!displayItems || displayItems.length === 0) return null
 
   const getRating = (item: ContentItem) => {
-    if (item.rating_scale && item.rating_scale > 0) return item.rating_scale
-    const total = (item.stats_highly || 0) + (item.stats_recommended || 0) + (item.stats_not || 0)
-    if (total === 0) return 0
-    return Number((((item.stats_highly || 0) * 10 + (item.stats_recommended || 0) * 7) / total).toFixed(1))
+    return item.rating || 0
   }
 
-  // Check if this is a TV show
   const isTVShow = (item: ContentItem) => {
     return item.genre === 'TV Series' || 
            item.is_tv_show === true ||
@@ -84,6 +80,7 @@ export default function ContentRow({
         >
           {displayItems.map((item, idx) => {
             const tvShow = isTVShow(item)
+            const rating = getRating(item)
             return (
               <div key={`${item.id}-${idx}`} className="flex-shrink-0 w-[140px] xs:w-[160px] md:w-[200px] group/item">
                 <div 
@@ -108,7 +105,7 @@ export default function ContentRow({
                   {/* Rating Badge */}
                   <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm px-1.5 py-0.5 rounded-lg flex items-center gap-0.5">
                     <Star size={10} className="text-yellow-400 fill-yellow-400" />
-                    <span className="text-[10px] xs:text-xs font-bold">{getRating(item)}</span>
+                    <span className="text-[10px] xs:text-xs font-bold">{rating.toFixed(1)}</span>
                   </div>
                   
                   {/* Hover Overlay */}
@@ -120,7 +117,7 @@ export default function ContentRow({
                       }} 
                       className="flex items-center justify-center gap-1 xs:gap-2 p-1.5 xs:p-2 bg-teal-600 rounded-lg text-[10px] xs:text-xs font-semibold hover:bg-teal-700 transition"
                     >
-                      <ThumbsUp size={12} /> Recommend
+                      <Star size={12} className="fill-white" /> Rate
                     </button>
                     <button 
                       onClick={(e) => { 
@@ -183,24 +180,15 @@ export default function ContentRow({
                     </div>
                   ) : null}
                   
-                  {/* Stats */}
+                  {/* Rating Display */}
                   <div className="flex justify-between mt-1">
-                    <span className="flex items-center gap-0.5">
-                      <span className="text-teal-500 text-[9px] xs:text-xs">🔥</span>
-                      <span className="text-[8px] xs:text-[9px] text-gray-300">
-                        {item.stats_highly || 0}
+                    <span className="flex items-center gap-1">
+                      <Star size={10} className="text-yellow-400 fill-yellow-400" />
+                      <span className="text-[10px] font-bold text-yellow-400">
+                        {rating.toFixed(1)}
                       </span>
-                    </span>
-                    <span className="flex items-center gap-0.5">
-                      <span className="text-blue-500 text-[9px] xs:text-xs">👍</span>
-                      <span className="text-[8px] xs:text-[9px] text-gray-300">
-                        {item.stats_recommended || 0}
-                      </span>
-                    </span>
-                    <span className="flex items-center gap-0.5">
-                      <span className="text-gray-500 text-[9px] xs:text-xs">👎</span>
-                      <span className="text-[8px] xs:text-[9px] text-gray-300">
-                        {item.stats_not || 0}
+                      <span className="text-[8px] text-gray-500">
+                        ({item.rating_count || 0})
                       </span>
                     </span>
                   </div>
