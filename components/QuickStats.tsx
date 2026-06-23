@@ -12,8 +12,6 @@ interface QuickStatsProps {
 
 export default function QuickStats({ userId }: QuickStatsProps) {
   const [stats, setStats] = useState({
-    totalMovies: 0,
-    totalMusic: 0,
     totalRatings: 0,
     watchlistCount: 0,
     averageRating: 0,
