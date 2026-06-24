@@ -21,6 +21,7 @@ export default function ExplorePage() {
   const [genres, setGenres] = useState<string[]>([])
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set())
   const [showFilters, setShowFilters] = useState(false)
+  const [totalCount, setTotalCount] = useState(0)
 
   useEffect(() => {
     loadContent()
@@ -39,10 +40,11 @@ export default function ExplorePage() {
 
       if (error) throw error
 
+      console.log('Total content loaded:', data?.length || 0)
       setContent(data || [])
       setFilteredContent(data || [])
+      setTotalCount(data?.length || 0)
       
-      // Extract unique genres
       const uniqueGenres = new Set<string>()
       data?.forEach(item => {
         if (item.genre) {
@@ -126,7 +128,6 @@ export default function ExplorePage() {
   const applyFilters = (query: string, type: string, genre: string) => {
     let filtered = [...content]
     
-    // Search query
     if (query.trim()) {
       const q = query.toLowerCase().trim()
       filtered = filtered.filter(item => 
@@ -137,12 +138,10 @@ export default function ExplorePage() {
       )
     }
     
-    // Type filter
     if (type !== 'all') {
       filtered = filtered.filter(item => item.type === type)
     }
     
-    // Genre filter
     if (genre !== 'all') {
       filtered = filtered.filter(item => 
         item.genre && item.genre.split(',').some(g => g.trim() === genre)
@@ -295,10 +294,10 @@ export default function ExplorePage() {
         {/* Results Stats */}
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">
-            {filteredContent.length} {filteredContent.length === 1 ? 'Result' : 'Results'}
+            {totalCount.toLocaleString()} {totalCount === 1 ? 'Result' : 'Results'}
           </h2>
           <span className="text-xs text-gray-400">
-            Sorted by Rating
+            Showing {filteredContent.length} of {totalCount}
           </span>
         </div>
 
