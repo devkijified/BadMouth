@@ -33,18 +33,30 @@ export default function ExplorePage() {
   const loadContent = async () => {
     setLoading(true)
     try {
+      console.log('Loading explore content...')
+      
+      // Get all content
       const { data, error } = await supabase
         .from('content')
         .select('*')
         .order('rating', { ascending: false })
 
-      if (error) throw error
+      if (error) {
+        console.error('Explore content error:', error)
+        toast.error('Failed to load content')
+        setContent([])
+        setFilteredContent([])
+        setTotalCount(0)
+        setLoading(false)
+        return
+      }
 
-      console.log('Total content loaded:', data?.length || 0)
+      console.log('Explore content loaded:', data?.length || 0)
       setContent(data || [])
       setFilteredContent(data || [])
       setTotalCount(data?.length || 0)
       
+      // Extract unique genres
       const uniqueGenres = new Set<string>()
       data?.forEach(item => {
         if (item.genre) {
@@ -55,6 +67,9 @@ export default function ExplorePage() {
     } catch (error) {
       console.error('Error loading content:', error)
       toast.error('Failed to load content')
+      setContent([])
+      setFilteredContent([])
+      setTotalCount(0)
     } finally {
       setLoading(false)
     }
@@ -63,15 +78,24 @@ export default function ExplorePage() {
   const loadWatchlist = async () => {
     if (!user) return
     
-    const { data } = await supabase
-      .from('watchlist')
-      .select('content_id')
-      .eq('user_id', user.id)
-    
-    if (data) {
-      const idsSet = new Set<string>()
-      data.forEach(item => idsSet.add(item.content_id))
-      setWatchlistIds(idsSet)
+    try {
+      const { data, error } = await supabase
+        .from('watchlist')
+        .select('content_id')
+        .eq('user_id', user.id)
+      
+      if (error) {
+        console.error('Watchlist load error:', error)
+        return
+      }
+      
+      if (data) {
+        const idsSet = new Set<string>()
+        data.forEach(item => idsSet.add(item.content_id))
+        setWatchlistIds(idsSet)
+      }
+    } catch (error) {
+      console.error('Error loading watchlist:', error)
     }
   }
 
@@ -81,34 +105,39 @@ export default function ExplorePage() {
       return
     }
     
-    if (watchlistIds.has(item.id)) {
-      const { error } = await supabase
-        .from('watchlist')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('content_id', item.id)
-      
-      if (!error) {
-        const newIdsSet = new Set(watchlistIds)
-        newIdsSet.delete(item.id)
-        setWatchlistIds(newIdsSet)
-        toast.success(`Removed "${item.title}" from watchlist`)
+    try {
+      if (watchlistIds.has(item.id)) {
+        const { error } = await supabase
+          .from('watchlist')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('content_id', item.id)
+        
+        if (!error) {
+          const newIdsSet = new Set(watchlistIds)
+          newIdsSet.delete(item.id)
+          setWatchlistIds(newIdsSet)
+          toast.success(`Removed "${item.title}" from watchlist`)
+        }
+      } else {
+        const { error } = await supabase
+          .from('watchlist')
+          .insert({
+            user_id: user.id,
+            content_id: item.id,
+            content_type: item.type
+          })
+        
+        if (!error) {
+          const newIdsSet = new Set(watchlistIds)
+          newIdsSet.add(item.id)
+          setWatchlistIds(newIdsSet)
+          toast.success(`✨ "${item.title}" added to watchlist!`)
+        }
       }
-    } else {
-      const { error } = await supabase
-        .from('watchlist')
-        .insert({
-          user_id: user.id,
-          content_id: item.id,
-          content_type: item.type
-        })
-      
-      if (!error) {
-        const newIdsSet = new Set(watchlistIds)
-        newIdsSet.add(item.id)
-        setWatchlistIds(newIdsSet)
-        toast.success(`✨ "${item.title}" added to watchlist!`)
-      }
+    } catch (error) {
+      console.error('Watchlist error:', error)
+      toast.error('Failed to update watchlist')
     }
   }
 
@@ -327,6 +356,9 @@ export default function ExplorePage() {
                     src={item.image_url}
                     alt={item.title}
                     className="w-full h-48 object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=200&name=${encodeURIComponent(item.title)}`
+                    }}
                   />
                   {item.is_tv_show && (
                     <div className="absolute top-2 left-2">
