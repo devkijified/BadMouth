@@ -71,14 +71,15 @@ const genreMap: Record<number, string> = {
   37: 'Western'
 }
 
-// Category names for Netflix import
-const NETFLIX_CATEGORIES = [
+// Category names for imports
+const IMPORT_CATEGORIES = [
   '🔥 Trending Now',
   'Watch in a Weekend',
   'Sci-Fi Adventures',
   'Made in Nollywood',
   'YouTube Special',
   'Netflix & Chill',
+  'Prime Video Only',
   'Only On Apple TV',
   'TV Shows You Shouldn\'t miss',
   '😢 Waterworks Guaranteed',
@@ -187,20 +188,19 @@ export default function AdminPage() {
   const [searchingTmdb, setSearchingTmdb] = useState(false)
   const [tmdbSearchType, setTmdbSearchType] = useState<'movie' | 'tv'>('movie')
   
-  // Netflix Import states
-  const [showNetflixImport, setShowNetflixImport] = useState(false)
-  const [netflixImportData, setNetflixImportData] = useState<any[]>([])
-  const [netflixImportLoading, setNetflixImportLoading] = useState(false)
-  const [netflixImportPage, setNetflixImportPage] = useState(1)
-  const [netflixTotalPages, setNetflixTotalPages] = useState(0)
-  const [netflixImportProgress, setNetflixImportProgress] = useState(0)
-  const [netflixImportTotal, setNetflixImportTotal] = useState(0)
-  const [selectedNetflixMovies, setSelectedNetflixMovies] = useState<Set<string>>(new Set())
-  const [selectAllNetflix, setSelectAllNetflix] = useState(false)
-  const [netflixCategoryId, setNetflixCategoryId] = useState<string>('')
-  const [allCategories, setAllCategories] = useState<any[]>([])
-  const [autoAssignEnabled, setAutoAssignEnabled] = useState(true)
-  const [movieCategoryMap, setMovieCategoryMap] = useState<Record<string, string[]>>({})
+  // Import states
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importData, setImportData] = useState<any[]>([])
+  const [importLoading, setImportLoading] = useState(false)
+  const [importPage, setImportPage] = useState(1)
+  const [importTotalPages, setImportTotalPages] = useState(0)
+  const [importProgress, setImportProgress] = useState(0)
+  const [importTotal, setImportTotal] = useState(0)
+  const [selectedMovies, setSelectedMovies] = useState<Set<string>>(new Set())
+  const [selectAll, setSelectAll] = useState(false)
+  const [importCategoryId, setImportCategoryId] = useState<string>('')
+  const [allImportCategories, setAllImportCategories] = useState<any[]>([])
+  const [importSource, setImportSource] = useState<'netflix' | 'prime'>('netflix')
   
   const TMDB_API_KEY = 'e40a2dd7da8c15d302e6790211dd958f'
 
@@ -264,7 +264,7 @@ export default function AdminPage() {
         setIsMasterAdmin(user?.email === 'kijified@gmail.com')
         await loadAllData()
         setupRealtimeSubscriptions()
-        loadNetflixCategories()
+        loadImportCategories()
       } else {
         setIsAdmin(false)
         setAdminChecked(true)
@@ -281,18 +281,18 @@ export default function AdminPage() {
     }
   }
 
-  const loadNetflixCategories = async () => {
+  const loadImportCategories = async () => {
     const { data } = await supabase
       .from('categories')
       .select('*')
-      .in('name', NETFLIX_CATEGORIES)
+      .in('name', IMPORT_CATEGORIES)
       .eq('type', 'movie')
     
     if (data) {
-      setAllCategories(data)
+      setAllImportCategories(data)
       const netflixChill = data.find(c => c.name === 'Netflix & Chill')
       if (netflixChill) {
-        setNetflixCategoryId(netflixChill.id)
+        setImportCategoryId(netflixChill.id)
       }
     }
   }
@@ -367,7 +367,6 @@ export default function AdminPage() {
 
       if (error) {
         console.error('Content load error:', error)
-        // Try without ordering
         const { data: fallbackData, error: fallbackError } = await supabase
           .from('content')
           .select('*')
@@ -396,7 +395,6 @@ export default function AdminPage() {
     try {
       console.log('Loading content counts...')
       
-      // Get total movies count directly from database
       const { count: movies, error: movieError } = await supabase
         .from('content')
         .select('*', { count: 'exact', head: true })
@@ -409,7 +407,6 @@ export default function AdminPage() {
         setTotalMovies(movies || 0)
       }
 
-      // Get total music count directly from database
       const { count: music, error: musicError } = await supabase
         .from('content')
         .select('*', { count: 'exact', head: true })
@@ -498,12 +495,13 @@ export default function AdminPage() {
   }
 
   // ============================================
-  // NETFLIX IMPORT FUNCTIONS
+  // IMPORT FUNCTIONS
   // ============================================
   
-  const getSavedNetflixPage = (): number => {
+  const getSavedPage = (): number => {
+    const key = `import_page_${importSource}`
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('netflix_import_page')
+      const saved = localStorage.getItem(key)
       if (saved) {
         return parseInt(saved, 10)
       }
@@ -511,19 +509,35 @@ export default function AdminPage() {
     return 1
   }
 
-  const saveNetflixPage = (page: number) => {
+  const savePage = (page: number) => {
+    const key = `import_page_${importSource}`
     if (typeof window !== 'undefined') {
-      localStorage.setItem('netflix_import_page', page.toString())
+      localStorage.setItem(key, page.toString())
     }
   }
 
-  const fetchNetflixMovies = async (page: number = 1) => {
-    setNetflixImportLoading(true)
-    setNetflixImportProgress(0)
+  const getProviderId = (source: 'netflix' | 'prime'): number => {
+    return source === 'netflix' ? 8 : 9
+  }
+
+  const getPlatformName = (source: 'netflix' | 'prime'): string => {
+    return source === 'netflix' ? 'Netflix' : 'Prime Video'
+  }
+
+  const getCategoryName = (source: 'netflix' | 'prime'): string => {
+    return source === 'netflix' ? 'Netflix & Chill' : 'Prime Video Only'
+  }
+
+  const fetchImportMovies = async (page: number = 1) => {
+    setImportLoading(true)
+    setImportProgress(0)
+    
+    const providerId = getProviderId(importSource)
+    const platform = getPlatformName(importSource)
     
     try {
       const response = await fetch(
-        `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&with_watch_providers=8&watch_region=US&page=${page}&sort_by=popularity.desc`
+        `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&with_watch_providers=${providerId}&watch_region=US&page=${page}&sort_by=popularity.desc`
       )
       const data = await response.json()
       
@@ -560,32 +574,35 @@ export default function AdminPage() {
           })
         )
         
-        setNetflixImportData(enrichedResults)
-        setNetflixTotalPages(data.total_pages)
-        setNetflixImportTotal(data.total_results)
-        setNetflixImportPage(page)
-        saveNetflixPage(page)
-        toast.success(`Loaded ${enrichedResults.length} movies from Netflix (Page ${page}/${data.total_pages})`)
+        setImportData(enrichedResults)
+        setImportTotalPages(data.total_pages)
+        setImportTotal(data.total_results)
+        setImportPage(page)
+        savePage(page)
+        toast.success(`Loaded ${enrichedResults.length} movies from ${platform} (Page ${page}/${data.total_pages})`)
       }
     } catch (error) {
-      console.error('Error fetching Netflix movies:', error)
-      toast.error('Failed to fetch Netflix movies')
+      console.error('Error fetching movies:', error)
+      toast.error(`Failed to fetch ${platform} movies`)
     } finally {
-      setNetflixImportLoading(false)
+      setImportLoading(false)
     }
   }
 
   const getCategoryId = (name: string): string | null => {
-    const cat = allCategories.find(c => c.name === name)
+    const cat = allImportCategories.find(c => c.name === name)
     return cat ? cat.id : null
   }
 
-  const autoAssignCategories = (movie: any): string[] => {
+  const autoAssignCategories = (movie: any, source: 'netflix' | 'prime'): string[] => {
     const categories = new Set<string>()
     
-    const netflixChill = getCategoryId('Netflix & Chill')
-    if (netflixChill) categories.add(netflixChill)
+    // Add the appropriate platform category
+    const platformCategory = getCategoryName(source)
+    const platformCatId = getCategoryId(platformCategory)
+    if (platformCatId) categories.add(platformCatId)
     
+    // Rest of auto-categorization rules
     if (movie.vote_average > 7.5) {
       const trending = getCategoryId('🔥 Trending Now')
       if (trending) categories.add(trending)
@@ -633,11 +650,6 @@ export default function AdminPage() {
         const gems = getCategoryId('🎯 Underrated Gems')
         if (gems) categories.add(gems)
       }
-      
-      if (genreNames.some((g: string) => ['Drama', 'Crime'].includes(g)) && movie.vote_average > 7) {
-        const nollywood = getCategoryId('Made in Nollywood')
-        if (nollywood) categories.add(nollywood)
-      }
     }
     
     const year = new Date(movie.release_date).getFullYear()
@@ -669,9 +681,9 @@ export default function AdminPage() {
     return Array.from(categories)
   }
 
-  const importSelectedNetflixMovies = async () => {
-    const moviesToImport = netflixImportData.filter(movie => 
-      selectedNetflixMovies.has(movie.id.toString())
+  const importSelectedMovies = async () => {
+    const moviesToImport = importData.filter(movie => 
+      selectedMovies.has(movie.id.toString())
     )
     
     if (moviesToImport.length === 0) {
@@ -679,11 +691,12 @@ export default function AdminPage() {
       return
     }
 
-    if (!confirm(`Import ${moviesToImport.length} movies with auto-categorization?`)) {
+    const platform = getPlatformName(importSource)
+    if (!confirm(`Import ${moviesToImport.length} movies from ${platform} with auto-categorization?`)) {
       return
     }
 
-    setNetflixImportLoading(true)
+    setImportLoading(true)
     let imported = 0
     let skipped = 0
     let errors = 0
@@ -756,7 +769,7 @@ export default function AdminPage() {
             year: year,
             director: director,
             actors: actors,
-            platforms: ['Netflix'],
+            platforms: [platform],
             trailer_url: trailerUrl,
             runtime: runtime,
             genre: genreNames,
@@ -779,7 +792,7 @@ export default function AdminPage() {
           }
 
           if (inserted && inserted[0]) {
-            const assignedCategories = autoAssignCategories(movie)
+            const assignedCategories = autoAssignCategories(movie, importSource)
             
             if (assignedCategories.length > 0) {
               const links = assignedCategories.map(catId => ({
@@ -793,41 +806,41 @@ export default function AdminPage() {
           }
 
           imported++
-          setNetflixImportProgress(totalProcessed)
+          setImportProgress(totalProcessed)
         } catch (error) {
           console.error('Import error for movie:', movie.title, error)
           errors++
         }
       }))
       
-      setNetflixImportProgress(totalProcessed)
+      setImportProgress(totalProcessed)
     }
 
-    toast.success(`✅ Imported ${imported} movies, ⏭️ ${skipped} skipped, ❌ ${errors} errors`)
-    setShowNetflixImport(false)
-    setSelectedNetflixMovies(new Set())
-    setSelectAllNetflix(false)
+    toast.success(`✅ Imported ${imported} movies from ${platform}, ⏭️ ${skipped} skipped, ❌ ${errors} errors`)
+    setShowImportModal(false)
+    setSelectedMovies(new Set())
+    setSelectAll(false)
     await loadContent()
     await loadContentCounts()
   }
 
   useEffect(() => {
-    if (selectAllNetflix) {
-      const allIds = new Set(netflixImportData.map(m => m.id.toString()))
-      setSelectedNetflixMovies(allIds)
+    if (selectAll) {
+      const allIds = new Set(importData.map(m => m.id.toString()))
+      setSelectedMovies(allIds)
     } else {
-      setSelectedNetflixMovies(new Set())
+      setSelectedMovies(new Set())
     }
-  }, [selectAllNetflix, netflixImportData])
+  }, [selectAll, importData])
 
-  const toggleNetflixSelection = (id: string) => {
-    const newSelection = new Set(selectedNetflixMovies)
+  const toggleSelection = (id: string) => {
+    const newSelection = new Set(selectedMovies)
     if (newSelection.has(id)) {
       newSelection.delete(id)
     } else {
       newSelection.add(id)
     }
-    setSelectedNetflixMovies(newSelection)
+    setSelectedMovies(newSelection)
   }
 
   // ============================================
@@ -1594,7 +1607,7 @@ export default function AdminPage() {
           <div>
             <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
               <h2 className="text-xl font-semibold">Content Management</h2>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <div className="relative">
                   <SearchIcon size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                   <input 
@@ -1629,16 +1642,31 @@ export default function AdminPage() {
                 >
                   <Plus size={16} /> Add Content
                 </button>
+                
                 {/* Netflix Import Button */}
                 <button 
                   onClick={() => {
-                    setShowNetflixImport(true)
-                    const savedPage = getSavedNetflixPage()
-                    fetchNetflixMovies(savedPage)
+                    setImportSource('netflix')
+                    setShowImportModal(true)
+                    const savedPage = getSavedPage()
+                    fetchImportMovies(savedPage)
                   }} 
                   className="px-4 py-2 bg-red-600 rounded-lg flex items-center gap-2 hover:bg-red-700 transition"
                 >
                   <Tv size={16} /> Import Netflix
+                </button>
+                
+                {/* Prime Video Import Button */}
+                <button 
+                  onClick={() => {
+                    setImportSource('prime')
+                    setShowImportModal(true)
+                    const savedPage = getSavedPage()
+                    fetchImportMovies(savedPage)
+                  }} 
+                  className="px-4 py-2 bg-blue-600 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition"
+                >
+                  <Tv size={16} /> Import Prime Video
                 </button>
               </div>
             </div>
@@ -1723,8 +1751,8 @@ export default function AdminPage() {
                 <p className="text-sm text-gray-400">Content is ordered by most recently updated/created.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
-                <h3 className="font-semibold mb-2">Netflix Import</h3>
-                <p className="text-sm text-gray-400">Movies are auto-categorized based on genre, rating, year, and more. No manual selection needed.</p>
+                <h3 className="font-semibold mb-2">Netflix & Prime Imports</h3>
+                <p className="text-sm text-gray-400">Movies are auto-categorized based on genre, rating, year, and more. Netflix movies get "Netflix & Chill", Prime movies get "Prime Video Only".</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">BADMOUTH Descriptions</h3>
@@ -2122,38 +2150,40 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Netflix Import Modal */}
-      {showNetflixImport && (
+      {/* Import Modal - Netflix & Prime Video */}
+      {showImportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 overflow-y-auto">
           <div className="bg-gray-900 rounded-xl max-w-7xl w-full p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4 sticky top-0 bg-gray-900 z-10 pb-4 border-b border-gray-700">
               <div>
                 <div className="flex items-center gap-3">
-                  <Tv size={24} className="text-red-600" />
-                  <h2 className="text-xl font-bold">Import Netflix Movies</h2>
+                  <Tv size={24} className={importSource === 'netflix' ? 'text-red-600' : 'text-blue-600'} />
+                  <h2 className="text-xl font-bold">
+                    {importSource === 'netflix' ? 'Import Netflix Movies' : 'Import Prime Video Movies'}
+                  </h2>
                 </div>
                 <p className="text-sm text-gray-400 mt-1">
-                  {netflixImportTotal > 0 ? `${netflixImportTotal} movies available on Netflix` : 'Loading...'}
+                  {importTotal > 0 ? `${importTotal} movies available on ${importSource === 'netflix' ? 'Netflix' : 'Prime Video'}` : 'Loading...'}
                 </p>
-                {netflixImportData.length > 0 && (
+                {importData.length > 0 && (
                   <p className="text-xs text-gray-500">
-                    Showing page {netflixImportPage} of {netflixTotalPages} • {netflixImportData.length} movies on this page
+                    Showing page {importPage} of {importTotalPages} • {importData.length} movies on this page
                   </p>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                  💾 Last page: {getSavedNetflixPage()}
+                  💾 Last page: {getSavedPage()}
                 </p>
                 <div className="flex items-center gap-2 mt-2">
                   <span className="text-xs bg-teal-600/20 text-teal-400 px-2 py-0.5 rounded-full flex items-center gap-1">
                     <Check size={12} /> Auto-Categorization ON
                   </span>
                   <span className="text-xs text-gray-500">
-                    Movies will be auto-assigned to relevant categories
+                    Movies will be auto-assigned to {importSource === 'netflix' ? 'Netflix & Chill' : 'Prime Video Only'} and other relevant categories
                   </span>
                 </div>
               </div>
               <button 
-                onClick={() => setShowNetflixImport(false)} 
+                onClick={() => setShowImportModal(false)} 
                 className="p-1 hover:bg-gray-800 rounded"
               >
                 <X size={20} />
@@ -2166,60 +2196,60 @@ export default function AdminPage() {
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={selectAllNetflix}
-                    onChange={(e) => setSelectAllNetflix(e.target.checked)}
+                    checked={selectAll}
+                    onChange={(e) => setSelectAll(e.target.checked)}
                     className="w-4 h-4 rounded border-gray-700 bg-gray-800 text-teal-500"
                   />
                   <span className="text-sm text-gray-300">Select All on This Page</span>
                 </label>
                 <span className="text-sm text-gray-500">
-                  {selectedNetflixMovies.size} selected
+                  {selectedMovies.size} selected
                 </span>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => {
-                    const newPage = Math.max(1, netflixImportPage - 1)
-                    fetchNetflixMovies(newPage)
+                    const newPage = Math.max(1, importPage - 1)
+                    fetchImportMovies(newPage)
                   }}
-                  disabled={netflixImportPage <= 1 || netflixImportLoading}
+                  disabled={importPage <= 1 || importLoading}
                   className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50 text-sm"
                 >
                   Previous
                 </button>
                 <span className="text-sm text-gray-400 self-center">
-                  Page {netflixImportPage} of {netflixTotalPages}
+                  Page {importPage} of {importTotalPages}
                 </span>
                 <button
                   onClick={() => {
-                    const newPage = Math.min(netflixTotalPages, netflixImportPage + 1)
-                    fetchNetflixMovies(newPage)
+                    const newPage = Math.min(importTotalPages, importPage + 1)
+                    fetchImportMovies(newPage)
                   }}
-                  disabled={netflixImportPage >= netflixTotalPages || netflixImportLoading}
+                  disabled={importPage >= importTotalPages || importLoading}
                   className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50 text-sm"
                 >
                   Next
                 </button>
                 <button
                   onClick={() => {
-                    const savedPage = getSavedNetflixPage()
-                    fetchNetflixMovies(savedPage)
+                    const savedPage = getSavedPage()
+                    fetchImportMovies(savedPage)
                   }}
-                  disabled={netflixImportLoading}
+                  disabled={importLoading}
                   className="px-3 py-1 bg-teal-600 rounded hover:bg-teal-700 disabled:opacity-50 text-sm"
                 >
                   ↺ Go to Saved Page
                 </button>
               </div>
               <button
-                onClick={importSelectedNetflixMovies}
-                disabled={selectedNetflixMovies.size === 0 || netflixImportLoading}
+                onClick={importSelectedMovies}
+                disabled={selectedMovies.size === 0 || importLoading}
                 className="px-4 py-2 bg-red-600 rounded-lg hover:bg-red-700 transition disabled:opacity-50 flex items-center gap-2"
               >
-                {netflixImportLoading && netflixImportProgress > 0 ? <Loader2 className="w-4 h-4 animate-spin" /> : <Tv size={16} />}
-                {netflixImportLoading && netflixImportProgress > 0 
-                  ? `Importing... (${netflixImportProgress})` 
-                  : `Import ${selectedNetflixMovies.size} Movies`
+                {importLoading && importProgress > 0 ? <Loader2 className="w-4 h-4 animate-spin" /> : <Tv size={16} />}
+                {importLoading && importProgress > 0 
+                  ? `Importing... (${importProgress})` 
+                  : `Import ${selectedMovies.size} Movies`
                 }
               </button>
             </div>
@@ -2229,7 +2259,7 @@ export default function AdminPage() {
               <p className="text-xs text-gray-400">
                 🎯 <span className="font-semibold text-gray-300">Auto-Categorization Rules:</span>
                 <br />
-                • <span className="text-teal-400">Netflix & Chill</span> — Always assigned to every movie
+                • <span className="text-teal-400">{importSource === 'netflix' ? 'Netflix & Chill' : 'Prime Video Only'}</span> — Always assigned to every movie
                 <br />
                 • <span className="text-yellow-400">🔥 Trending Now</span> — Rating &gt; 7.5
                 <br />
@@ -2250,22 +2280,20 @@ export default function AdminPage() {
                 • <span className="text-green-400">🌍 World Cinema</span> — Non-English films
                 <br />
                 • <span className="text-cyan-400">🏁 Instant Hook</span> — Popularity &gt; 50
-                <br />
-                • <span className="text-amber-400">Made in Nollywood</span> — African origin
               </p>
             </div>
 
             {/* Progress */}
-            {netflixImportLoading && netflixImportProgress > 0 && (
+            {importLoading && importProgress > 0 && (
               <div className="mb-4">
                 <div className="flex justify-between text-sm text-gray-400 mb-1">
                   <span>Importing...</span>
-                  <span>{netflixImportProgress} processed</span>
+                  <span>{importProgress} processed</span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-2">
                   <div 
                     className="bg-teal-500 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${Math.min(100, (netflixImportProgress / Math.max(1, selectedNetflixMovies.size)) * 100)}%` }}
+                    style={{ width: `${Math.min(100, (importProgress / Math.max(1, selectedMovies.size)) * 100)}%` }}
                   />
                 </div>
               </div>
@@ -2273,15 +2301,14 @@ export default function AdminPage() {
 
             {/* Movie Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-              {netflixImportData.map((movie) => {
-                const isSelected = selectedNetflixMovies.has(movie.id.toString())
+              {importData.map((movie) => {
+                const isSelected = selectedMovies.has(movie.id.toString())
                 const genreNames = movie.genres?.map((g: any) => g.name).join(', ') || 
                   movie.genre_ids?.map((id: number) => genreMap[id] || '').filter(Boolean).join(', ') || 'Movie'
                 
-                // Show which categories this movie would get
-                const assignedCategories = autoAssignCategories(movie)
+                const assignedCategories = autoAssignCategories(movie, importSource)
                 const categoryNames = assignedCategories
-                  .map(id => allCategories.find(c => c.id === id)?.name)
+                  .map(id => allImportCategories.find(c => c.id === id)?.name)
                   .filter(Boolean)
                   .slice(0, 3)
                   .join(', ')
@@ -2294,7 +2321,7 @@ export default function AdminPage() {
                         ? 'border-teal-500' 
                         : 'border-transparent hover:border-gray-600'
                     }`}
-                    onClick={() => toggleNetflixSelection(movie.id.toString())}
+                    onClick={() => toggleSelection(movie.id.toString())}
                   >
                     <img 
                       src={movie.poster_path ? `https://image.tmdb.org/t/p/w200${movie.poster_path}` : '/placeholder-poster.jpg'}
@@ -2331,7 +2358,7 @@ export default function AdminPage() {
               })}
             </div>
 
-            {netflixImportData.length === 0 && !netflixImportLoading && (
+            {importData.length === 0 && !importLoading && (
               <div className="text-center py-12 text-gray-500">
                 <Tv size={48} className="mx-auto mb-4 opacity-50" />
                 <p>No movies found. Try refreshing.</p>
