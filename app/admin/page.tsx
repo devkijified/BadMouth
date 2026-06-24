@@ -338,15 +338,27 @@ export default function AdminPage() {
   }
 
   const loadCategories = async () => {
-    const { data } = await supabase
-      .from('categories')
-      .select('*')
-      .order('display_order')
-    setCategories(data || [])
+    try {
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*')
+        .order('display_order')
+      
+      if (error) {
+        console.error('Categories load error:', error)
+        return
+      }
+      
+      console.log('Categories loaded:', data?.length || 0)
+      setCategories(data || [])
+    } catch (error) {
+      console.error('Error loading categories:', error)
+    }
   }
 
   const loadContent = async () => {
     try {
+      console.log('Loading content...')
       const { data, error } = await supabase
         .from('content')
         .select('*')
@@ -355,34 +367,47 @@ export default function AdminPage() {
 
       if (error) {
         console.error('Content load error:', error)
-        const { data: fallbackData } = await supabase
+        // Try without ordering
+        const { data: fallbackData, error: fallbackError } = await supabase
           .from('content')
           .select('*')
+        
+        if (fallbackError) {
+          console.error('Fallback content load error:', fallbackError)
+          setContent([])
+          return
+        }
+        
+        console.log('Fallback content loaded:', fallbackData?.length || 0)
         setContent(fallbackData || [])
         return
       }
 
-      console.log('Content loaded:', data?.length || 0)
+      console.log('Content loaded successfully:', data?.length || 0)
       setContent(data || [])
       
     } catch (error) {
       console.error('Error loading content:', error)
-      const { data: fallbackData } = await supabase
-        .from('content')
-        .select('*')
-      setContent(fallbackData || [])
+      setContent([])
     }
   }
 
   const loadContentCounts = async () => {
     try {
+      console.log('Loading content counts...')
+      
       // Get total movies count directly from database
       const { count: movies, error: movieError } = await supabase
         .from('content')
         .select('*', { count: 'exact', head: true })
         .eq('type', 'movie')
 
-      if (movieError) console.error('Movie count error:', movieError)
+      if (movieError) {
+        console.error('Movie count error:', movieError)
+      } else {
+        console.log('Movies count:', movies)
+        setTotalMovies(movies || 0)
+      }
 
       // Get total music count directly from database
       const { count: music, error: musicError } = await supabase
@@ -390,15 +415,17 @@ export default function AdminPage() {
         .select('*', { count: 'exact', head: true })
         .eq('type', 'music')
 
-      if (musicError) console.error('Music count error:', musicError)
+      if (musicError) {
+        console.error('Music count error:', musicError)
+      } else {
+        console.log('Music count:', music)
+        setTotalMusic(music || 0)
+      }
 
-      setTotalMovies(movies || 0)
-      setTotalMusic(music || 0)
-      setTotalContentCount((movies || 0) + (music || 0))
+      const total = (movies || 0) + (music || 0)
+      setTotalContentCount(total)
+      console.log('Total content count:', total)
       
-      console.log('Total Movies from DB:', movies)
-      console.log('Total Music from DB:', music)
-      console.log('Total Content from DB:', (movies || 0) + (music || 0))
     } catch (error) {
       console.error('Error loading counts:', error)
     }
@@ -406,12 +433,21 @@ export default function AdminPage() {
 
   const loadUsers = async () => {
     try {
-      const { data: profiles } = await supabase
+      console.log('Loading users...')
+      const { data: profiles, error } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false })
 
-      if (!profiles) {
+      if (error) {
+        console.error('Users load error:', error)
+        setUsers([])
+        return
+      }
+
+      console.log('Users loaded:', profiles?.length || 0)
+
+      if (!profiles || profiles.length === 0) {
         setUsers([])
         return
       }
@@ -434,16 +470,26 @@ export default function AdminPage() {
       setUsers(usersWithStats)
     } catch (error) {
       console.error('Error loading users:', error)
+      setUsers([])
     }
   }
 
   const loadRecommendations = async () => {
     try {
-      const { data } = await supabase
+      console.log('Loading recommendations...')
+      const { data, error } = await supabase
         .from('recommendations')
         .select('*, profiles(username), content(title, rating)')
         .order('created_at', { ascending: false })
         .limit(50)
+      
+      if (error) {
+        console.error('Recommendations load error:', error)
+        setRecommendations([])
+        return
+      }
+      
+      console.log('Recommendations loaded:', data?.length || 0)
       setRecommendations(data || [])
     } catch (error) {
       console.error('Error loading recommendations:', error)
@@ -643,7 +689,6 @@ export default function AdminPage() {
     let errors = 0
     let totalProcessed = 0
 
-    // Process in batches of 5 to avoid rate limiting
     const batchSize = 5
     const batches = []
     for (let i = 0; i < moviesToImport.length; i += batchSize) {
@@ -1386,11 +1431,915 @@ export default function AdminPage() {
           </button>
         </div>
 
-        {/* ... Rest of the component (Users Tab, Analytics Tab, Categories Tab, Content Tab, Settings Tab, Modals) ... */}
-        {/* These sections remain unchanged from your existing code */}
-        {/* The only changes are the stats cards above and the loadContentCounts function */}
-        
+        {/* Users Tab */}
+        {activeTab === 'users' && (
+          <div className="bg-gray-800 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-700">
+                  <tr>
+                    <th className="px-4 py-3 text-left">User</th>
+                    <th className="px-4 py-3 text-left">Username</th>
+                    <th className="px-4 py-3 text-left">Email</th>
+                    <th className="px-4 py-3 text-left">Role</th>
+                    <th className="px-4 py-3 text-left">Watchlist</th>
+                    <th className="px-4 py-3 text-left">Recs</th>
+                    <th className="px-4 py-3 text-left">Joined</th>
+                    <th className="px-4 py-3 text-left">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-8 text-gray-400">No users found</td>
+                    </tr>
+                  ) : (
+                    users.map(userItem => (
+                      <tr key={userItem.id} className="border-b border-gray-700 hover:bg-gray-700/50">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <img 
+                              src={userItem.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userItem.username}`} 
+                              className="w-8 h-8 rounded-full" 
+                              alt=""
+                            />
+                            <span className="text-sm">{userItem.id?.slice(0, 8)}...</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-medium">{userItem.username || 'No username'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-300">{userItem.email || 'No email'}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs ${userItem.role === 'admin' ? 'bg-purple-600/20 text-purple-400' : 'bg-gray-600/20 text-gray-400'}`}>
+                            {userItem.role === 'admin' ? '👑 Admin' : '👤 User'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3"><span className="text-teal-400">❤️ {userItem.watchlist_count || 0}</span></td>
+                        <td className="px-4 py-3"><span className="text-blue-400">👍 {userItem.recommendations_count || 0}</span></td>
+                        <td className="px-4 py-3 text-sm">{userItem.created_at ? new Date(userItem.created_at).toLocaleDateString() : 'N/A'}</td>
+                        <td className="px-4 py-3">
+                          {isMasterAdmin && (
+                            <button 
+                              onClick={() => makeUserAdmin(userItem.id, userItem.role || 'user')}
+                              className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
+                                userItem.role === 'admin' 
+                                  ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30' 
+                                  : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'
+                              }`}
+                            >
+                              {userItem.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Analytics Tab */}
+        {activeTab === 'analytics' && (
+          <div className="bg-gray-800 rounded-xl p-6">
+            <h2 className="text-xl font-bold mb-4">Recent Recommendations</h2>
+            <div className="space-y-3">
+              {recommendations.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">No recommendations yet</p>
+              ) : (
+                recommendations.slice(0, 20).map(rec => (
+                  <div key={rec.id} className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg">
+                    <div>
+                      <p className="font-medium">{rec.profiles?.username || 'Anonymous'}</p>
+                      <p className="text-sm text-gray-400">Recommended: {rec.content?.title || 'Unknown'}</p>
+                      <p className="text-xs text-yellow-400">⭐ {rec.content?.rating || 0}/10</p>
+                    </div>
+                    <span className="px-2 py-1 rounded-full text-xs bg-yellow-600/20 text-yellow-400">
+                      ⭐ {rec.rating || 0}/10
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Categories Tab */}
+        {activeTab === 'categories' && (
+          <div>
+            <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+              <div className="flex gap-2">
+                <button onClick={() => setCategoryTypeFilter('all')} className={`px-3 py-1 rounded-lg text-sm ${categoryTypeFilter === 'all' ? 'bg-teal-600' : 'bg-gray-700'}`}>All</button>
+                <button onClick={() => setCategoryTypeFilter('movie')} className={`px-3 py-1 rounded-lg text-sm ${categoryTypeFilter === 'movie' ? 'bg-teal-600' : 'bg-gray-700'}`}>Movies</button>
+                <button onClick={() => setCategoryTypeFilter('music')} className={`px-3 py-1 rounded-lg text-sm ${categoryTypeFilter === 'music' ? 'bg-teal-600' : 'bg-gray-700'}`}>Music</button>
+              </div>
+              <button 
+                onClick={() => { 
+                  setShowCategoryModal(true); 
+                  setEditingItem(null); 
+                  setCategoryForm({ 
+                    name: '', 
+                    description: '', 
+                    type: categoryTypeFilter === 'all' ? 'movie' : categoryTypeFilter, 
+                    is_active: true, 
+                    display_order: 0 
+                  }) 
+                }} 
+                className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"
+              >
+                <Plus size={16} /> Add Category
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredCategories.length === 0 ? (
+                <p className="text-center text-gray-500 col-span-3 py-8">No categories found</p>
+              ) : (
+                filteredCategories.map(cat => (
+                  <div key={cat.id} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h3 className="font-bold text-lg">{cat.name}</h3>
+                        <p className="text-xs text-gray-400">{cat.type}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => { 
+                            setEditingItem(cat); 
+                            setCategoryForm(cat); 
+                            setShowCategoryModal(true); 
+                          }} 
+                          className="p-1 hover:bg-gray-700 rounded"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button 
+                          onClick={() => deleteCategory(cat.id)} 
+                          className="p-1 hover:bg-gray-700 rounded text-red-500"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-300">{cat.description}</p>
+                    <p className="text-xs text-gray-500 mt-2">Order: {cat.display_order}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Content Tab */}
+        {activeTab === 'content' && (
+          <div>
+            <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
+              <h2 className="text-xl font-semibold">Content Management</h2>
+              <div className="flex gap-2">
+                <div className="relative">
+                  <SearchIcon size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <input 
+                    type="text" 
+                    placeholder="Search content..." 
+                    value={searchQuery} 
+                    onChange={(e) => setSearchQuery(e.target.value)} 
+                    className="pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500" 
+                  />
+                </div>
+                <select 
+                  value={contentTypeFilter} 
+                  onChange={(e) => setContentTypeFilter(e.target.value as any)} 
+                  className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg"
+                >
+                  <option value="all">All Types</option>
+                  <option value="movie">Movies & TV</option>
+                  <option value="music">Music</option>
+                </select>
+                <button 
+                  onClick={() => { 
+                    setShowContentModal(true); 
+                    setEditingItem(null); 
+                    setContentForm({ 
+                      title: '', description: '', long_description: '', image_url: '', backdrop_url: '',
+                      type: 'movie', year: new Date().getFullYear(), director: '', artist: '', actors: '',
+                      platforms: '', trailer_url: '', runtime: '', duration: '', genre: '', 
+                      rating: 5.0, rating_count: 0, is_tv_show: false, category_ids: []
+                    }); 
+                  }} 
+                  className="px-4 py-2 bg-teal-600 rounded-lg flex items-center gap-2"
+                >
+                  <Plus size={16} /> Add Content
+                </button>
+                {/* Netflix Import Button */}
+                <button 
+                  onClick={() => {
+                    setShowNetflixImport(true)
+                    const savedPage = getSavedNetflixPage()
+                    fetchNetflixMovies(savedPage)
+                  }} 
+                  className="px-4 py-2 bg-red-600 rounded-lg flex items-center gap-2 hover:bg-red-700 transition"
+                >
+                  <Tv size={16} /> Import Netflix
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredContent.length === 0 ? (
+                <p className="text-center text-gray-500 col-span-3 py-8">No content found</p>
+              ) : (
+                filteredContent.map(item => (
+                  <div key={item.id} className="bg-gray-800 rounded-xl overflow-hidden border border-gray-700 relative">
+                    {item.is_tv_show && (
+                      <div className="absolute top-2 left-2 z-10">
+                        <div className="bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Tv size={10} /> TV Series
+                        </div>
+                      </div>
+                    )}
+                    <div className="absolute top-2 right-2 z-10 bg-black/70 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Star size={10} className="text-yellow-400 fill-yellow-400" />
+                      <span className="text-white text-[10px] font-bold">{item.rating?.toFixed(1) || 5.0}</span>
+                    </div>
+                    <img src={item.image_url} alt={item.title} className="w-full h-40 object-cover" />
+                    <div className="p-4">
+                      <h3 className="font-bold">{item.title}</h3>
+                      <p className="text-xs text-gray-400 mb-2">
+                        {item.is_tv_show ? '📺 TV Show' : (item.type === 'movie' ? '🎬 Movie' : '🎵 Music')} • {item.year}
+                      </p>
+                      <p className="text-sm text-gray-300 line-clamp-2">{item.description}</p>
+                      <div className="flex justify-between mt-3">
+                        <span className="text-xs flex gap-2">
+                          <span className="text-yellow-400">⭐ {item.rating?.toFixed(1) || 5.0}</span>
+                        </span>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => { 
+                              setEditingItem(item); 
+                              setContentForm({ 
+                                ...item, 
+                                long_description: item.long_description || '', 
+                                backdrop_url: item.backdrop_url || '', 
+                                director: item.director || '', 
+                                artist: item.artist || '', 
+                                actors: item.actors?.join(', ') || '', 
+                                platforms: item.platforms?.join(', ') || '', 
+                                trailer_url: item.trailer_url || '', 
+                                runtime: item.runtime || '', 
+                                duration: item.duration || '', 
+                                rating: item.rating || 5.0,
+                                rating_count: 0,
+                                is_tv_show: item.is_tv_show || false, 
+                                category_ids: [] 
+                              }); 
+                              loadContentCategories(item.id);
+                              setShowContentModal(true); 
+                            }} 
+                            className="text-gray-400 hover:text-white"
+                          >
+                            <Edit size={16} />
+                          </button>
+                          <button 
+                            onClick={() => deleteContent(item.id)} 
+                            className="text-red-500 hover:text-red-400"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Settings Tab */}
+        {activeTab === 'settings' && (
+          <div className="bg-gray-800 rounded-xl p-6">
+            <h2 className="text-xl font-bold mb-4">System Settings</h2>
+            <div className="space-y-4">
+              <div className="p-4 bg-gray-700/50 rounded-lg">
+                <h3 className="font-semibold mb-2">Content Ordering</h3>
+                <p className="text-sm text-gray-400">Content is ordered by most recently updated/created.</p>
+              </div>
+              <div className="p-4 bg-gray-700/50 rounded-lg">
+                <h3 className="font-semibold mb-2">Netflix Import</h3>
+                <p className="text-sm text-gray-400">Movies are auto-categorized based on genre, rating, year, and more. No manual selection needed.</p>
+              </div>
+              <div className="p-4 bg-gray-700/50 rounded-lg">
+                <h3 className="font-semibold mb-2">BADMOUTH Descriptions</h3>
+                <p className="text-sm text-gray-400">All imported content uses unique, punchy critic-style descriptions.</p>
+              </div>
+              <div className="p-4 bg-gray-700/50 rounded-lg">
+                <h3 className="font-semibold mb-2">Master Admin</h3>
+                <p className="text-sm text-gray-400">Only the master admin (kijified@gmail.com) can see the Danger Zone and manage user roles.</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Category Modal */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+          <div className="bg-gray-900 rounded-xl max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Category</h2>
+              <button onClick={() => setShowCategoryModal(false)} className="p-1 hover:bg-gray-800 rounded">
+                <X size={20} />
+              </button>
+            </div>
+            <input 
+              type="text" 
+              placeholder="Name" 
+              value={categoryForm.name} 
+              onChange={e => setCategoryForm({ ...categoryForm, name: e.target.value })} 
+              className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded" 
+            />
+            <input 
+              type="text" 
+              placeholder="Description" 
+              value={categoryForm.description} 
+              onChange={e => setCategoryForm({ ...categoryForm, description: e.target.value })} 
+              className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded" 
+            />
+            <select 
+              value={categoryForm.type} 
+              onChange={e => setCategoryForm({ ...categoryForm, type: e.target.value as 'movie' | 'music' })} 
+              className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded"
+            >
+              <option value="movie">Movies & TV Shows</option>
+              <option value="music">Music</option>
+            </select>
+            <input 
+              type="number" 
+              placeholder="Display Order" 
+              value={categoryForm.display_order} 
+              onChange={e => setCategoryForm({ ...categoryForm, display_order: parseInt(e.target.value) })} 
+              className="w-full mb-4 p-2 bg-gray-800 border border-gray-700 rounded" 
+            />
+            <div className="flex gap-2">
+              <button onClick={saveCategory} className="flex-1 py-2 bg-teal-600 rounded">Save</button>
+              <button onClick={() => setShowCategoryModal(false)} className="flex-1 py-2 bg-gray-700 rounded">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Content Modal */}
+      {showContentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 overflow-y-auto">
+          <div className="bg-gray-900 rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">{editingItem ? 'Edit' : 'New'} Content</h2>
+              <button onClick={closeContentModal} className="p-1 hover:bg-gray-800 rounded">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <input 
+                type="text" 
+                placeholder="Title" 
+                value={contentForm.title} 
+                onChange={e => setContentForm({ ...contentForm, title: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
+              <textarea 
+                placeholder="Description" 
+                value={contentForm.description} 
+                onChange={e => setContentForm({ ...contentForm, description: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                rows={2} 
+              />
+              <textarea 
+                placeholder="Long Description" 
+                value={contentForm.long_description} 
+                onChange={e => setContentForm({ ...contentForm, long_description: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                rows={3} 
+              />
+              <input 
+                type="text" 
+                placeholder="Image URL" 
+                value={contentForm.image_url} 
+                onChange={e => setContentForm({ ...contentForm, image_url: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
+              <input 
+                type="text" 
+                placeholder="Backdrop URL" 
+                value={contentForm.backdrop_url} 
+                onChange={e => setContentForm({ ...contentForm, backdrop_url: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
+              
+              <select 
+                value={contentForm.type} 
+                onChange={e => setContentForm({ ...contentForm, type: e.target.value as 'movie' | 'music' })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded"
+              >
+                <option value="movie">Movie / TV Show</option>
+                <option value="music">Music</option>
+              </select>
+              
+              <input 
+                type="number" 
+                placeholder="Year" 
+                value={contentForm.year} 
+                onChange={e => setContentForm({ ...contentForm, year: parseInt(e.target.value) })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
+              
+              {contentForm.type === 'movie' ? (
+                <>
+                  <div className="mb-2 p-3 bg-gray-800/50 rounded-lg">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={contentForm.is_tv_show} 
+                        onChange={(e) => setContentForm({ ...contentForm, is_tv_show: e.target.checked })} 
+                        className="w-5 h-5 rounded border-gray-700 bg-gray-800 text-teal-500" 
+                      />
+                      <div>
+                        <span className="text-sm text-gray-300 font-medium">This is a TV Show</span>
+                        {contentForm.is_tv_show && (
+                          <p className="text-xs text-purple-400 mt-1">📺 TV Show badge will appear</p>
+                        )}
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="mb-2">
+                    <button 
+                      type="button" 
+                      onClick={() => setShowTmdbSearch(!showTmdbSearch)} 
+                      className="text-sm text-teal-400 hover:text-teal-300 mb-2"
+                    >
+                      {showTmdbSearch ? '− Hide TMDB Search' : '+ Search on TMDB (Movies & TV Shows)'}
+                    </button>
+                    
+                    {showTmdbSearch && (
+                      <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            placeholder="Search for a movie or TV show..." 
+                            value={tmdbSearchQuery} 
+                            onChange={(e) => setTmdbSearchQuery(e.target.value)} 
+                            onKeyPress={(e) => e.key === 'Enter' && searchTmdb()} 
+                            className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded text-sm" 
+                          />
+                          <div className="flex gap-1">
+                            <button 
+                              onClick={() => { setTmdbSearchType('movie'); searchTmdb(); }} 
+                              className={`px-3 py-2 rounded ${tmdbSearchType === 'movie' ? 'bg-teal-600' : 'bg-gray-700'}`}
+                            >
+                              <Film size={16} />
+                            </button>
+                            <button 
+                              onClick={() => { setTmdbSearchType('tv'); searchTmdb(); }} 
+                              className={`px-3 py-2 rounded ${tmdbSearchType === 'tv' ? 'bg-teal-600' : 'bg-gray-700'}`}
+                            >
+                              <Tv size={16} />
+                            </button>
+                          </div>
+                        </div>
+                        {searchingTmdb && (
+                          <div className="flex justify-center py-4">
+                            <Loader2 className="h-6 w-6 animate-spin text-teal-500" />
+                          </div>
+                        )}
+                        {tmdbSearchResults.length > 0 && !searchingTmdb && (
+                          <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {tmdbSearchResults.map((result) => (
+                              <div 
+                                key={result.id} 
+                                onClick={() => importFromTmdb(result, tmdbSearchType)} 
+                                className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600"
+                              >
+                                <img 
+                                  src={result.poster_path ? `https://image.tmdb.org/t/p/w92${result.poster_path}` : '/api/placeholder/92/138'} 
+                                  className="w-12 h-16 rounded object-cover" 
+                                />
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">{tmdbSearchType === 'movie' ? result.title : result.name}</p>
+                                  <p className="text-xs text-gray-400">{tmdbSearchType === 'movie' ? result.release_date?.split('-')[0] : result.first_air_date?.split('-')[0]}</p>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-600/20 text-purple-400">
+                                    {tmdbSearchType === 'movie' ? '🎬 Movie' : '📺 TV Series'}
+                                  </span>
+                                </div>
+                                <button className="text-teal-400 text-sm">Import →</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <input 
+                    type="text" 
+                    placeholder="Director / Creator" 
+                    value={contentForm.director} 
+                    onChange={e => setContentForm({ ...contentForm, director: e.target.value })} 
+                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                  />
+                  <input 
+                    type="text" 
+                    placeholder="Cast (comma separated)" 
+                    value={contentForm.actors} 
+                    onChange={e => setContentForm({ ...contentForm, actors: e.target.value })} 
+                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                  />
+                  <input 
+                    type="text" 
+                    placeholder="Runtime" 
+                    value={contentForm.runtime} 
+                    onChange={e => setContentForm({ ...contentForm, runtime: e.target.value })} 
+                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                  />
+                </>
+              ) : (
+                <>
+                  <div className="mb-2">
+                    <button 
+                      type="button" 
+                      onClick={() => setShowDeezerSearch(!showDeezerSearch)} 
+                      className="text-sm text-teal-400 hover:text-teal-300 mb-2 flex items-center gap-1"
+                    >
+                      {showDeezerSearch ? '− Hide Deezer Search' : '🔍 + Search on Deezer (Music)'}
+                    </button>
+                    
+                    {showDeezerSearch && (
+                      <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg mb-3">
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            placeholder="Search for a song or artist..." 
+                            value={deezerSearchQuery} 
+                            onChange={(e) => setDeezerSearchQuery(e.target.value)} 
+                            onKeyPress={(e) => e.key === 'Enter' && searchDeezer()} 
+                            className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-teal-500 text-sm" 
+                          />
+                          <button 
+                            onClick={searchDeezer} 
+                            disabled={searchingDeezer} 
+                            className="px-4 py-2 bg-teal-600 rounded hover:bg-teal-700 transition disabled:opacity-50 flex items-center gap-2"
+                          >
+                            {searchingDeezer ? <Loader2 className="w-4 h-4 animate-spin" /> : <SearchIcon size={16} />}
+                            {searchingDeezer ? 'Searching...' : 'Search'}
+                          </button>
+                        </div>
+                        
+                        {searchingDeezer && (
+                          <div className="flex justify-center py-4">
+                            <Loader2 className="h-6 w-6 animate-spin text-teal-500" />
+                            <span className="ml-2 text-gray-400">Searching Deezer...</span>
+                          </div>
+                        )}
+                        
+                        {deezerSearchResults.length > 0 && !searchingDeezer && (
+                          <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {deezerSearchResults.map((item, index) => (
+                              <div 
+                                key={item.id || index} 
+                                onClick={() => importFromDeezer(item)} 
+                                className="flex items-center gap-3 p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition group"
+                              >
+                                <img 
+                                  src={item.album?.cover_small || ''} 
+                                  alt={item.title} 
+                                  className="w-12 h-12 rounded object-cover" 
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-sm truncate">{item.title || 'Unknown'}</p>
+                                  <p className="text-xs text-gray-400 truncate">{item.artist?.name || 'Unknown Artist'}</p>
+                                  {item.release_date && (
+                                    <p className="text-[10px] text-gray-500">{new Date(item.release_date).getFullYear()}</p>
+                                  )}
+                                </div>
+                                <button className="text-teal-400 text-sm opacity-0 group-hover:opacity-100 transition">Import →</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        
+                        {deezerSearchResults.length === 0 && !searchingDeezer && showDeezerSearch && (
+                          <div className="text-center py-4 text-gray-500">
+                            <Music size={24} className="mx-auto mb-2 opacity-50" />
+                            <p className="text-sm">Search for tracks on Deezer</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <input 
+                    type="text" 
+                    placeholder="Artist" 
+                    value={contentForm.artist} 
+                    onChange={e => setContentForm({ ...contentForm, artist: e.target.value })} 
+                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                  />
+                  <input 
+                    type="text" 
+                    placeholder="Duration (e.g., 3:45)" 
+                    value={contentForm.duration} 
+                    onChange={e => setContentForm({ ...contentForm, duration: e.target.value })} 
+                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                  />
+                </>
+              )}
+              
+              <input 
+                type="text" 
+                placeholder="Platforms (comma separated)" 
+                value={contentForm.platforms} 
+                onChange={e => setContentForm({ ...contentForm, platforms: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
+              <input 
+                type="text" 
+                placeholder="Trailer URL" 
+                value={contentForm.trailer_url} 
+                onChange={e => setContentForm({ ...contentForm, trailer_url: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
+              <input 
+                type="text" 
+                placeholder="Genre" 
+                value={contentForm.genre} 
+                onChange={e => setContentForm({ ...contentForm, genre: e.target.value })} 
+                className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+              />
+              
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Rating (1-10)</label>
+                  <input 
+                    type="number" 
+                    placeholder="Rating (1-10)" 
+                    value={contentForm.rating || 5.0} 
+                    onChange={e => setContentForm({ ...contentForm, rating: parseFloat(e.target.value) || 5.0 })} 
+                    className="w-full p-2 bg-gray-800 border border-gray-700 rounded" 
+                    min="0"
+                    max="10"
+                    step="0.1"
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Assign to Categories</label>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {categories.filter(c => c.type === contentForm.type).map(cat => (
+                    <label key={cat.id} className="flex items-center gap-2">
+                      <input 
+                        type="checkbox" 
+                        checked={contentForm.category_ids.includes(cat.id)} 
+                        onChange={e => { 
+                          if (e.target.checked) {
+                            setContentForm({ ...contentForm, category_ids: [...contentForm.category_ids, cat.id] })
+                          } else {
+                            setContentForm({ ...contentForm, category_ids: contentForm.category_ids.filter(id => id !== cat.id) })
+                          }
+                        }} 
+                      />
+                      {cat.name} (Order: {cat.display_order})
+                    </label>
+                  ))}
+                </div>
+                {editingItem && contentForm.category_ids.length === 0 && (
+                  <p className="text-xs text-gray-500 mt-2">No categories assigned. Select categories above.</p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button onClick={saveContent} className="flex-1 py-2 bg-teal-600 rounded hover:bg-teal-700 transition">Save</button>
+              <button onClick={closeContentModal} className="flex-1 py-2 bg-gray-700 rounded hover:bg-gray-600 transition">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Netflix Import Modal */}
+      {showNetflixImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 overflow-y-auto">
+          <div className="bg-gray-900 rounded-xl max-w-7xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4 sticky top-0 bg-gray-900 z-10 pb-4 border-b border-gray-700">
+              <div>
+                <div className="flex items-center gap-3">
+                  <Tv size={24} className="text-red-600" />
+                  <h2 className="text-xl font-bold">Import Netflix Movies</h2>
+                </div>
+                <p className="text-sm text-gray-400 mt-1">
+                  {netflixImportTotal > 0 ? `${netflixImportTotal} movies available on Netflix` : 'Loading...'}
+                </p>
+                {netflixImportData.length > 0 && (
+                  <p className="text-xs text-gray-500">
+                    Showing page {netflixImportPage} of {netflixTotalPages} • {netflixImportData.length} movies on this page
+                  </p>
+                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  💾 Last page: {getSavedNetflixPage()}
+                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs bg-teal-600/20 text-teal-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Check size={12} /> Auto-Categorization ON
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    Movies will be auto-assigned to relevant categories
+                  </span>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowNetflixImport(false)} 
+                className="p-1 hover:bg-gray-800 rounded"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Controls */}
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectAllNetflix}
+                    onChange={(e) => setSelectAllNetflix(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-700 bg-gray-800 text-teal-500"
+                  />
+                  <span className="text-sm text-gray-300">Select All on This Page</span>
+                </label>
+                <span className="text-sm text-gray-500">
+                  {selectedNetflixMovies.size} selected
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const newPage = Math.max(1, netflixImportPage - 1)
+                    fetchNetflixMovies(newPage)
+                  }}
+                  disabled={netflixImportPage <= 1 || netflixImportLoading}
+                  className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50 text-sm"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-gray-400 self-center">
+                  Page {netflixImportPage} of {netflixTotalPages}
+                </span>
+                <button
+                  onClick={() => {
+                    const newPage = Math.min(netflixTotalPages, netflixImportPage + 1)
+                    fetchNetflixMovies(newPage)
+                  }}
+                  disabled={netflixImportPage >= netflixTotalPages || netflixImportLoading}
+                  className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50 text-sm"
+                >
+                  Next
+                </button>
+                <button
+                  onClick={() => {
+                    const savedPage = getSavedNetflixPage()
+                    fetchNetflixMovies(savedPage)
+                  }}
+                  disabled={netflixImportLoading}
+                  className="px-3 py-1 bg-teal-600 rounded hover:bg-teal-700 disabled:opacity-50 text-sm"
+                >
+                  ↺ Go to Saved Page
+                </button>
+              </div>
+              <button
+                onClick={importSelectedNetflixMovies}
+                disabled={selectedNetflixMovies.size === 0 || netflixImportLoading}
+                className="px-4 py-2 bg-red-600 rounded-lg hover:bg-red-700 transition disabled:opacity-50 flex items-center gap-2"
+              >
+                {netflixImportLoading && netflixImportProgress > 0 ? <Loader2 className="w-4 h-4 animate-spin" /> : <Tv size={16} />}
+                {netflixImportLoading && netflixImportProgress > 0 
+                  ? `Importing... (${netflixImportProgress})` 
+                  : `Import ${selectedNetflixMovies.size} Movies`
+                }
+              </button>
+            </div>
+
+            {/* Auto-Categorization Info */}
+            <div className="mb-4 p-3 bg-gray-800/50 rounded-lg">
+              <p className="text-xs text-gray-400">
+                🎯 <span className="font-semibold text-gray-300">Auto-Categorization Rules:</span>
+                <br />
+                • <span className="text-teal-400">Netflix & Chill</span> — Always assigned to every movie
+                <br />
+                • <span className="text-yellow-400">🔥 Trending Now</span> — Rating &gt; 7.5
+                <br />
+                • <span className="text-yellow-400">🏆 Award Winners</span> — Rating &gt; 8.0
+                <br />
+                • <span className="text-blue-400">🍿 Feel-Good Movies</span> — Comedy, Romance
+                <br />
+                • <span className="text-red-400">😱 Edge of Your Seat</span> — Thriller, Horror, Mystery
+                <br />
+                • <span className="text-purple-400">🤯 Mind-Benders</span> — Sci-Fi, Mystery
+                <br />
+                • <span className="text-pink-400">😢 Waterworks Guaranteed</span> — Drama, Romance (Rating &gt; 7)
+                <br />
+                • <span className="text-orange-400">🎯 Underrated Gems</span> — Rating &gt; 7, Vote Count &lt; 500
+                <br />
+                • <span className="text-indigo-400">🎥 Cinema Classics</span> — Year &lt; 2000, Rating &gt; 7
+                <br />
+                • <span className="text-green-400">🌍 World Cinema</span> — Non-English films
+                <br />
+                • <span className="text-cyan-400">🏁 Instant Hook</span> — Popularity &gt; 50
+                <br />
+                • <span className="text-amber-400">Made in Nollywood</span> — African origin
+              </p>
+            </div>
+
+            {/* Progress */}
+            {netflixImportLoading && netflixImportProgress > 0 && (
+              <div className="mb-4">
+                <div className="flex justify-between text-sm text-gray-400 mb-1">
+                  <span>Importing...</span>
+                  <span>{netflixImportProgress} processed</span>
+                </div>
+                <div className="w-full bg-gray-700 rounded-full h-2">
+                  <div 
+                    className="bg-teal-500 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(100, (netflixImportProgress / Math.max(1, selectedNetflixMovies.size)) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Movie Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+              {netflixImportData.map((movie) => {
+                const isSelected = selectedNetflixMovies.has(movie.id.toString())
+                const genreNames = movie.genres?.map((g: any) => g.name).join(', ') || 
+                  movie.genre_ids?.map((id: number) => genreMap[id] || '').filter(Boolean).join(', ') || 'Movie'
+                
+                // Show which categories this movie would get
+                const assignedCategories = autoAssignCategories(movie)
+                const categoryNames = assignedCategories
+                  .map(id => allCategories.find(c => c.id === id)?.name)
+                  .filter(Boolean)
+                  .slice(0, 3)
+                  .join(', ')
+                
+                return (
+                  <div 
+                    key={movie.id} 
+                    className={`bg-gray-800 rounded-lg overflow-hidden border-2 transition cursor-pointer hover:scale-105 ${
+                      isSelected 
+                        ? 'border-teal-500' 
+                        : 'border-transparent hover:border-gray-600'
+                    }`}
+                    onClick={() => toggleNetflixSelection(movie.id.toString())}
+                  >
+                    <img 
+                      src={movie.poster_path ? `https://image.tmdb.org/t/p/w200${movie.poster_path}` : '/placeholder-poster.jpg'}
+                      alt={movie.title}
+                      className="w-full h-48 object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=200&name=' + encodeURIComponent(movie.title)
+                      }}
+                    />
+                    <div className="p-2">
+                      <h3 className="font-semibold text-xs truncate">{movie.title}</h3>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="text-[10px] text-yellow-400">⭐ {movie.vote_average?.toFixed(1) || 'N/A'}</span>
+                        <span className="text-[10px] text-gray-500">{new Date(movie.release_date).getFullYear()}</span>
+                      </div>
+                      {categoryNames && (
+                        <p className="text-[8px] text-gray-500 truncate mt-0.5">
+                          📂 {categoryNames}
+                          {assignedCategories.length > 3 && ` +${assignedCategories.length - 3}`}
+                        </p>
+                      )}
+                      <div className="mt-1">
+                        {isSelected ? (
+                          <span className="text-teal-400 text-[10px] flex items-center gap-0.5">
+                            ✓ Selected for import
+                          </span>
+                        ) : (
+                          <span className="text-gray-500 text-[10px]">Click to select</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {netflixImportData.length === 0 && !netflixImportLoading && (
+              <div className="text-center py-12 text-gray-500">
+                <Tv size={48} className="mx-auto mb-4 opacity-50" />
+                <p>No movies found. Try refreshing.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
