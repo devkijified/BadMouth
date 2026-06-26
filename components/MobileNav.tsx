@@ -1,17 +1,18 @@
 'use client'
 
-import { Home, Film, Music, Heart, User, Play } from 'lucide-react'
+import { Home, Film, Music, Heart, User, Play, Compass } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 
 interface MobileNavProps {
   activeTab: 'movie' | 'music'
-  onTabChange: (tab: 'movie' | 'music' | 'home' | 'reels') => void
+  onTabChange: (tab: 'movie' | 'music' | 'home' | 'reels' | 'explore') => void
   onViewDetails: (item: ContentItem) => void
   onHomeClick: () => void
   onProfileClick: () => void
   onWatchlistClick: () => void
+  onExploreClick: () => void
   items: ContentItem[]
-  currentPage: 'home' | 'movies' | 'music' | 'reels'
+  currentPage: 'home' | 'movies' | 'music' | 'reels' | 'explore'
 }
 
 export default function MobileNav({
@@ -21,12 +22,13 @@ export default function MobileNav({
   onHomeClick,
   onProfileClick,
   onWatchlistClick,
+  onExploreClick,
   items,
   currentPage
 }: MobileNavProps) {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-40 md:hidden">
-      <div className="bg-gray-900/95 backdrop-blur-md border-t border-gray-800">
+      <div className="bg-gray-900/95 backdrop-blur-md border-t border-gray-800 pb-safe">
         <div className="flex items-center justify-around py-2">
           <button
             onClick={() => {
@@ -63,6 +65,19 @@ export default function MobileNav({
           >
             <Play size={24} />
             <span className="text-[10px]">Reels</span>
+          </button>
+
+          <button
+            onClick={() => {
+              onExploreClick()
+              onTabChange('explore')
+            }}
+            className={`flex flex-col items-center gap-0.5 transition ${
+              currentPage === 'explore' ? 'text-teal-500' : 'text-gray-400'
+            }`}
+          >
+            <Compass size={24} />
+            <span className="text-[10px]">Explore</span>
           </button>
 
           <button
