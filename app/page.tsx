@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
-import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield, Star, ThumbsUp, Trash2, Loader2, Play } from 'lucide-react'
+import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield, Star, ThumbsUp, Trash2, Loader2, Play, Compass } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import HeroCarousel from '@/components/HeroCarousel'
@@ -29,7 +29,7 @@ const tierConfig = {
 export default function HomePage() {
   const router = useRouter()
   const { user, signOut, loading: authLoading } = useAuth()
-  const [currentPage, setCurrentPage] = useState<'home' | 'movies' | 'music' | 'reels'>('home')
+  const [currentPage, setCurrentPage] = useState<'home' | 'movies' | 'music' | 'reels' | 'explore'>('home')
   const [activeTab, setActiveTab] = useState<'movie' | 'music'>('movie')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
@@ -486,6 +486,13 @@ export default function HomePage() {
     scrollToTop()
   }
 
+  // 🆕 EXPLORE CLICK HANDLER
+  const handleExploreClick = () => {
+    setCurrentPage('explore')
+    scrollToTop()
+    router.push('/explore')
+  }
+
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50)
@@ -738,6 +745,10 @@ export default function HomePage() {
                 <button onClick={handleReelsClick} className={`flex items-center gap-1 transition ${currentPage === 'reels' ? 'text-teal-500 border-b-2 border-teal-500 pb-1' : 'text-gray-300 hover:text-white'}`}>
                   <Play size={16} /> Reels
                 </button>
+                {/* 🆕 EXPLORE BUTTON IN DESKTOP NAV */}
+                <button onClick={handleExploreClick} className={`flex items-center gap-1 transition ${currentPage === 'explore' ? 'text-teal-500 border-b-2 border-teal-500 pb-1' : 'text-gray-300 hover:text-white'}`}>
+                  <Compass size={16} /> Explore
+                </button>
               </nav>
             </div>
 
@@ -746,7 +757,7 @@ export default function HomePage() {
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
               </button>
 
-              {currentPage !== 'home' && currentPage !== 'reels' && (
+              {currentPage !== 'home' && currentPage !== 'reels' && currentPage !== 'explore' && (
                 <div className="relative">
                   <button onClick={() => setShowGenreFilter(!showGenreFilter)} className="text-gray-300 hover:text-white flex items-center gap-1">
                     <Filter size={18} /> <span className="text-xs hidden md:inline">Genre</span>
@@ -830,6 +841,8 @@ export default function HomePage() {
               <button onClick={() => { handleMoviesClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎬 Movies</button>
               <button onClick={() => { handleMusicClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎵 Music</button>
               <button onClick={() => { handleReelsClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">▶️ Reels</button>
+              {/* 🆕 EXPLORE IN MOBILE SIDEBAR */}
+              <button onClick={() => { handleExploreClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🧭 Explore</button>
               <button onClick={() => { toggleWatchlist(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">❤️ Watchlist ({watchlistCount})</button>
               <button onClick={() => { toggleProfile(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">👤 Profile</button>
               <button onClick={() => { toggleNotifications(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🔔 Notifications</button>
@@ -855,6 +868,19 @@ export default function HomePage() {
             isInWatchlist={isInWatchlist}
             userId={user.id}
           />
+        ) : currentPage === 'explore' ? (
+          // 🆕 EXPLORE PAGE RENDER
+          <div className="min-h-screen bg-black">
+            <div className="container mx-auto px-4 py-8">
+              <h1 className="text-3xl font-bold text-white mb-4">Explore</h1>
+              <p className="text-gray-400 mb-8">Discover new movies and music</p>
+              {/* Explore content will be loaded from the explore page */}
+              <div className="text-center py-12">
+                <Compass size={48} className="mx-auto mb-4 text-teal-500" />
+                <p className="text-gray-400">Redirecting to Explore page...</p>
+              </div>
+            </div>
+          </div>
         ) : currentPage === 'home' ? (
           <>
             <HeroCarousel 
@@ -1129,18 +1155,21 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* Mobile Navigation */}
       <MobileNav 
         activeTab={activeTab} 
         onTabChange={(tab) => {
           if (tab === 'movie') handleMoviesClick()
           else if (tab === 'music') handleMusicClick()
           else if (tab === 'reels') handleReelsClick()
+          else if (tab === 'explore') handleExploreClick()
           else handleHomeClick()
         }} 
         onViewDetails={handleViewDetails}
         onHomeClick={handleHomeClick}
         onProfileClick={toggleProfile}
         onWatchlistClick={toggleWatchlist}
+        onExploreClick={handleExploreClick}
         items={filteredContent}
         currentPage={currentPage}
       />
