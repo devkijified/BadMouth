@@ -26,7 +26,7 @@ export default function ContentRow({
   onAddToWatchlist, 
   onRemoveFromWatchlist, 
   isInWatchlist,
-  maxItems = 10
+  maxItems = 20  // Changed from 10 to 20 to show more
 }: ContentRowProps) {
   const router = useRouter()
   const displayItems = items.slice(0, maxItems)
@@ -60,7 +60,7 @@ export default function ContentRow({
     <div className="mb-8">
       <div className="flex justify-between items-center mb-3 px-4">
         <h2 className="text-lg sm:text-xl md:text-2xl font-semibold truncate flex-1">{title}</h2>
-        <Link href="/explore" className="text-xs sm:text-sm text-teal-400 hover:text-teal-300 transition flex items-center gap-1 whitespace-nowrap ml-2">
+        <Link href={`/explore?category=${encodeURIComponent(title)}`} className="text-xs sm:text-sm text-teal-400 hover:text-teal-300 transition flex items-center gap-1 whitespace-nowrap ml-2">
           View All <span className="text-base sm:text-lg">→</span>
         </Link>
       </div>
@@ -102,7 +102,7 @@ export default function ContentRow({
                     </div>
                   )}
                   
-                  {/* Rating Badge */}
+                  {/* Rating Badge - No count */}
                   <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm px-1.5 py-0.5 rounded-lg flex items-center gap-0.5">
                     <Star size={10} className="text-yellow-400 fill-yellow-400" />
                     <span className="text-[10px] xs:text-xs font-bold">{rating.toFixed(1)}</span>
@@ -180,17 +180,13 @@ export default function ContentRow({
                     </div>
                   ) : null}
                   
-                  {/* Rating Display */}
-                  <div className="flex justify-between mt-1">
-                    <span className="flex items-center gap-1">
-                      <Star size={10} className="text-yellow-400 fill-yellow-400" />
-                      <span className="text-[10px] font-bold text-yellow-400">
-                        {rating.toFixed(1)}
-                      </span>
-                      <span className="text-[8px] text-gray-500">
-                        ({item.rating_count || 0})
-                      </span>
+                  {/* Rating Display - No count */}
+                  <div className="flex items-center gap-1 mt-1">
+                    <Star size={10} className="text-yellow-400 fill-yellow-400" />
+                    <span className="text-[10px] font-bold text-yellow-400">
+                      {rating.toFixed(1)}
                     </span>
+                    <span className="text-[8px] text-gray-500">/10</span>
                   </div>
                 </div>
               </div>
