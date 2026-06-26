@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { 
   Plus, Edit, Trash2, Film, Music, Layers, Shield, X, 
   Users, TrendingUp, Settings, Heart, Star, Search as SearchIcon,
-  Loader2, Tv, AlertTriangle, RefreshCw, Check
+  Loader2, Tv, AlertTriangle, RefreshCw, Check, Trash
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -495,6 +495,62 @@ export default function AdminPage() {
   }
 
   // ============================================
+  // DELETE USER FUNCTION
+  // ============================================
+  const deleteUser = async (userId: string, userEmail: string) => {
+    if (!isMasterAdmin) {
+      toast.error('Only the master admin can delete users')
+      return
+    }
+
+    if (!confirm(`⚠️ Are you sure you want to delete user "${userEmail}"?\n\nThis action will permanently delete:\n- Their profile\n- All their recommendations\n- Their watchlist\n\nThis cannot be undone!`)) {
+      return
+    }
+
+    try {
+      // First delete from recommendations
+      const { error: recError } = await supabase
+        .from('recommendations')
+        .delete()
+        .eq('user_id', userId)
+      
+      if (recError) {
+        console.error('Error deleting recommendations:', recError)
+        throw new Error('Failed to delete user recommendations')
+      }
+
+      // Then delete from watchlist
+      const { error: watchlistError } = await supabase
+        .from('watchlist')
+        .delete()
+        .eq('user_id', userId)
+      
+      if (watchlistError) {
+        console.error('Error deleting watchlist:', watchlistError)
+        throw new Error('Failed to delete user watchlist')
+      }
+
+      // Then delete from profiles
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId)
+      
+      if (profileError) {
+        console.error('Error deleting profile:', profileError)
+        throw new Error('Failed to delete user profile')
+      }
+
+      toast.success(`✅ User "${userEmail}" deleted successfully!`)
+      await loadUsers()
+      await loadContentCounts()
+    } catch (error: any) {
+      console.error('Error deleting user:', error)
+      toast.error(error.message || 'Failed to delete user')
+    }
+  }
+
+  // ============================================
   // IMPORT FUNCTIONS
   // ============================================
   
@@ -597,12 +653,10 @@ export default function AdminPage() {
   const autoAssignCategories = (movie: any, source: 'netflix' | 'prime'): string[] => {
     const categories = new Set<string>()
     
-    // Add the appropriate platform category
     const platformCategory = getCategoryName(source)
     const platformCatId = getCategoryId(platformCategory)
     if (platformCatId) categories.add(platformCatId)
     
-    // Rest of auto-categorization rules
     if (movie.vote_average > 7.5) {
       const trending = getCategoryId('🔥 Trending Now')
       if (trending) categories.add(trending)
@@ -1444,7 +1498,7 @@ export default function AdminPage() {
           </button>
         </div>
 
-        {/* Users Tab */}
+        {/* Users Tab - WITH DELETE BUTTON */}
         {activeTab === 'users' && (
           <div className="bg-gray-800 rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
@@ -1490,18 +1544,32 @@ export default function AdminPage() {
                         <td className="px-4 py-3"><span className="text-blue-400">👍 {userItem.recommendations_count || 0}</span></td>
                         <td className="px-4 py-3 text-sm">{userItem.created_at ? new Date(userItem.created_at).toLocaleDateString() : 'N/A'}</td>
                         <td className="px-4 py-3">
-                          {isMasterAdmin && (
-                            <button 
-                              onClick={() => makeUserAdmin(userItem.id, userItem.role || 'user')}
-                              className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
-                                userItem.role === 'admin' 
-                                  ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30' 
-                                  : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'
-                              }`}
-                            >
-                              {userItem.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
-                            </button>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {isMasterAdmin && (
+                              <>
+                                <button 
+                                  onClick={() => makeUserAdmin(userItem.id, userItem.role || 'user')}
+                                  className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
+                                    userItem.role === 'admin' 
+                                      ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30' 
+                                      : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'
+                                  }`}
+                                >
+                                  {userItem.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
+                                </button>
+                                {/* Delete User Button - Only for master admin */}
+                                {userItem.email !== 'kijified@gmail.com' && (
+                                  <button 
+                                    onClick={() => deleteUser(userItem.id, userItem.email || userItem.username)}
+                                    className="px-3 py-1 rounded-lg text-xs font-medium transition bg-red-600/20 text-red-400 hover:bg-red-600/30 flex items-center gap-1"
+                                    title="Delete user"
+                                  >
+                                    <Trash size={12} /> Delete
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1751,6 +1819,10 @@ export default function AdminPage() {
                 <p className="text-sm text-gray-400">Content is ordered by most recently updated/created.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
+                <h3 className="font-semibold mb-2">User Management</h3>
+                <p className="text-sm text-gray-400">Only the master admin can delete users. User deletion also removes their recommendations and watchlist.</p>
+              </div>
+              <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Netflix & Prime Imports</h3>
                 <p className="text-sm text-gray-400">Movies are auto-categorized based on genre, rating, year, and more. Netflix movies get "Netflix & Chill", Prime movies get "Prime Video Only".</p>
               </div>
@@ -1760,7 +1832,7 @@ export default function AdminPage() {
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Master Admin</h3>
-                <p className="text-sm text-gray-400">Only the master admin (kijified@gmail.com) can see the Danger Zone and manage user roles.</p>
+                <p className="text-sm text-gray-400">Only the master admin (kijified@gmail.com) can see the Danger Zone, manage user roles, and delete users.</p>
               </div>
             </div>
           </div>
