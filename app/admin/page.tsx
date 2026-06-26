@@ -471,23 +471,86 @@ export default function AdminPage() {
     }
   }
 
+  // ============================================
+  // FIXED LOAD RECOMMENDATIONS FOR ANALYTICS TAB
+  // ============================================
   const loadRecommendations = async () => {
     try {
-      console.log('Loading recommendations...')
-      const { data, error } = await supabase
+      console.log('Loading recommendations for analytics...')
+      
+      // First, get all recommendations
+      const { data: recsData, error: recsError } = await supabase
         .from('recommendations')
-        .select('*, profiles(username), content(title, rating)')
+        .select('*')
         .order('created_at', { ascending: false })
         .limit(50)
       
-      if (error) {
-        console.error('Recommendations load error:', error)
+      if (recsError) {
+        console.error('Recommendations error:', recsError)
         setRecommendations([])
         return
       }
       
-      console.log('Recommendations loaded:', data?.length || 0)
-      setRecommendations(data || [])
+      if (!recsData || recsData.length === 0) {
+        console.log('No recommendations found')
+        setRecommendations([])
+        return
+      }
+      
+      console.log('Found recommendations:', recsData.length)
+      
+      // Get user profiles for these recommendations
+      const userIds = recsData
+        .map(r => r.user_id)
+        .filter(Boolean)
+        .filter((id, index, self) => self.indexOf(id) === index) // Remove duplicates
+      
+      let profilesMap: Record<string, any> = {}
+      if (userIds.length > 0) {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, username, avatar_url')
+          .in('id', userIds)
+        
+        if (!profilesError && profilesData) {
+          profilesMap = profilesData.reduce((acc: any, p: any) => {
+            acc[p.id] = p
+            return acc
+          }, {})
+        }
+      }
+      
+      // Get content for these recommendations
+      const contentIds = recsData
+        .map(r => r.content_id)
+        .filter(Boolean)
+        .filter((id, index, self) => self.indexOf(id) === index) // Remove duplicates
+      
+      let contentMap: Record<string, any> = {}
+      if (contentIds.length > 0) {
+        const { data: contentData, error: contentError } = await supabase
+          .from('content')
+          .select('id, title, rating, image_url, type, year')
+          .in('id', contentIds)
+        
+        if (!contentError && contentData) {
+          contentMap = contentData.reduce((acc: any, c: any) => {
+            acc[c.id] = c
+            return acc
+          }, {})
+        }
+      }
+      
+      // Merge data
+      const mergedData = recsData.map(rec => ({
+        ...rec,
+        profiles: profilesMap[rec.user_id] || { username: 'Anonymous', avatar_url: null },
+        content: contentMap[rec.content_id] || { title: 'Unknown', rating: 0 }
+      }))
+      
+      console.log('Merged recommendations:', mergedData.length)
+      setRecommendations(mergedData)
+      
     } catch (error) {
       console.error('Error loading recommendations:', error)
       setRecommendations([])
@@ -1498,7 +1561,7 @@ export default function AdminPage() {
           </button>
         </div>
 
-        {/* Users Tab - WITH DELETE BUTTON */}
+        {/* Users Tab */}
         {activeTab === 'users' && (
           <div className="bg-gray-800 rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
@@ -1557,7 +1620,6 @@ export default function AdminPage() {
                                 >
                                   {userItem.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
                                 </button>
-                                {/* Delete User Button - Only for master admin */}
                                 {userItem.email !== 'kijified@gmail.com' && (
                                   <button 
                                     onClick={() => deleteUser(userItem.id, userItem.email || userItem.username)}
@@ -1580,7 +1642,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Analytics Tab */}
+        {/* Analytics Tab - FIXED */}
         {activeTab === 'analytics' && (
           <div className="bg-gray-800 rounded-xl p-6">
             <h2 className="text-xl font-bold mb-4">Recent Recommendations</h2>
@@ -1588,15 +1650,28 @@ export default function AdminPage() {
               {recommendations.length === 0 ? (
                 <p className="text-center text-gray-500 py-8">No recommendations yet</p>
               ) : (
-                recommendations.slice(0, 20).map(rec => (
+                recommendations.slice(0, 20).map((rec) => (
                   <div key={rec.id} className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg">
                     <div>
-                      <p className="font-medium">{rec.profiles?.username || 'Anonymous'}</p>
-                      <p className="text-sm text-gray-400">Recommended: {rec.content?.title || 'Unknown'}</p>
-                      <p className="text-xs text-yellow-400">⭐ {rec.content?.rating || 0}/10</p>
+                      <p className="font-medium">
+                        {rec.profiles?.username || 'Anonymous'}
+                      </p>
+                      <p className="text-sm text-gray-400">
+                        Recommended: {rec.content?.title || 'Unknown'}
+                      </p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-xs text-yellow-400">⭐ {rec.rating || 0}/10</span>
+                        <span className="text-xs text-gray-500">
+                          {rec.content?.type || 'Unknown'}
+                        </span>
+                      </div>
                     </div>
-                    <span className="px-2 py-1 rounded-full text-xs bg-yellow-600/20 text-yellow-400">
-                      ⭐ {rec.rating || 0}/10
+                    <span className={`px-2 py-1 rounded-full text-xs ${
+                      rec.rating >= 8 ? 'bg-teal-600/20 text-teal-400' :
+                      rec.rating >= 5 ? 'bg-blue-600/20 text-blue-400' :
+                      'bg-gray-600/20 text-gray-400'
+                    }`}>
+                      {rec.rating >= 8 ? '🔥 Highly' : rec.rating >= 5 ? '👍 Recommended' : '👎 Not'}
                     </span>
                   </div>
                 ))
@@ -1827,8 +1902,8 @@ export default function AdminPage() {
                 <p className="text-sm text-gray-400">Movies are auto-categorized based on genre, rating, year, and more. Netflix movies get "Netflix & Chill", Prime movies get "Prime Video Only".</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
-                <h3 className="font-semibold mb-2">BADMOUTH Descriptions</h3>
-                <p className="text-sm text-gray-400">All imported content uses unique, punchy critic-style descriptions.</p>
+                <h3 className="font-semibold mb-2">Analytics</h3>
+                <p className="text-sm text-gray-400">Shows recent user recommendations with ratings and content details.</p>
               </div>
               <div className="p-4 bg-gray-700/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Master Admin</h3>
