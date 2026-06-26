@@ -18,23 +18,32 @@ import {
   Pause,
   Share2,
   Star,
-  Clock,
   Calendar,
-  User as UserIcon,
-  Music2,
-  Film
+  Film,
+  Music2
 } from 'lucide-react'
-import Image from 'next/image'
 import { ContentItem } from '@/types/content'
 import toast from 'react-hot-toast'
 
-interface ReelContent extends ContentItem {
-  trailer_url: string
+// ✅ ADD THIS: Define the props interface
+interface TrailerReelsProps {
+  onViewDetails: (item: ContentItem) => void
+  onAddToWatchlist: (item: ContentItem) => Promise<void>
+  onRemoveFromWatchlist: (id: string) => Promise<void>
+  isInWatchlist: (id: string) => boolean
+  userId?: string
 }
 
-export default function TrailerReels() {
+// ✅ ADD THIS: Accept props in the component
+export default function TrailerReels({
+  onViewDetails,
+  onAddToWatchlist,
+  onRemoveFromWatchlist,
+  isInWatchlist,
+  userId
+}: TrailerReelsProps) {
   const { user } = useAuth()
-  const [reels, setReels] = useState<ReelContent[]>([])
+  const [reels, setReels] = useState<any[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -42,25 +51,19 @@ export default function TrailerReels() {
   const [isPlaying, setIsPlaying] = useState(true)
   const [progress, setProgress] = useState(0)
   const [showDetails, setShowDetails] = useState(false)
-  const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set())
-  const [isLiked, setIsLiked] = useState(false)
-  const [isSaved, setIsSaved] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
   
   const containerRef = useRef<HTMLDivElement>(null)
-  const videoRefs = useRef<{ [key: string]: HTMLIFrameElement | null }>({})
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // 🎬 YouTube URL converter
   const getYouTubeEmbedUrl = useCallback((url: string) => {
     if (!url) return ''
     
-    // If it's already an embed URL
     if (url.includes('/embed/')) {
       return url.includes('?') ? url : `${url}?autoplay=1&mute=1&enablejsapi=1&rel=0`
     }
     
-    // Extract video ID
     let videoId = ''
     
     if (url.includes('watch?v=')) {
@@ -121,41 +124,6 @@ export default function TrailerReels() {
     fetchReels()
   }, [])
 
-  // 📋 Load user's watchlist
-  useEffect(() => {
-    const loadWatchlist = async () => {
-      if (!user) return
-      
-      try {
-        const { data, error } = await supabase
-          .from('watchlist')
-          .select('content_id')
-          .eq('user_id', user.id)
-        
-        if (error) {
-          console.error('Error loading watchlist:', error)
-          return
-        }
-        
-        if (data) {
-          const idsSet = new Set<string>()
-          data.forEach(item => idsSet.add(item.content_id))
-          setWatchlistIds(idsSet)
-          
-          // Update current reel like/save status
-          if (reels[currentIndex]) {
-            setIsLiked(idsSet.has(reels[currentIndex].id))
-            setIsSaved(idsSet.has(reels[currentIndex].id))
-          }
-        }
-      } catch (error) {
-        console.error('Error loading watchlist:', error)
-      }
-    }
-    
-    loadWatchlist()
-  }, [user, reels, currentIndex])
-
   // 🎵 Progress bar animation
   useEffect(() => {
     if (progressIntervalRef.current) {
@@ -167,11 +135,10 @@ export default function TrailerReels() {
       progressIntervalRef.current = setInterval(() => {
         setProgress(prev => {
           if (prev >= 100) {
-            // Auto-advance to next reel
             handleNextReel()
             return 0
           }
-          return prev + 0.3 // Smooth progress
+          return prev + 0.3
         })
       }, 100)
     }
@@ -183,7 +150,7 @@ export default function TrailerReels() {
     }
   }, [isPlaying, currentIndex, reels.length])
 
-  // 🖱️ Scroll handling for reels
+  // 🖱️ Scroll handling
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -197,118 +164,12 @@ export default function TrailerReels() {
         setCurrentIndex(index)
         setProgress(0)
         setIsPlaying(true)
-        
-        // Update like/save status for new reel
-        if (reels[index]) {
-          setIsLiked(watchlistIds.has(reels[index].id))
-          setIsSaved(watchlistIds.has(reels[index].id))
-        }
       }
     }
     
     container.addEventListener('scroll', handleScroll)
     return () => container.removeEventListener('scroll', handleScroll)
-  }, [currentIndex, reels, watchlistIds])
-
-  // 🎯 Like/Unlike handler
-  const handleLike = async () => {
-    if (!user) {
-      toast.error('Please sign in to like')
-      return
-    }
-    
-    const currentReel = reels[currentIndex]
-    if (!currentReel) return
-    
-    try {
-      if (isLiked) {
-        const { error } = await supabase
-          .from('watchlist')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('content_id', currentReel.id)
-        
-        if (error) throw error
-        
-        const newSet = new Set(watchlistIds)
-        newSet.delete(currentReel.id)
-        setWatchlistIds(newSet)
-        setIsLiked(false)
-        setIsSaved(false)
-        toast.success(`Removed "${currentReel.title}" from watchlist`)
-      } else {
-        const { error } = await supabase
-          .from('watchlist')
-          .insert({
-            user_id: user.id,
-            content_id: currentReel.id,
-            content_type: currentReel.type
-          })
-        
-        if (error) throw error
-        
-        const newSet = new Set(watchlistIds)
-        newSet.add(currentReel.id)
-        setWatchlistIds(newSet)
-        setIsLiked(true)
-        setIsSaved(true)
-        toast.success(`❤️ "${currentReel.title}" added to watchlist!`)
-      }
-    } catch (error) {
-      console.error('Watchlist error:', error)
-      toast.error('Failed to update watchlist')
-    }
-  }
-
-  // 💾 Save handler (same as like for now)
-  const handleSave = async () => {
-    if (!user) {
-      toast.error('Please sign in to save')
-      return
-    }
-    
-    const currentReel = reels[currentIndex]
-    if (!currentReel) return
-    
-    try {
-      if (isSaved) {
-        const { error } = await supabase
-          .from('watchlist')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('content_id', currentReel.id)
-        
-        if (error) throw error
-        
-        const newSet = new Set(watchlistIds)
-        newSet.delete(currentReel.id)
-        setWatchlistIds(newSet)
-        setIsSaved(false)
-        setIsLiked(false)
-        toast.success(`Removed "${currentReel.title}" from saved`)
-      } else {
-        const { error } = await supabase
-          .from('watchlist')
-          .insert({
-            user_id: user.id,
-            content_id: currentReel.id,
-            content_type: currentReel.type
-          })
-        
-        if (error) throw error
-        
-        const newSet = new Set(watchlistIds)
-        newSet.add(currentReel.id)
-        setWatchlistIds(newSet)
-        setIsSaved(true)
-        setIsLiked(true)
-        toast.success(`💾 "${currentReel.title}" saved!`)
-      }
-    } catch (error) {
-      console.error('Save error:', error)
-      toast.error('Failed to save')
-    }
-  }
+  }, [currentIndex, reels.length])
 
   // 🔄 Navigation handlers
   const handleNextReel = useCallback(() => {
@@ -317,7 +178,6 @@ export default function TrailerReels() {
       setProgress(0)
       setIsPlaying(true)
       
-      // Scroll to next reel
       const container = containerRef.current
       if (container) {
         const nextPosition = (currentIndex + 1) * container.clientHeight
@@ -332,7 +192,6 @@ export default function TrailerReels() {
       setProgress(0)
       setIsPlaying(true)
       
-      // Scroll to previous reel
       const container = containerRef.current
       if (container) {
         const prevPosition = (currentIndex - 1) * container.clientHeight
@@ -368,10 +227,37 @@ export default function TrailerReels() {
         url: window.location.href
       })
     } catch (error) {
-      // Copy to clipboard fallback
       const url = `${window.location.origin}/?details=${currentReel.id}`
       await navigator.clipboard.writeText(url)
       toast.success('Link copied to clipboard!')
+    }
+  }
+
+  // ✅ FIX: Handle like using props
+  const handleLike = async () => {
+    const currentReel = reels[currentIndex]
+    if (!currentReel) return
+    
+    if (isInWatchlist && isInWatchlist(currentReel.id)) {
+      await onRemoveFromWatchlist(currentReel.id)
+      toast.success(`Removed "${currentReel.title}" from watchlist`)
+    } else {
+      await onAddToWatchlist(currentReel)
+      toast.success(`❤️ "${currentReel.title}" added to watchlist!`)
+    }
+  }
+
+  // ✅ FIX: Handle save using props
+  const handleSave = async () => {
+    const currentReel = reels[currentIndex]
+    if (!currentReel) return
+    
+    if (isInWatchlist && isInWatchlist(currentReel.id)) {
+      await onRemoveFromWatchlist(currentReel.id)
+      toast.success(`Removed "${currentReel.title}" from saved`)
+    } else {
+      await onAddToWatchlist(currentReel)
+      toast.success(`💾 "${currentReel.title}" saved!`)
     }
   }
 
@@ -405,7 +291,6 @@ export default function TrailerReels() {
   }
 
   const currentReel = reels[currentIndex]
-  const embedUrl = getYouTubeEmbedUrl(currentReel?.trailer_url || '')
 
   return (
     <div 
@@ -417,6 +302,7 @@ export default function TrailerReels() {
       {reels.map((reel, index) => {
         const isActive = index === currentIndex
         const reelEmbedUrl = getYouTubeEmbedUrl(reel.trailer_url)
+        const isLiked = isInWatchlist ? isInWatchlist(reel.id) : false
         
         return (
           <div
@@ -427,11 +313,6 @@ export default function TrailerReels() {
             <div className="absolute inset-0 w-full h-full bg-black">
               {reelEmbedUrl ? (
                 <iframe
-                  ref={el => {
-                    if (isActive) {
-                      videoRefs.current[reel.id] = el
-                    }
-                  }}
                   src={reelEmbedUrl}
                   title={reel.title}
                   className="w-full h-full"
@@ -485,17 +366,14 @@ export default function TrailerReels() {
             {/* Content Info - Bottom */}
             {isActive && (
               <div className="absolute bottom-24 left-4 right-20 z-30 text-white">
-                {/* Title */}
                 <h2 className="text-2xl md:text-3xl font-bold mb-1 drop-shadow-lg">
                   {reel.title}
                 </h2>
                 
-                {/* Artist/Director */}
                 <p className="text-sm text-gray-300 mb-2 drop-shadow-lg">
                   {reel.type === 'movie' ? reel.director : reel.artist}
                 </p>
                 
-                {/* Metadata */}
                 <div className="flex flex-wrap items-center gap-3 text-xs md:text-sm">
                   {reel.rating && (
                     <span className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-full">
@@ -524,7 +402,6 @@ export default function TrailerReels() {
                   )}
                 </div>
                 
-                {/* Description */}
                 {reel.description && (
                   <p className="text-sm text-gray-300 mt-2 line-clamp-2 max-w-md drop-shadow-lg">
                     {reel.description}
@@ -566,25 +443,28 @@ export default function TrailerReels() {
                 >
                   <div className={`
                     p-2.5 rounded-full transition-all duration-200
-                    ${isSaved 
+                    ${isLiked 
                       ? 'bg-blue-500/30 ring-2 ring-blue-500' 
                       : 'bg-black/40 hover:bg-black/60 backdrop-blur-sm'
                     }
                   `}>
                     <Bookmark 
                       className={`w-6 h-6 transition-all duration-200 ${
-                        isSaved ? 'fill-blue-500 text-blue-500' : 'text-white group-hover:scale-110'
+                        isLiked ? 'fill-blue-500 text-blue-500' : 'text-white group-hover:scale-110'
                       }`}
                     />
                   </div>
                   <span className="text-[10px] text-white/80">
-                    {isSaved ? 'Saved' : 'Save'}
+                    {isLiked ? 'Saved' : 'Save'}
                   </span>
                 </button>
 
                 {/* Details Button */}
                 <button
-                  onClick={() => setShowDetails(true)}
+                  onClick={() => {
+                    setShowDetails(true)
+                    onViewDetails(reel)
+                  }}
                   className="group flex flex-col items-center gap-1"
                 >
                   <div className="p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200">
@@ -609,7 +489,6 @@ export default function TrailerReels() {
             {/* Bottom Controls */}
             {isActive && (
               <div className="absolute bottom-4 left-4 right-4 z-30 flex items-center justify-between">
-                {/* Play/Pause */}
                 <button
                   onClick={() => setIsPlaying(!isPlaying)}
                   className="p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200"
@@ -621,7 +500,6 @@ export default function TrailerReels() {
                   )}
                 </button>
 
-                {/* Mute/Unmute */}
                 <button
                   onClick={() => setIsMuted(!isMuted)}
                   className="p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200"
@@ -655,118 +533,6 @@ export default function TrailerReels() {
           </div>
         )
       })}
-
-      {/* Details Modal */}
-      {showDetails && currentReel && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-lg flex items-center justify-center p-4"
-          onClick={() => setShowDetails(false)}
-        >
-          <div 
-            className="bg-gray-900 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 border border-gray-800 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-start mb-4">
-              <h2 className="text-2xl font-bold text-white">{currentReel.title}</h2>
-              <button
-                onClick={() => setShowDetails(false)}
-                className="p-2 rounded-full hover:bg-gray-800 transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-400" />
-              </button>
-            </div>
-            
-            {/* Thumbnail */}
-            {currentReel.image_url && (
-              <div className="relative w-full aspect-video rounded-lg overflow-hidden mb-4">
-                <img
-                  src={currentReel.image_url}
-                  alt={currentReel.title}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            )}
-            
-            {/* Details */}
-            <div className="space-y-3 text-gray-300">
-              {currentReel.long_description && (
-                <p className="text-sm leading-relaxed">{currentReel.long_description}</p>
-              )}
-              
-              <div className="grid grid-cols-2 gap-4 text-sm pt-3 border-t border-gray-800">
-                {/* Type specific fields */}
-                {currentReel.type === 'movie' ? (
-                  <>
-                    <div>
-                      <span className="text-gray-500 block text-xs">Director</span>
-                      <span>{currentReel.director || 'N/A'}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 block text-xs">Year</span>
-                      <span>{currentReel.year || 'N/A'}</span>
-                    </div>
-                    {currentReel.runtime && (
-                      <div>
-                        <span className="text-gray-500 block text-xs">Runtime</span>
-                        <span>{currentReel.runtime}</span>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div>
-                      <span className="text-gray-500 block text-xs">Artist</span>
-                      <span>{currentReel.artist || 'N/A'}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 block text-xs">Duration</span>
-                      <span>{currentReel.duration || 'N/A'}</span>
-                    </div>
-                  </>
-                )}
-                
-                <div>
-                  <span className="text-gray-500 block text-xs">Rating</span>
-                  <div className="flex items-center gap-1">
-                    <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                    <span>{currentReel.rating?.toFixed(1) || 'N/A'}</span>
-                  </div>
-                </div>
-                <div>
-                  <span className="text-gray-500 block text-xs">Genre</span>
-                  <span>{currentReel.genre || 'N/A'}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3 mt-6 pt-4 border-t border-gray-800">
-              <button
-                onClick={handleLike}
-                className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 ${
-                  isLiked 
-                    ? 'bg-teal-500/20 text-teal-500 ring-1 ring-teal-500' 
-                    : 'bg-gray-800 hover:bg-gray-700 text-white'
-                }`}
-              >
-                <Heart className={`w-4 h-4 ${isLiked ? 'fill-teal-500' : ''}`} />
-                {isLiked ? 'Liked' : 'Like'}
-              </button>
-              <button
-                onClick={handleSave}
-                className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 ${
-                  isSaved 
-                    ? 'bg-blue-500/20 text-blue-500 ring-1 ring-blue-500' 
-                    : 'bg-gray-800 hover:bg-gray-700 text-white'
-                }`}
-              >
-                <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-blue-500' : ''}`} />
-                {isSaved ? 'Saved' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
