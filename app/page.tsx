@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
-import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield, Star, ThumbsUp, Trash2, Loader2 } from 'lucide-react'
+import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield, Star, ThumbsUp, Trash2, Loader2, Play } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import HeroCarousel from '@/components/HeroCarousel'
 import ContentRow from '@/components/ContentRow'
 import SocialRecommendations from '@/components/SocialRecommendations'
@@ -16,14 +16,20 @@ import HomeFeed from '@/components/HomeFeed'
 import TrendingBar from '@/components/TrendingBar'
 import QuickStats from '@/components/QuickStats'
 import WatchlistBasedRecommendations from '@/components/WatchlistBasedRecommendations'
+import TrailerReels from '@/components/TrailerReels'
 import { ContentItem, Category } from '@/types/content'
 import toast from 'react-hot-toast'
 
+const tierConfig = {
+  highly: { emoji: '🔥', label: 'HIGHLY RECOMMENDED', color: 'bg-teal-600/20 text-teal-400 border-teal-600' },
+  recommended: { emoji: '👍', label: 'RECOMMENDED', color: 'bg-blue-600/20 text-blue-400 border-blue-600' },
+  not: { emoji: '👎', label: 'NOT RECOMMENDED', color: 'bg-gray-600/20 text-gray-400 border-gray-600' }
+}
+
 export default function HomePage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const { user, signOut, loading: authLoading } = useAuth()
-  const [currentPage, setCurrentPage] = useState<'home' | 'movies' | 'music'>('home')
+  const [currentPage, setCurrentPage] = useState<'home' | 'movies' | 'music' | 'reels'>('home')
   const [activeTab, setActiveTab] = useState<'movie' | 'music'>('movie')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
@@ -59,6 +65,33 @@ export default function HomePage() {
   const [homeLoading, setHomeLoading] = useState(true)
 
   const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller', 'Hip Hop', 'R&B', 'Electronic', 'Jazz']
+
+  // Check if user is admin
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      if (!user) {
+        setIsAdmin(false)
+        return
+      }
+      
+      try {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+        
+        if (error) throw error
+        
+        setIsAdmin(profile?.role === 'admin')
+      } catch (error) {
+        console.error('Error checking admin status:', error)
+        setIsAdmin(false)
+      }
+    }
+    
+    checkAdminStatus()
+  }, [user])
 
   const closeAllPanels = () => {
     setShowWatchlist(false)
@@ -97,64 +130,6 @@ export default function HomePage() {
     }
   }
 
-  // Check if user is admin
-  useEffect(() => {
-    const checkAdminStatus = async () => {
-      if (!user) {
-        setIsAdmin(false)
-        return
-      }
-      
-      try {
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single()
-        
-        if (error) throw error
-        
-        setIsAdmin(profile?.role === 'admin')
-        console.log('Admin status:', profile?.role === 'admin')
-      } catch (error) {
-        console.error('Error checking admin status:', error)
-        setIsAdmin(false)
-      }
-    }
-    
-    checkAdminStatus()
-  }, [user])
-
-  // Handle details URL parameter - opens modal automatically
-  useEffect(() => {
-    const contentId = searchParams.get('details')
-    if (contentId && !showDetailsModal) {
-      const fetchAndShowDetails = async () => {
-        try {
-          const { data, error } = await supabase
-            .from('content')
-            .select('*')
-            .eq('id', contentId)
-            .single()
-
-          if (data && !error) {
-            setSelectedContent(data)
-            setShowDetailsModal(true)
-            // Remove the parameter from URL without refreshing
-            router.replace('/', { scroll: false })
-          } else {
-            console.error('Content not found:', error)
-            toast.error('Content not found')
-          }
-        } catch (error) {
-          console.error('Error fetching content:', error)
-        }
-      }
-      fetchAndShowDetails()
-    }
-  }, [searchParams, router, showDetailsModal])
-
-  // Load user's own recommendations for profile modal
   const loadMyRecommendations = async () => {
     if (!user) return
     setLoadingRecs(true)
@@ -506,6 +481,11 @@ export default function HomePage() {
     scrollToTop()
   }
 
+  const handleReelsClick = () => {
+    setCurrentPage('reels')
+    scrollToTop()
+  }
+
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50)
@@ -755,6 +735,9 @@ export default function HomePage() {
                 <button onClick={handleMusicClick} className={`flex items-center gap-1 transition ${currentPage === 'music' ? 'text-teal-500 border-b-2 border-teal-500 pb-1' : 'text-gray-300 hover:text-white'}`}>
                   <Music size={16} /> Music
                 </button>
+                <button onClick={handleReelsClick} className={`flex items-center gap-1 transition ${currentPage === 'reels' ? 'text-teal-500 border-b-2 border-teal-500 pb-1' : 'text-gray-300 hover:text-white'}`}>
+                  <Play size={16} /> Reels
+                </button>
               </nav>
             </div>
 
@@ -763,7 +746,7 @@ export default function HomePage() {
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
               </button>
 
-              {currentPage !== 'home' && (
+              {currentPage !== 'home' && currentPage !== 'reels' && (
                 <div className="relative">
                   <button onClick={() => setShowGenreFilter(!showGenreFilter)} className="text-gray-300 hover:text-white flex items-center gap-1">
                     <Filter size={18} /> <span className="text-xs hidden md:inline">Genre</span>
@@ -846,6 +829,7 @@ export default function HomePage() {
               <button onClick={() => { handleHomeClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🏠 Home</button>
               <button onClick={() => { handleMoviesClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎬 Movies</button>
               <button onClick={() => { handleMusicClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎵 Music</button>
+              <button onClick={() => { handleReelsClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">▶️ Reels</button>
               <button onClick={() => { toggleWatchlist(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">❤️ Watchlist ({watchlistCount})</button>
               <button onClick={() => { toggleProfile(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">👤 Profile</button>
               <button onClick={() => { toggleNotifications(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🔔 Notifications</button>
@@ -863,7 +847,15 @@ export default function HomePage() {
       )}
 
       <main className="pt-16">
-        {currentPage === 'home' ? (
+        {currentPage === 'reels' ? (
+          <TrailerReels 
+            onViewDetails={handleViewDetails}
+            onAddToWatchlist={addToWatchlist}
+            onRemoveFromWatchlist={removeFromWatchlist}
+            isInWatchlist={isInWatchlist}
+            userId={user.id}
+          />
+        ) : currentPage === 'home' ? (
           <>
             <HeroCarousel 
               items={[...homeMovies.slice(0, 2), ...homeMusic.slice(0, 1)]} 
@@ -914,6 +906,7 @@ export default function HomePage() {
                   onAddToWatchlist={addToWatchlist}
                   onRemoveFromWatchlist={removeFromWatchlist}
                   isInWatchlist={isInWatchlist}
+                  maxItems={20}
                 />
               ))}
               
@@ -928,6 +921,7 @@ export default function HomePage() {
                   onAddToWatchlist={addToWatchlist}
                   onRemoveFromWatchlist={removeFromWatchlist}
                   isInWatchlist={isInWatchlist}
+                  maxItems={20}
                 />
               ))}
               
@@ -956,6 +950,7 @@ export default function HomePage() {
                     onAddToWatchlist={addToWatchlist}
                     onRemoveFromWatchlist={removeFromWatchlist}
                     isInWatchlist={isInWatchlist}
+                    maxItems={20}
                   />
                 ))
               ) : (
@@ -1138,7 +1133,9 @@ export default function HomePage() {
         activeTab={activeTab} 
         onTabChange={(tab) => {
           if (tab === 'movie') handleMoviesClick()
-          else handleMusicClick()
+          else if (tab === 'music') handleMusicClick()
+          else if (tab === 'reels') handleReelsClick()
+          else handleHomeClick()
         }} 
         onViewDetails={handleViewDetails}
         onHomeClick={handleHomeClick}
