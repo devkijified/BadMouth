@@ -6,6 +6,10 @@ export async function POST(request: Request) {
   try {
     const { userId } = await request.json()
     
+    if (!userId) {
+      return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
+    }
+    
     const supabase = createRouteHandlerClient({ cookies })
     
     // This requires service_role key
@@ -14,7 +18,8 @@ export async function POST(request: Request) {
     if (error) throw error
     
     return NextResponse.json({ success: true })
-  } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error: any) {
+    // 👈 Add ': any' to fix the TypeScript error
+    return NextResponse.json({ error: error.message || 'Failed to delete user' }, { status: 500 })
   }
 }
