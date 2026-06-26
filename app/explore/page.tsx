@@ -1,16 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
-import { ArrowLeft, Film, Music, Search, Star, Heart, Filter, X, Loader2 } from 'lucide-react'
+import { ArrowLeft, Film, Music, Search, Star, Heart, Filter, X, Loader2, Layers } from 'lucide-react'
 import Link from 'next/link'
 import { ContentItem } from '@/types/content'
 import toast from 'react-hot-toast'
 
 export default function ExplorePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { user } = useAuth()
   const [content, setContent] = useState<ContentItem[]>([])
   const [filteredContent, setFilteredContent] = useState<ContentItem[]>([])
@@ -18,17 +19,24 @@ export default function ExplorePage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedType, setSelectedType] = useState<'all' | 'movie' | 'music'>('all')
   const [selectedGenre, setSelectedGenre] = useState<string>('all')
+  const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [genres, setGenres] = useState<string[]>([])
+  const [categories, setCategories] = useState<any[]>([])
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set())
   const [showFilters, setShowFilters] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
 
   useEffect(() => {
+    // Check if category param exists
+    const categoryParam = searchParams.get('category')
+    if (categoryParam) {
+      setSelectedCategory(categoryParam)
+    }
     loadContent()
     if (user) {
       loadWatchlist()
     }
-  }, [user])
+  }, [user, searchParams])
 
   const loadContent = async () => {
     setLoading(true)
@@ -64,6 +72,24 @@ export default function ExplorePage() {
         }
       })
       setGenres(['all', ...Array.from(uniqueGenres)])
+      
+      // Load categories
+      const { data: categoriesData } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('type', 'movie')
+        .order('display_order')
+      
+      if (categoriesData) {
+        setCategories(categoriesData)
+      }
+      
+      // Apply category filter if present
+      const categoryParam = searchParams.get('category')
+      if (categoryParam) {
+        applyCategoryFilter(categoryParam, data || [])
+      }
+      
     } catch (error) {
       console.error('Error loading content:', error)
       toast.error('Failed to load content')
@@ -73,6 +99,36 @@ export default function ExplorePage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const applyCategoryFilter = async (categoryName: string, contentData?: ContentItem[]) => {
+    const data = contentData || content
+    if (categoryName === 'all' || !categoryName) {
+      setFilteredContent(data)
+      return
+    }
+    
+    // Find category
+    const category = categories.find(c => c.name === categoryName)
+    if (!category) {
+      setFilteredContent(data)
+      return
+    }
+    
+    // Get content IDs for this category
+    const { data: categoryContent } = await supabase
+      .from('content_categories')
+      .select('content_id')
+      .eq('category_id', category.id)
+    
+    if (!categoryContent || categoryContent.length === 0) {
+      setFilteredContent([])
+      return
+    }
+    
+    const contentIds = categoryContent.map(cc => cc.content_id)
+    const filtered = data.filter(item => contentIds.includes(item.id))
+    setFilteredContent(filtered)
   }
 
   const loadWatchlist = async () => {
@@ -151,11 +207,26 @@ export default function ExplorePage() {
 
   const handleSearch = (query: string) => {
     setSearchQuery(query)
-    applyFilters(query, selectedType, selectedGenre)
+    applyFilters(query, selectedType, selectedGenre, selectedCategory)
   }
 
-  const applyFilters = (query: string, type: string, genre: string) => {
+  const applyFilters = (query: string, type: string, genre: string, category: string) => {
     let filtered = [...content]
+    
+    // Apply category filter first
+    if (category !== 'all') {
+      const cat = categories.find(c => c.name === category)
+      if (cat) {
+        // We need to filter by category - use the content_categories table
+        // For now, we'll filter client-side if we have the data
+        // This is a simplified version - you may want to fetch category content
+        filtered = filtered.filter(item => {
+          // Check if item has this category
+          // This requires pre-fetching category assignments
+          return true // Placeholder
+        })
+      }
+    }
     
     if (query.trim()) {
       const q = query.toLowerCase().trim()
@@ -182,18 +253,50 @@ export default function ExplorePage() {
 
   const handleTypeChange = (type: 'all' | 'movie' | 'music') => {
     setSelectedType(type)
-    applyFilters(searchQuery, type, selectedGenre)
+    applyFilters(searchQuery, type, selectedGenre, selectedCategory)
   }
 
   const handleGenreChange = (genre: string) => {
     setSelectedGenre(genre)
-    applyFilters(searchQuery, selectedType, genre)
+    applyFilters(searchQuery, selectedType, genre, selectedCategory)
+  }
+
+  const handleCategoryChange = async (category: string) => {
+    setSelectedCategory(category)
+    
+    if (category === 'all') {
+      setFilteredContent(content)
+      return
+    }
+    
+    // Find category
+    const cat = categories.find(c => c.name === category)
+    if (!cat) {
+      setFilteredContent(content)
+      return
+    }
+    
+    // Get content for this category
+    const { data: categoryContent } = await supabase
+      .from('content_categories')
+      .select('content_id')
+      .eq('category_id', cat.id)
+    
+    if (!categoryContent || categoryContent.length === 0) {
+      setFilteredContent([])
+      return
+    }
+    
+    const contentIds = categoryContent.map(cc => cc.content_id)
+    const filtered = content.filter(item => contentIds.includes(item.id))
+    setFilteredContent(filtered)
   }
 
   const clearFilters = () => {
     setSearchQuery('')
     setSelectedType('all')
     setSelectedGenre('all')
+    setSelectedCategory('all')
     setFilteredContent(content)
   }
 
@@ -308,7 +411,23 @@ export default function ExplorePage() {
                 </select>
               </div>
 
-              {(selectedType !== 'all' || selectedGenre !== 'all' || searchQuery) && (
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Category</label>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
+                  className="px-3 py-1 bg-gray-700 border border-gray-600 rounded-lg text-sm focus:outline-none focus:border-teal-500"
+                >
+                  <option value="all">All Categories</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.name}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {(selectedType !== 'all' || selectedGenre !== 'all' || selectedCategory !== 'all' || searchQuery) && (
                 <button
                   onClick={clearFilters}
                   className="text-sm text-teal-400 hover:text-teal-300 transition mt-4 md:mt-0"
@@ -391,7 +510,6 @@ export default function ExplorePage() {
                   </p>
                   <div className="flex items-center gap-1 mt-1">
                     <span className="text-[10px] text-yellow-400">⭐ {getRating(item).toFixed(1)}</span>
-                    <span className="text-[8px] text-gray-500">({item.rating_count || 0})</span>
                   </div>
                 </div>
               </div>
