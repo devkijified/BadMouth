@@ -25,6 +25,7 @@ export default function ExplorePage() {
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set())
   const [showFilters, setShowFilters] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
+  const [filteredCount, setFilteredCount] = useState(0) // ← ADD THIS
 
   useEffect(() => {
     const categoryParam = searchParams.get('category')
@@ -42,10 +43,10 @@ export default function ExplorePage() {
     try {
       console.log('Loading explore content...')
       
-      // Get ALL content with exact count
+      // ✅ FIX: Get ALL content with exact count
       const { data, error, count } = await supabase
         .from('content')
-        .select('*', { count: 'exact' })
+        .select('*', { count: 'exact' })  // ← This gets the REAL count
         .order('rating', { ascending: false })
 
       if (error) {
@@ -54,15 +55,18 @@ export default function ExplorePage() {
         setContent([])
         setFilteredContent([])
         setTotalCount(0)
+        setFilteredCount(0)
         setLoading(false)
         return
       }
 
-      console.log('Total content count:', count)
-      console.log('Content loaded:', data?.length || 0)
+      console.log('📊 Total content count:', count)
+      console.log('📝 Content loaded:', data?.length || 0)
+      
       setContent(data || [])
       setFilteredContent(data || [])
-      setTotalCount(data?.length || 0)
+      setTotalCount(count || 0)  // ← Use the count from Supabase
+      setFilteredCount(data?.length || 0)
       
       // Extract unique genres
       const uniqueGenres = new Set<string>()
@@ -77,7 +81,6 @@ export default function ExplorePage() {
       const { data: categoriesData } = await supabase
         .from('categories')
         .select('*')
-        .eq('type', 'movie')
         .order('display_order')
       
       if (categoriesData) {
@@ -96,6 +99,7 @@ export default function ExplorePage() {
       setContent([])
       setFilteredContent([])
       setTotalCount(0)
+      setFilteredCount(0)
     } finally {
       setLoading(false)
     }
@@ -105,28 +109,50 @@ export default function ExplorePage() {
     const data = contentData || content
     if (categoryName === 'all' || !categoryName) {
       setFilteredContent(data)
+      setFilteredCount(data.length)
       return
     }
     
-    const category = categories.find(c => c.name === categoryName)
+    // ✅ FIX: Find category by name OR id
+    const category = categories.find(c => 
+      c.name === categoryName || c.id === categoryName
+    )
+    
     if (!category) {
+      console.log('Category not found:', categoryName)
       setFilteredContent(data)
+      setFilteredCount(data.length)
       return
     }
     
-    const { data: categoryContent } = await supabase
+    console.log('Filtering by category:', category.name, category.id)
+    
+    // ✅ FIX: Get content for this category
+    const { data: categoryContent, error } = await supabase
       .from('content_categories')
       .select('content_id')
       .eq('category_id', category.id)
     
+    if (error) {
+      console.error('Error fetching category content:', error)
+      setFilteredContent(data)
+      setFilteredCount(data.length)
+      return
+    }
+    
     if (!categoryContent || categoryContent.length === 0) {
+      console.log('No content in category:', category.name)
       setFilteredContent([])
+      setFilteredCount(0)
       return
     }
     
     const contentIds = categoryContent.map(cc => cc.content_id)
     const filtered = data.filter(item => contentIds.includes(item.id))
+    
+    console.log(`Found ${filtered.length} items in category ${category.name}`)
     setFilteredContent(filtered)
+    setFilteredCount(filtered.length)
   }
 
   const loadWatchlist = async () => {
@@ -203,16 +229,13 @@ export default function ExplorePage() {
     router.push(`/?details=${item.id}`)
   }
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query)
-    applyFilters(query, selectedType, selectedGenre, selectedCategory)
-  }
-
-  const applyFilters = (query: string, type: string, genre: string, category: string) => {
+  // ✅ FIX: Combined filter function
+  const applyAllFilters = () => {
     let filtered = [...content]
     
-    if (query.trim()) {
-      const q = query.toLowerCase().trim()
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim()
       filtered = filtered.filter(item => 
         item.title.toLowerCase().includes(q) ||
         (item.artist && item.artist.toLowerCase().includes(q)) ||
@@ -221,68 +244,102 @@ export default function ExplorePage() {
       )
     }
     
-    if (type !== 'all') {
-      filtered = filtered.filter(item => item.type === type)
+    // Type filter
+    if (selectedType !== 'all') {
+      filtered = filtered.filter(item => item.type === selectedType)
     }
     
-    if (genre !== 'all') {
+    // Genre filter
+    if (selectedGenre !== 'all') {
       filtered = filtered.filter(item => 
-        item.genre && item.genre.split(',').some(g => g.trim() === genre)
+        item.genre && item.genre.split(',').some(g => g.trim() === selectedGenre)
       )
     }
     
-    if (category !== 'all') {
-      const cat = categories.find(c => c.name === category)
-      if (cat) {
-        // We need to filter by category
-        // For now, we'll filter client-side
-        // This is a simplified version - you may want to fetch category content
-        const categoryContentIds = new Set()
-        // This would need to be fetched from the database
-        // For now, we'll just show all content
+    // Category filter - if not "all", we need to fetch from content_categories
+    if (selectedCategory !== 'all') {
+      // We'll handle this with a separate async call
+      // For now, filter client-side if we have the data
+      const category = categories.find(c => 
+        c.name === selectedCategory || c.id === selectedCategory
+      )
+      if (category) {
+        // This is a simplified client-side filter
+        // In a real app, you'd fetch from content_categories
+        // For now, we'll just keep the filtered content
+        // The actual category filtering is done in applyCategoryFilter
       }
     }
     
     setFilteredContent(filtered)
+    setFilteredCount(filtered.length)
+  }
+
+  const handleSearch = (query: string) => {
+    setSearchQuery(query)
+    // Re-apply all filters with new search
+    setTimeout(() => applyAllFilters(), 0)
   }
 
   const handleTypeChange = (type: 'all' | 'movie' | 'music') => {
     setSelectedType(type)
-    applyFilters(searchQuery, type, selectedGenre, selectedCategory)
+    setTimeout(() => applyAllFilters(), 0)
   }
 
   const handleGenreChange = (genre: string) => {
     setSelectedGenre(genre)
-    applyFilters(searchQuery, selectedType, genre, selectedCategory)
+    setTimeout(() => applyAllFilters(), 0)
   }
 
   const handleCategoryChange = async (category: string) => {
     setSelectedCategory(category)
     
     if (category === 'all') {
+      // Reset to show all content
       setFilteredContent(content)
+      setFilteredCount(content.length)
       return
     }
     
-    const cat = categories.find(c => c.name === category)
+    // Find the category by name or id
+    const cat = categories.find(c => 
+      c.name === category || c.id === category
+    )
+    
     if (!cat) {
+      console.log('Category not found:', category)
       setFilteredContent(content)
+      setFilteredCount(content.length)
       return
     }
     
-    const { data: categoryContent } = await supabase
+    console.log('Filtering by category:', cat.name, cat.id)
+    
+    // Get content IDs for this category
+    const { data: categoryContent, error } = await supabase
       .from('content_categories')
       .select('content_id')
       .eq('category_id', cat.id)
     
+    if (error) {
+      console.error('Error fetching category content:', error)
+      setFilteredContent(content)
+      setFilteredCount(content.length)
+      return
+    }
+    
     if (!categoryContent || categoryContent.length === 0) {
       setFilteredContent([])
+      setFilteredCount(0)
       return
     }
     
     const contentIds = categoryContent.map(cc => cc.content_id)
     const filtered = content.filter(item => contentIds.includes(item.id))
+    
+    console.log(`Found ${filtered.length} items in category ${cat.name}`)
     setFilteredContent(filtered)
+    setFilteredCount(filtered.length)
   }
 
   const clearFilters = () => {
@@ -291,6 +348,7 @@ export default function ExplorePage() {
     setSelectedGenre('all')
     setSelectedCategory('all')
     setFilteredContent(content)
+    setFilteredCount(content.length)
   }
 
   const isInWatchlist = (id: string) => watchlistIds.has(id)
@@ -413,7 +471,7 @@ export default function ExplorePage() {
                 >
                   <option value="all">All Categories</option>
                   {categories.map((cat) => (
-                    <option key={cat.id} value={cat.name}>
+                    <option key={cat.id} value={cat.id}>
                       {cat.name}
                     </option>
                   ))}
@@ -432,13 +490,16 @@ export default function ExplorePage() {
           </div>
         )}
 
-        {/* Results Stats */}
+        {/* Results Stats - ✅ FIXED: Show both total and filtered counts */}
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">
             {totalCount.toLocaleString()} {totalCount === 1 ? 'Result' : 'Results'}
           </h2>
           <span className="text-xs text-gray-400">
-            Showing {filteredContent.length} of {totalCount}
+            {filteredCount !== totalCount 
+              ? `Showing ${filteredCount.toLocaleString()} of ${totalCount.toLocaleString()}`
+              : `${totalCount.toLocaleString()} total`
+            }
           </span>
         </div>
 
