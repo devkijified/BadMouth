@@ -1,12 +1,14 @@
 'use client'
 
 import { useState } from 'react'
+import { useAuth } from '@/hooks/useAuth'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
 import { Loader2, Sparkles, Mail, Lock, User, Eye, EyeOff, ArrowLeft } from 'lucide-react'
+import { supabase } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 
 export default function AuthPage() {
+  const { signUp, signIn } = useAuth()
   const router = useRouter()
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState('')
@@ -17,6 +19,7 @@ export default function AuthPage() {
   const [showResetPassword, setShowResetPassword] = useState(false)
   const [resetEmail, setResetEmail] = useState('')
   const [isResetting, setIsResetting] = useState(false)
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false)
 
   const formatUsername = (input: string): string => {
     let formatted = input.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')
@@ -43,6 +46,17 @@ export default function AuthPage() {
     return uniqueUsername
   }
 
+  const isDisposableEmail = async (email: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`/api/check-email?email=${encodeURIComponent(email)}`)
+      const data = await response.json()
+      return data.disposable || false
+    } catch (error) {
+      console.error('Error checking email:', error)
+      return false
+    }
+  }
+
   const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value
     value = value.replace(/\s+/g, '_')
@@ -51,67 +65,12 @@ export default function AuthPage() {
     setUsername(value)
   }
 
-  // Send welcome email
-  const sendWelcomeEmail = async (email: string, username: string) => {
-    const emailHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
-          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-          .button { display: inline-block; background: #14b8a6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-          .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>🎬 Welcome to BADMOUTH!</h1>
-          </div>
-          <div class="content">
-            <h2>Hello ${username}!</h2>
-            <p>Thank you for joining BADMOUTH - your AI-powered movie and music recommendation engine!</p>
-            <p>With BADMOUTH, you can:</p>
-            <ul>
-              <li>🎬 Discover personalized movie and music recommendations</li>
-              <li>❤️ Create your watchlist</li>
-              <li>👍 Recommend content to the community</li>
-              <li>⭐ Rate and review movies and music</li>
-            </ul>
-            <div style="text-align: center;">
-              <a href="https://badmouth.vercel.app" class="button">Start Exploring</a>
-            </div>
-            <p>Happy exploring!</p>
-            <p>- The BADMOUTH Team</p>
-          </div>
-          <div class="footer">
-            <p>&copy; 2024 BADMOUTH. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `
-
-    await fetch('/api/send-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        to: email, 
-        subject: 'Welcome to BADMOUTH! 🎬', 
-        html: emailHtml 
-      })
-    }).catch(console.error)
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
 
     if (!isLogin) {
-      // REGISTRATION
+      // Registration validation
       if (!username.trim()) {
         toast.error('Username is required')
         setIsLoading(false)
@@ -136,6 +95,17 @@ export default function AuthPage() {
         return
       }
 
+      // Check for disposable email
+      setIsCheckingEmail(true)
+      const disposable = await isDisposableEmail(email)
+      setIsCheckingEmail(false)
+
+      if (disposable) {
+        toast.error('Please use a permanent email address. Temporary/disposable emails are not allowed.')
+        setIsLoading(false)
+        return
+      }
+
       let finalUsername = formatUsername(username)
       const exists = await checkUsernameExists(finalUsername)
       if (exists) {
@@ -143,68 +113,40 @@ export default function AuthPage() {
         toast.success(`Username "${username}" was taken. Using "${finalUsername}" instead.`)
       }
 
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { username: finalUsername },
-        }
-      })
-
-      if (error) {
-        if (error.message.includes('already registered')) {
-          toast.error('Email already registered. Please sign in instead.')
-          setIsLogin(true)
-        } else {
-          toast.error(error.message)
-        }
-        setIsLoading(false)
-        return
-      }
-
-      if (data.user) {
-        const { data: existingProfile } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', data.user.id)
-          .single()
-
-        if (!existingProfile) {
-          await supabase.from('profiles').insert([{
-            id: data.user.id,
-            username: finalUsername,
-            email: email,
-            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${finalUsername}`,
-            role: 'user',
-            is_active: true
-          }])
-        }
-
-        // Send welcome email
-        await sendWelcomeEmail(email, finalUsername)
-
-        toast.success('Account created! Welcome to BADMOUTH! Check your email for a welcome message.')
+      const result = await signUp(email, password, finalUsername)
+      
+      if (result.success) {
+        toast.success('Account created! Please check your email to verify your account.')
         setIsLogin(true)
         setEmail('')
         setPassword('')
         setUsername('')
+      } else {
+        if (result.error?.includes('already registered')) {
+          toast.error('Email already registered. Please sign in instead.')
+          setIsLogin(true)
+        } else {
+          toast.error(result.error || 'Failed to create account')
+        }
       }
     } else {
-      // LOGIN
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
-      if (error) {
-        if (error.message.includes('Email not confirmed')) {
-          toast.error('Please verify your email before signing in. Check your inbox!')
-        } else {
-          toast.error('Invalid email or password')
-        }
-      } else {
+      // Login
+      if (!email || !password) {
+        toast.error('Please enter both email and password')
+        setIsLoading(false)
+        return
+      }
+      
+      const result = await signIn(email, password)
+      if (result.success) {
         toast.success('Welcome back!')
         router.push('/')
+      } else {
+        if (result.error?.includes('Email not confirmed')) {
+          toast.error('Please verify your email before signing in. Check your inbox!')
+        } else {
+          toast.error(result.error || 'Invalid email or password')
+        }
       }
     }
     
@@ -218,100 +160,25 @@ export default function AuthPage() {
       return
     }
 
+    if (!resetEmail.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+      toast.error('Please enter a valid email address')
+      return
+    }
+
     setIsResetting(true)
     
-    try {
-      // Find user
-      const { data: profile, error: findError } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .eq('email', resetEmail)
-        .single()
-
-      if (findError || !profile) {
-        toast.error('No account found with this email address')
-        setIsResetting(false)
-        return
-      }
-
-      // Generate token
-      const resetToken = Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
-      const resetExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-
-      // Update database
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ reset_token: resetToken, reset_expires: resetExpires })
-        .eq('id', profile.id)
-
-      if (updateError) {
-        console.error('Update error:', updateError)
-        toast.error('Failed to save reset token')
-        setIsResetting(false)
-        return
-      }
-
-      // Send reset email
-      const resetUrl = `${window.location.origin}/reset-password?token=${resetToken}`
-      
-      const emailHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #14b8a6, #3b82f6); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-            .button { display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-            .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
-            .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>🔐 Reset Your Password</h1>
-            </div>
-            <div class="content">
-              <h2>Hello ${profile.username}!</h2>
-              <p>We received a request to reset your password for your BADMOUTH account.</p>
-              <div style="text-align: center;">
-                <a href="${resetUrl}" class="button">Reset Password</a>
-              </div>
-              <p>Or copy this link: <a href="${resetUrl}">${resetUrl}</a></p>
-              <div class="warning">
-                <p><strong>⚠️ This link will expire in 24 hours.</strong></p>
-                <p>If you didn't request this, you can safely ignore this email.</p>
-              </div>
-              <p>- The BADMOUTH Team</p>
-            </div>
-            <div class="footer">
-              <p>&copy; 2024 BADMOUTH. All rights reserved.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `
-
-      await fetch('/api/send-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          to: resetEmail, 
-          subject: 'Reset Your BADMOUTH Password', 
-          html: emailHtml 
-        })
-      })
-
-      toast.success('Password reset link sent! Check your email.')
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+      redirectTo: `${window.location.origin}/update-password`,
+    })
+    
+    setIsResetting(false)
+    
+    if (error) {
+      toast.error(error.message || 'Failed to send reset email')
+    } else {
+      toast.success('Password reset email sent! Check your inbox (including spam folder).')
       setShowResetPassword(false)
       setResetEmail('')
-    } catch (error) {
-      console.error('Reset error:', error)
-      toast.error('Something went wrong')
-    } finally {
-      setIsResetting(false)
     }
   }
 
@@ -418,7 +285,13 @@ export default function AuthPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-xl focus:outline-none focus:border-teal-500"
                 required
+                disabled={isCheckingEmail}
               />
+              {isCheckingEmail && (
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  <Loader2 className="h-4 w-4 animate-spin text-teal-500" />
+                </div>
+              )}
             </div>
             
             <div className="relative">
@@ -453,7 +326,7 @@ export default function AuthPage() {
             
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || isCheckingEmail}
               className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-xl font-medium hover:opacity-90 transition disabled:opacity-50"
             >
               {isLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : (isLogin ? 'Sign In' : 'Create Account')}
