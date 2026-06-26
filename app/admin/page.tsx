@@ -472,7 +472,7 @@ export default function AdminPage() {
   }
 
   // ============================================
-  // FIXED LOAD RECOMMENDATIONS FOR ANALYTICS TAB
+  // LOAD RECOMMENDATIONS FOR ANALYTICS TAB
   // ============================================
   const loadRecommendations = async () => {
     try {
@@ -503,7 +503,7 @@ export default function AdminPage() {
       const userIds = recsData
         .map(r => r.user_id)
         .filter(Boolean)
-        .filter((id, index, self) => self.indexOf(id) === index) // Remove duplicates
+        .filter((id, index, self) => self.indexOf(id) === index)
       
       let profilesMap: Record<string, any> = {}
       if (userIds.length > 0) {
@@ -524,7 +524,7 @@ export default function AdminPage() {
       const contentIds = recsData
         .map(r => r.content_id)
         .filter(Boolean)
-        .filter((id, index, self) => self.indexOf(id) === index) // Remove duplicates
+        .filter((id, index, self) => self.indexOf(id) === index)
       
       let contentMap: Record<string, any> = {}
       if (contentIds.length > 0) {
@@ -1642,7 +1642,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Analytics Tab - FIXED */}
+        {/* Analytics Tab */}
         {activeTab === 'analytics' && (
           <div className="bg-gray-800 rounded-xl p-6">
             <h2 className="text-xl font-bold mb-4">Recent Recommendations</h2>
@@ -1745,7 +1745,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Content Tab */}
+        {/* Content Tab - WITH maxItems={20} */}
         {activeTab === 'content' && (
           <div>
             <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
