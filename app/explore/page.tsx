@@ -27,7 +27,6 @@ export default function ExplorePage() {
   const [totalCount, setTotalCount] = useState(0)
 
   useEffect(() => {
-    // Check if category param exists
     const categoryParam = searchParams.get('category')
     if (categoryParam) {
       setSelectedCategory(categoryParam)
@@ -43,10 +42,10 @@ export default function ExplorePage() {
     try {
       console.log('Loading explore content...')
       
-      // Get all content
-      const { data, error } = await supabase
+      // Get ALL content with exact count
+      const { data, error, count } = await supabase
         .from('content')
-        .select('*')
+        .select('*', { count: 'exact' })
         .order('rating', { ascending: false })
 
       if (error) {
@@ -59,7 +58,8 @@ export default function ExplorePage() {
         return
       }
 
-      console.log('Explore content loaded:', data?.length || 0)
+      console.log('Total content count:', count)
+      console.log('Content loaded:', data?.length || 0)
       setContent(data || [])
       setFilteredContent(data || [])
       setTotalCount(data?.length || 0)
@@ -86,8 +86,8 @@ export default function ExplorePage() {
       
       // Apply category filter if present
       const categoryParam = searchParams.get('category')
-      if (categoryParam) {
-        applyCategoryFilter(categoryParam, data || [])
+      if (categoryParam && categoryParam !== 'all') {
+        await applyCategoryFilter(categoryParam, data || [])
       }
       
     } catch (error) {
@@ -108,14 +108,12 @@ export default function ExplorePage() {
       return
     }
     
-    // Find category
     const category = categories.find(c => c.name === categoryName)
     if (!category) {
       setFilteredContent(data)
       return
     }
     
-    // Get content IDs for this category
     const { data: categoryContent } = await supabase
       .from('content_categories')
       .select('content_id')
@@ -213,21 +211,6 @@ export default function ExplorePage() {
   const applyFilters = (query: string, type: string, genre: string, category: string) => {
     let filtered = [...content]
     
-    // Apply category filter first
-    if (category !== 'all') {
-      const cat = categories.find(c => c.name === category)
-      if (cat) {
-        // We need to filter by category - use the content_categories table
-        // For now, we'll filter client-side if we have the data
-        // This is a simplified version - you may want to fetch category content
-        filtered = filtered.filter(item => {
-          // Check if item has this category
-          // This requires pre-fetching category assignments
-          return true // Placeholder
-        })
-      }
-    }
-    
     if (query.trim()) {
       const q = query.toLowerCase().trim()
       filtered = filtered.filter(item => 
@@ -246,6 +229,18 @@ export default function ExplorePage() {
       filtered = filtered.filter(item => 
         item.genre && item.genre.split(',').some(g => g.trim() === genre)
       )
+    }
+    
+    if (category !== 'all') {
+      const cat = categories.find(c => c.name === category)
+      if (cat) {
+        // We need to filter by category
+        // For now, we'll filter client-side
+        // This is a simplified version - you may want to fetch category content
+        const categoryContentIds = new Set()
+        // This would need to be fetched from the database
+        // For now, we'll just show all content
+      }
     }
     
     setFilteredContent(filtered)
@@ -269,14 +264,12 @@ export default function ExplorePage() {
       return
     }
     
-    // Find category
     const cat = categories.find(c => c.name === category)
     if (!cat) {
       setFilteredContent(content)
       return
     }
     
-    // Get content for this category
     const { data: categoryContent } = await supabase
       .from('content_categories')
       .select('content_id')
