@@ -1,498 +1,451 @@
-'use client'
+// components/TrailerReels.tsx
 
-import { useState, useEffect, useRef } from 'react'
-import { supabase } from '@/lib/supabase/client'
-import { ContentItem } from '@/types/content'
-import { Heart, Star, Film, Music, Play, Pause, Volume2, VolumeX, Info, Bookmark, X } from 'lucide-react'
-import toast from 'react-hot-toast'
+'use client';
 
-interface TrailerReelsProps {
-  onViewDetails: (item: ContentItem) => void
-  onAddToWatchlist: (item: ContentItem) => void
-  onRemoveFromWatchlist: (id: string) => void
-  isInWatchlist: (id: string) => boolean
-  userId: string
+import { useState, useEffect, useRef } from 'react';
+import { supabase } from '@/lib/supabase';
+import { Heart, Info, Bookmark, Volume2, VolumeX, X, Play, Pause } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import Image from 'next/image';
+
+interface ReelContent {
+  id: string;
+  title: string;
+  description: string;
+  long_description?: string;
+  image_url: string;
+  backdrop_url?: string;
+  trailer_url: string;
+  type: 'movie' | 'music';
+  year?: number;
+  director?: string;
+  artist?: string;
+  rating?: number;
+  genre?: string;
+  // ... other fields
 }
 
-export default function TrailerReels({
-  onViewDetails,
-  onAddToWatchlist,
-  onRemoveFromWatchlist,
-  isInWatchlist,
-  userId
-}: TrailerReelsProps) {
-  const [reels, setReels] = useState<ContentItem[]>([])
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [isPlaying, setIsPlaying] = useState(true)
-  const [isMuted, setIsMuted] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [liked, setLiked] = useState<Set<string>>(new Set())
-  const [showFullscreen, setShowFullscreen] = useState(false)
+// 🎬 YouTube URL converter - ONLY USED FOR REELS
+const getYouTubeEmbedUrl = (url: string) => {
+  if (!url) return '';
   
-  const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({})
-  const containerRef = useRef<HTMLDivElement>(null)
-  const isScrollingRef = useRef(false)
+  // If it's already an embed URL
+  if (url.includes('/embed/')) {
+    // Add autoplay if not present
+    return url.includes('?') ? url : `${url}?autoplay=1&mute=1&enablejsapi=1`;
+  }
+  
+  // Extract video ID
+  let videoId = '';
+  
+  // Handle youtube.com/watch?v=...
+  if (url.includes('watch?v=')) {
+    videoId = url.split('watch?v=')[1]?.split('&')[0] || '';
+  }
+  // Handle youtu.be/...
+  else if (url.includes('youtu.be/')) {
+    videoId = url.split('youtu.be/')[1]?.split('?')[0] || '';
+  }
+  // Handle youtube.com/embed/ without autoplay
+  else if (url.includes('/embed/')) {
+    videoId = url.split('/embed/')[1]?.split('?')[0] || '';
+  }
+  // Handle youtube.com/v/...
+  else if (url.includes('/v/')) {
+    videoId = url.split('/v/')[1]?.split('?')[0] || '';
+  }
+  // Handle youtube.com/e/...
+  else if (url.includes('/e/')) {
+    videoId = url.split('/e/')[1]?.split('?')[0] || '';
+  }
+  
+  if (!videoId) return url; // Return original if we can't parse it
+  
+  return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&enablejsapi=1`;
+};
 
+export default function TrailerReels() {
+  const [reels, setReels] = useState<ReelContent[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isMuted, setIsMuted] = useState(true);
+  const [isLiked, setIsLiked] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLIFrameElement>(null);
+  const { user } = useAuth();
+
+  // Fetch reels
   useEffect(() => {
-    loadReels()
-  }, [])
-
-  const loadReels = async () => {
-    setLoading(true)
-    try {
-      // Get content with trailers
-      const { data, error } = await supabase
-        .from('content')
-        .select('*')
-        .not('trailer_url', 'is', null)
-        .neq('trailer_url', '')
-        .order('rating', { ascending: false })
-        .limit(50)
-
-      if (error) throw error
+    const fetchReels = async () => {
+      setIsLoading(true);
+      setError(null);
       
-      // Shuffle the reels for variety
-      const shuffled = data ? shuffleArray(data) : []
-      setReels(shuffled)
-      
-      // Load user's watchlist
-      if (userId) {
-        const { data: watchlist } = await supabase
-          .from('watchlist')
-          .select('content_id')
-          .eq('user_id', userId)
+      try {
+        console.log('🔍 Fetching reels...');
+        const { data, error, count } = await supabase
+          .from('content')
+          .select('*', { count: 'exact' })
+          .not('trailer_url', 'is', null)
+          .neq('trailer_url', '')
+          .order('rating', { ascending: false })
+          .limit(50);
         
-        if (watchlist) {
-          const ids = new Set(watchlist.map(w => w.content_id))
-          setLiked(ids)
+        console.log('📊 Found reels:', count);
+        console.log('📝 First reel:', data?.[0]);
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          setReels(data);
+        } else {
+          setError('No trailers found. Add some content with trailer URLs!');
         }
+      } catch (err) {
+        console.error('Error fetching reels:', err);
+        setError('Failed to load reels');
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      console.error('Error loading reels:', error)
-      toast.error('Failed to load trailers')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const shuffleArray = (array: any[]) => {
-    for (let i = array.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[array[i], array[j]] = [array[j], array[i]]
-    }
-    return array
-  }
-
-  const handleLike = async (item: ContentItem) => {
-    if (!userId) {
-      toast.error('Please sign in to like')
-      return
-    }
-
-    const isLiked = liked.has(item.id)
+    };
     
-    if (isLiked) {
-      const { error } = await supabase
-        .from('watchlist')
-        .delete()
-        .eq('user_id', userId)
-        .eq('content_id', item.id)
+    fetchReels();
+  }, []);
+
+  // Check if current reel is in watchlist
+  useEffect(() => {
+    const checkWatchlist = async () => {
+      if (!user || !reels[currentIndex]) return;
       
-      if (!error) {
-        const newLiked = new Set(liked)
-        newLiked.delete(item.id)
-        setLiked(newLiked)
-        onRemoveFromWatchlist(item.id)
-        toast.success(`Removed "${item.title}" from watchlist`)
-      }
-    } else {
-      const { error } = await supabase
+      const { data } = await supabase
         .from('watchlist')
-        .insert({
-          user_id: userId,
-          content_id: item.id,
-          content_type: item.type
-        })
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('content_id', reels[currentIndex].id)
+        .single();
       
-      if (!error) {
-        const newLiked = new Set(liked)
-        newLiked.add(item.id)
-        setLiked(newLiked)
-        onAddToWatchlist(item)
-        toast.success(`❤️ "${item.title}" added to watchlist`)
+      setIsLiked(!!data);
+      setIsSaved(!!data);
+    };
+    
+    checkWatchlist();
+  }, [currentIndex, user, reels]);
+
+  // 🎬 Handle video progress
+  useEffect(() => {
+    // Simulate progress for demo
+    const interval = setInterval(() => {
+      setProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          return 100;
+        }
+        return prev + 0.5;
+      });
+    }, 100);
+    
+    return () => clearInterval(interval);
+  }, [currentIndex]);
+
+  // Handle scroll to change reels
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    const handleScroll = () => {
+      const scrollTop = container.scrollTop;
+      const height = container.clientHeight;
+      const index = Math.round(scrollTop / height);
+      
+      if (index !== currentIndex && index < reels.length) {
+        setCurrentIndex(index);
+        setProgress(0);
+        setIsLiked(false);
+        setIsSaved(false);
       }
+    };
+    
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [currentIndex, reels.length]);
+
+  const handleLike = async () => {
+    if (!user) {
+      alert('Please login to like');
+      return;
     }
-  }
-
-  const getRating = (item: ContentItem) => {
-    return item.rating || 0
-  }
-
-  const handleVideoClick = (itemId: string) => {
-    const video = videoRefs.current[itemId]
-    if (video) {
-      if (isPlaying) {
-        video.pause()
+    
+    try {
+      if (isLiked) {
+        // Remove from watchlist
+        await supabase
+          .from('watchlist')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('content_id', reels[currentIndex].id);
       } else {
-        video.play().catch(() => {})
+        // Add to watchlist
+        await supabase
+          .from('watchlist')
+          .insert({
+            user_id: user.id,
+            content_id: reels[currentIndex].id,
+            content_type: reels[currentIndex].type
+          });
       }
-      setIsPlaying(!isPlaying)
+      setIsLiked(!isLiked);
+      setIsSaved(!isLiked); // Sync save state
+    } catch (error) {
+      console.error('Error updating watchlist:', error);
     }
-  }
+  };
 
-  const handleMute = (itemId: string) => {
-    const video = videoRefs.current[itemId]
-    if (video) {
-      video.muted = !isMuted
-      setIsMuted(!isMuted)
-    }
-  }
-
-  const handleTimeUpdate = (itemId: string) => {
-    const video = videoRefs.current[itemId]
-    if (video && video.duration) {
-      const progress = (video.currentTime / video.duration) * 100
-      setProgress(progress)
-    }
-  }
-
-  const handleVideoEnd = (itemId: string, index: number) => {
-    // Auto-advance to next reel
-    if (index < reels.length - 1) {
-      setCurrentIndex(index + 1)
-      setTimeout(() => {
-        const nextVideo = videoRefs.current[reels[index + 1]?.id]
-        if (nextVideo) {
-          nextVideo.play().catch(() => {})
-        }
-      }, 100)
-    }
-  }
-
-  const handleScroll = () => {
-    if (!containerRef.current || isScrollingRef.current) return
-    
-    const container = containerRef.current
-    const children = container.children
-    const containerHeight = container.clientHeight
-    const scrollTop = container.scrollTop
-    
-    // Find which child is most visible
-    let closestIndex = 0
-    let closestDistance = Infinity
-    
-    for (let i = 0; i < children.length; i++) {
-      const child = children[i] as HTMLElement
-      const rect = child.getBoundingClientRect()
-      const containerRect = container.getBoundingClientRect()
-      
-      // Calculate how much of the child is visible
-      const visibleTop = Math.max(rect.top, containerRect.top)
-      const visibleBottom = Math.min(rect.bottom, containerRect.bottom)
-      const visibleHeight = Math.max(0, visibleBottom - visibleTop)
-      const childHeight = rect.height
-      const visibilityRatio = visibleHeight / childHeight
-      
-      if (visibilityRatio > 0.5) {
-        closestIndex = i
-        break
-      }
+  const handleSave = async () => {
+    if (!user) {
+      alert('Please login to save');
+      return;
     }
     
-    if (closestIndex !== currentIndex) {
-      setCurrentIndex(closestIndex)
-      setIsPlaying(true)
-      
-      // Pause all other videos
-      Object.keys(videoRefs.current).forEach(key => {
-        const video = videoRefs.current[key]
-        if (video) {
-          video.pause()
-        }
-      })
-      
-      // Play the current video
-      const currentVideo = videoRefs.current[reels[closestIndex]?.id]
-      if (currentVideo) {
-        currentVideo.play().catch(() => {})
+    try {
+      if (isSaved) {
+        await supabase
+          .from('watchlist')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('content_id', reels[currentIndex].id);
+      } else {
+        await supabase
+          .from('watchlist')
+          .insert({
+            user_id: user.id,
+            content_id: reels[currentIndex].id,
+            content_type: reels[currentIndex].type
+          });
       }
+      setIsSaved(!isSaved);
+      setIsLiked(!isSaved); // Sync like state
+    } catch (error) {
+      console.error('Error updating watchlist:', error);
     }
-  }
+  };
 
-  const handleFullscreen = (itemId: string) => {
-    const video = videoRefs.current[itemId]
-    if (video) {
-      if (video.requestFullscreen) {
-        video.requestFullscreen()
-      }
-    }
-  }
-
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="min-h-[80vh] flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading trailers...</p>
-        </div>
+      <div className="flex items-center justify-center h-screen bg-black">
+        <div className="text-white">Loading reels...</div>
       </div>
-    )
+    );
   }
 
-  if (reels.length === 0) {
+  if (error || reels.length === 0) {
     return (
-      <div className="min-h-[80vh] flex items-center justify-center">
-        <div className="text-center">
-          <Film size={48} className="mx-auto mb-4 text-gray-600" />
-          <h3 className="text-xl font-semibold mb-2">No Trailers Available</h3>
-          <p className="text-gray-400">Check back later for new trailers!</p>
-        </div>
+      <div className="flex flex-col items-center justify-center h-screen bg-black text-white p-8">
+        <h2 className="text-2xl font-bold mb-4">No Reels Available</h2>
+        <p className="text-gray-400 text-center max-w-md">
+          {error || 'No trailers found. Add content with YouTube URLs to the database.'}
+        </p>
       </div>
-    )
+    );
   }
+
+  const currentReel = reels[currentIndex];
+  const videoUrl = getYouTubeEmbedUrl(currentReel?.trailer_url);
 
   return (
-    <div className="relative h-[80vh] md:h-[85vh]">
-      {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-30 bg-gradient-to-b from-black/80 to-transparent p-4 pointer-events-none">
-        <div className="flex items-center justify-between pointer-events-auto">
-          <div className="flex items-center gap-2">
-            <Play size={20} className="text-teal-500 fill-teal-500" />
-            <h2 className="text-lg font-bold text-white">Trailer Reels</h2>
-          </div>
-          <span className="text-xs text-gray-400 bg-black/50 px-3 py-1 rounded-full">
-            {currentIndex + 1} / {reels.length}
-          </span>
-        </div>
-      </div>
+    <div 
+      ref={containerRef}
+      className="h-screen w-full overflow-y-scroll snap-y snap-mandatory bg-black relative"
+      style={{ scrollbarWidth: 'none' }}
+    >
+      <style jsx>{`
+        div::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
 
-      {/* Video Container */}
-      <div 
-        ref={containerRef}
-        className="h-full overflow-y-scroll snap-y snap-mandatory scroll-smooth no-scrollbar"
-        onScroll={handleScroll}
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-      >
-        {reels.map((item, index) => {
-          const isActive = index === currentIndex
-          const isLiked = liked.has(item.id)
-          const videoRef = (el: HTMLVideoElement | null) => {
-            videoRefs.current[item.id] = el
-          }
-          
-          return (
-            <div 
-              key={`${item.id}-${index}`}
-              className="h-[80vh] md:h-[85vh] snap-start snap-always relative bg-black"
-            >
-              {/* Video */}
-              <div className="absolute inset-0 bg-black flex items-center justify-center">
-                {item.trailer_url && (
-                  <video
-                    ref={videoRef}
-                    src={item.trailer_url}
-                    className="w-full h-full object-contain"
-                    muted={isMuted}
-                    loop={false}
-                    playsInline
-                    autoPlay={isActive && index === currentIndex}
-                    onTimeUpdate={() => handleTimeUpdate(item.id)}
-                    onEnded={() => handleVideoEnd(item.id, index)}
-                    onClick={() => handleVideoClick(item.id)}
-                  />
-                )}
-                
-                {/* Gradient Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
-              </div>
-
-              {/* Progress Bar */}
-              {isActive && (
-                <div className="absolute top-16 left-0 right-0 h-0.5 bg-gray-700 z-20">
-                  <div 
-                    className="h-full bg-teal-500 transition-all duration-300"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-              )}
-
-              {/* Play/Pause Overlay */}
-              {isActive && (
-                <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-                  <button
-                    onClick={() => handleVideoClick(item.id)}
-                    className="pointer-events-auto p-4 rounded-full bg-black/50 hover:bg-black/70 transition transform hover:scale-110"
-                  >
-                    {isPlaying ? (
-                      <Pause size={48} className="text-white" />
-                    ) : (
-                      <Play size={48} className="text-white" />
-                    )}
-                  </button>
-                </div>
-              )}
-
-              {/* Content Info - Bottom */}
-              <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 z-20 pointer-events-none">
-                <div className="max-w-2xl">
-                  <h2 className="text-2xl md:text-3xl font-bold text-white mb-1">
-                    {item.title}
-                  </h2>
-                  
-                  {item.artist && (
-                    <p className="text-gray-300 text-sm md:text-base mb-2">
-                      {item.artist}
-                    </p>
-                  )}
-                  {item.director && !item.artist && (
-                    <p className="text-gray-300 text-sm md:text-base mb-2">
-                      Directed by {item.director}
-                    </p>
-                  )}
-                  
-                  <div className="flex items-center gap-3 mb-3 flex-wrap">
-                    <span className="flex items-center gap-1 text-yellow-400">
-                      <Star size={16} className="fill-yellow-400" />
-                      <span className="font-bold">{getRating(item).toFixed(1)}</span>
-                      <span className="text-gray-400 text-sm">/10</span>
-                    </span>
-                    <span className="text-xs px-2 py-0.5 bg-gray-700 rounded-full text-gray-300">
-                      {item.type === 'movie' ? '🎬 Movie' : '🎵 Music'}
-                    </span>
-                    {item.is_tv_show && (
-                      <span className="text-xs px-2 py-0.5 bg-purple-600 rounded-full text-white">
-                        📺 TV Series
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-gray-300 text-sm line-clamp-2 max-w-xl">
-                    {item.long_description || item.description}
-                  </p>
-                </div>
-              </div>
-
-              {/* Action Buttons - Right Side */}
-              <div className="absolute right-4 bottom-24 md:bottom-28 z-20 flex flex-col items-center gap-4 pointer-events-none">
-                {/* Like Button */}
-                <button
-                  onClick={() => handleLike(item)}
-                  className="pointer-events-auto flex flex-col items-center gap-1 group"
-                >
-                  <div className={`p-3 rounded-full transition ${
-                    isLiked 
-                      ? 'bg-teal-600 scale-110' 
-                      : 'bg-black/50 hover:bg-teal-600/80'
-                  }`}>
-                    <Heart 
-                      size={24} 
-                      className={`transition ${
-                        isLiked 
-                          ? 'fill-white text-white' 
-                          : 'text-white group-hover:text-white'
-                      }`}
-                    />
-                  </div>
-                  <span className="text-xs text-white font-medium">
-                    {isLiked ? 'Liked' : 'Like'}
-                  </span>
-                </button>
-
-                {/* Info Button */}
-                <button
-                  onClick={() => {
-                    onViewDetails(item)
+      {/* Reels Container */}
+      {reels.map((reel, index) => {
+        const isActive = index === currentIndex;
+        const embedUrl = getYouTubeEmbedUrl(reel.trailer_url);
+        
+        return (
+          <div
+            key={reel.id}
+            className="h-screen w-full snap-start relative flex items-center justify-center bg-black"
+          >
+            {/* Video Container */}
+            <div className="absolute inset-0 w-full h-full bg-black">
+              {embedUrl ? (
+                <iframe
+                  ref={isActive ? videoRef : null}
+                  src={embedUrl}
+                  title={reel.title}
+                  className="w-full h-full pointer-events-none"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  frameBorder="0"
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
                   }}
-                  className="pointer-events-auto flex flex-col items-center gap-1 group"
-                >
-                  <div className="p-3 rounded-full bg-black/50 hover:bg-teal-600/80 transition">
-                    <Info size={24} className="text-white" />
+                />
+              ) : (
+                <div className="flex items-center justify-center w-full h-full bg-gray-900">
+                  <div className="text-center text-white p-4">
+                    <p className="text-xl mb-2">No Trailer Available</p>
+                    <p className="text-sm text-gray-400">{reel.title}</p>
                   </div>
-                  <span className="text-xs text-white font-medium">Details</span>
-                </button>
-
-                {/* Save Button */}
-                <button
-                  onClick={() => {
-                    if (isInWatchlist(item.id)) {
-                      onRemoveFromWatchlist(item.id)
-                      const newLiked = new Set(liked)
-                      newLiked.delete(item.id)
-                      setLiked(newLiked)
-                    } else {
-                      onAddToWatchlist(item)
-                      const newLiked = new Set(liked)
-                      newLiked.add(item.id)
-                      setLiked(newLiked)
-                    }
-                  }}
-                  className="pointer-events-auto flex flex-col items-center gap-1 group"
-                >
-                  <div className={`p-3 rounded-full transition ${
-                    isInWatchlist(item.id) 
-                      ? 'bg-teal-600' 
-                      : 'bg-black/50 hover:bg-teal-600/80'
-                  }`}>
-                    <Bookmark 
-                      size={24} 
-                      className={`transition ${
-                        isInWatchlist(item.id) 
-                          ? 'fill-white text-white' 
-                          : 'text-white'
-                      }`}
-                    />
-                  </div>
-                  <span className="text-xs text-white font-medium">
-                    {isInWatchlist(item.id) ? 'Saved' : 'Save'}
-                  </span>
-                </button>
-              </div>
-
-              {/* Video Controls - Bottom Right */}
-              {isActive && (
-                <div className="absolute bottom-4 right-4 z-20 flex gap-2 pointer-events-none">
-                  <button
-                    onClick={() => handleMute(item.id)}
-                    className="pointer-events-auto p-2 rounded-full bg-black/50 hover:bg-black/70 transition"
-                  >
-                    {isMuted ? (
-                      <VolumeX size={20} className="text-white" />
-                    ) : (
-                      <Volume2 size={20} className="text-white" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => handleFullscreen(item.id)}
-                    className="pointer-events-auto p-2 rounded-full bg-black/50 hover:bg-black/70 transition"
-                  >
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
-                    </svg>
-                  </button>
-                </div>
-              )}
-
-              {/* Scroll Indicator */}
-              {index === reels.length - 1 && (
-                <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none">
-                  <p className="text-xs text-gray-400 animate-bounce">End of reels</p>
                 </div>
               )}
             </div>
-          )
-        })}
-      </div>
 
-      <style jsx>{`
-        .no-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-        .no-scrollbar {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-      `}</style>
+            {/* Overlay Gradient */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-60" />
+
+            {/* Progress Bar */}
+            {isActive && (
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gray-700 z-20">
+                <div 
+                  className="h-full bg-red-600 transition-all duration-100"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            )}
+
+            {/* Counter */}
+            <div className="absolute top-4 left-4 text-white text-sm z-20 font-medium">
+              <span className="bg-black/50 px-3 py-1 rounded-full">
+                {currentIndex + 1} / {reels.length}
+              </span>
+            </div>
+
+            {/* Info Overlay - Bottom */}
+            {isActive && (
+              <div className="absolute bottom-20 left-4 right-20 z-20 text-white">
+                <h2 className="text-2xl font-bold mb-1">{reel.title}</h2>
+                <p className="text-sm text-gray-300 mb-1">
+                  {reel.type === 'movie' ? reel.director : reel.artist}
+                </p>
+                <div className="flex items-center gap-3 text-sm">
+                  <span className="flex items-center gap-1">
+                    ⭐ {reel.rating?.toFixed(1) || 'N/A'}
+                  </span>
+                  <span className="bg-red-600 px-2 py-0.5 rounded text-xs">
+                    {reel.type === 'movie' ? '🎬 Movie' : '🎵 Music'}
+                  </span>
+                  {reel.genre && (
+                    <span className="text-gray-300">{reel.genre}</span>
+                  )}
+                </div>
+                {reel.description && (
+                  <p className="text-sm text-gray-300 mt-2 line-clamp-2 max-w-md">
+                    {reel.description}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Action Buttons - Right Side */}
+            {isActive && (
+              <div className="absolute bottom-32 right-4 z-20 flex flex-col items-center gap-5">
+                {/* Like Button */}
+                <button 
+                  onClick={handleLike}
+                  className="flex flex-col items-center text-white hover:scale-110 transition-transform"
+                >
+                  <div className={`p-2 rounded-full ${isLiked ? 'bg-red-600' : 'bg-black/40'} backdrop-blur-sm`}>
+                    <Heart className={`w-7 h-7 ${isLiked ? 'fill-white' : ''}`} />
+                  </div>
+                  <span className="text-xs mt-1">Like</span>
+                </button>
+
+                {/* Details Button */}
+                <button 
+                  onClick={() => setShowDetails(true)}
+                  className="flex flex-col items-center text-white hover:scale-110 transition-transform"
+                >
+                  <div className="p-2 rounded-full bg-black/40 backdrop-blur-sm">
+                    <Info className="w-7 h-7" />
+                  </div>
+                  <span className="text-xs mt-1">Details</span>
+                </button>
+
+                {/* Save Button */}
+                <button 
+                  onClick={handleSave}
+                  className="flex flex-col items-center text-white hover:scale-110 transition-transform"
+                >
+                  <div className={`p-2 rounded-full ${isSaved ? 'bg-blue-600' : 'bg-black/40'} backdrop-blur-sm`}>
+                    <Bookmark className={`w-7 h-7 ${isSaved ? 'fill-white' : ''}`} />
+                  </div>
+                  <span className="text-xs mt-1">Save</span>
+                </button>
+              </div>
+            )}
+
+            {/* Mute Button - Bottom */}
+            {isActive && (
+              <button
+                onClick={() => setIsMuted(!isMuted)}
+                className="absolute bottom-4 right-4 z-20 p-2 rounded-full bg-black/40 backdrop-blur-sm text-white hover:bg-black/60 transition-colors"
+              >
+                {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+              </button>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Details Modal */}
+      {showDetails && currentReel && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-start mb-4">
+              <h2 className="text-2xl font-bold text-white">{currentReel.title}</h2>
+              <button
+                onClick={() => setShowDetails(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-3 text-gray-300">
+              {currentReel.description && (
+                <p className="text-sm">{currentReel.description}</p>
+              )}
+              {currentReel.long_description && (
+                <p className="text-sm text-gray-400">{currentReel.long_description}</p>
+              )}
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {currentReel.type === 'movie' && (
+                  <>
+                    <div><span className="text-gray-500">Director:</span> {currentReel.director || 'N/A'}</div>
+                    <div><span className="text-gray-500">Year:</span> {currentReel.year || 'N/A'}</div>
+                  </>
+                )}
+                {currentReel.type === 'music' && (
+                  <>
+                    <div><span className="text-gray-500">Artist:</span> {currentReel.artist || 'N/A'}</div>
+                    <div><span className="text-gray-500">Duration:</span> {currentReel.duration || 'N/A'}</div>
+                  </>
+                )}
+                <div><span className="text-gray-500">Rating:</span> ⭐ {currentReel.rating?.toFixed(1) || 'N/A'}</div>
+                <div><span className="text-gray-500">Genre:</span> {currentReel.genre || 'N/A'}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  )
+  );
 }
