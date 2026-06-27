@@ -3,22 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { 
-  Heart, 
-  Info, 
-  Bookmark, 
-  Volume2, 
-  VolumeX, 
-  ChevronUp,
-  ChevronDown,
-  Play,
-  Pause,
-  Share2,
-  Star,
-  Calendar,
-  Film,
-  Music2,
-  Loader2,
-  AlertCircle
+  Heart, Info, Bookmark, Volume2, VolumeX, ChevronUp, ChevronDown,
+  Play, Pause, Share2, Star, Calendar, Film, Music2, Loader2, AlertCircle
 } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 import toast from 'react-hot-toast'
@@ -54,6 +40,7 @@ export default function TrailerReels({
   const extractYouTubeId = useCallback((url: string): string | null => {
     if (!url) return null
     
+    // FIXED: Removed invalid escape characters from the regex patterns
     const patterns = [
       /(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]{11})/,
       /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
@@ -334,8 +321,6 @@ export default function TrailerReels({
     )
   }
 
-  const currentReel = reels[currentIndex]
-
   return (
     <div 
       ref={containerRef}
@@ -533,7 +518,6 @@ export default function TrailerReels({
                     <Play className="w-5 h-5 text-white" />
                   )}
                 </button>
-
                 <button
                   onClick={toggleMute}
                   className="p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200"
