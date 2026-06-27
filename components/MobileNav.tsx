@@ -1,6 +1,6 @@
 'use client'
 
-import { Home, Film, Music, Heart, User, Play, Search } from 'lucide-react'
+import { Home, Film, Music, Heart, User, Play, Compass } from 'lucide-react'  // ← Changed from Search to Compass
 import { ContentItem } from '@/types/content'
 import { useRouter } from 'next/navigation'
 
@@ -58,7 +58,7 @@ export default function MobileNav({
             <span className="text-[10px]">Movies</span>
           </button>
 
-          {/* Explore - Centered Floating Button */}
+          {/* Explore - Centered Floating Button with COMPASS */}
           <button
             onClick={() => {
               router.push('/explore')
@@ -66,7 +66,7 @@ export default function MobileNav({
             className="flex flex-col items-center gap-0.5 transition relative -mt-6"
           >
             <div className="w-14 h-14 rounded-full bg-gradient-to-r from-teal-600 to-blue-600 flex items-center justify-center shadow-lg shadow-teal-500/30 hover:shadow-teal-500/50 transition-all hover:scale-105">
-              <Search size={28} className="text-white" />
+              <Compass size={28} className="text-white" />  {/* ← Changed from Search to Compass */}
             </div>
             <span className="text-[10px] text-gray-400 mt-1">Explore</span>
           </button>
