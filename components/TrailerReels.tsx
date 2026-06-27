@@ -25,7 +25,6 @@ import {
 import { ContentItem } from '@/types/content'
 import toast from 'react-hot-toast'
 
-// ✅ ADD THIS: Define the props interface
 interface TrailerReelsProps {
   onViewDetails: (item: ContentItem) => void
   onAddToWatchlist: (item: ContentItem) => Promise<void>
@@ -34,7 +33,6 @@ interface TrailerReelsProps {
   userId?: string
 }
 
-// ✅ ADD THIS: Accept props in the component
 export default function TrailerReels({
   onViewDetails,
   onAddToWatchlist,
@@ -51,19 +49,22 @@ export default function TrailerReels({
   const [isPlaying, setIsPlaying] = useState(true)
   const [progress, setProgress] = useState(0)
   const [showDetails, setShowDetails] = useState(false)
-  const [totalCount, setTotalCount] = useState(0)
   
   const containerRef = useRef<HTMLDivElement>(null)
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  // 🎬 YouTube URL converter
+  // 🎬 YouTube URL converter - removes branding
   const getYouTubeEmbedUrl = useCallback((url: string) => {
     if (!url) return ''
     
+    // If it's already an embed URL
     if (url.includes('/embed/')) {
-      return url.includes('?') ? url : `${url}?autoplay=1&mute=1&enablejsapi=1&rel=0`
+      // Remove YouTube branding and controls
+      const baseUrl = url.split('?')[0]
+      return `${baseUrl}?autoplay=1&mute=1&enablejsapi=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark`
     }
     
+    // Extract video ID
     let videoId = ''
     
     if (url.includes('watch?v=')) {
@@ -79,7 +80,9 @@ export default function TrailerReels({
     }
     
     if (!videoId) return url
-    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&enablejsapi=1&rel=0`
+    
+    // Return embed URL with NO branding
+    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&enablejsapi=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark`
   }, [])
 
   // 📊 Fetch reels
@@ -111,7 +114,6 @@ export default function TrailerReels({
 
         console.log(`✅ Loaded ${data.length} reels`)
         setReels(data)
-        setTotalCount(count || data.length)
         
       } catch (err) {
         console.error('Unexpected error:', err)
@@ -233,7 +235,7 @@ export default function TrailerReels({
     }
   }
 
-  // ✅ FIX: Handle like using props
+  // Handle like using props
   const handleLike = async () => {
     const currentReel = reels[currentIndex]
     if (!currentReel) return
@@ -247,7 +249,7 @@ export default function TrailerReels({
     }
   }
 
-  // ✅ FIX: Handle save using props
+  // Handle save using props
   const handleSave = async () => {
     const currentReel = reels[currentIndex]
     if (!currentReel) return
@@ -344,7 +346,7 @@ export default function TrailerReels({
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
             <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-transparent" />
 
-            {/* Progress Bar */}
+            {/* Progress Bar - NO COUNTER */}
             {isActive && (
               <div className="absolute top-0 left-0 right-0 h-1 z-30">
                 <div 
@@ -354,14 +356,7 @@ export default function TrailerReels({
               </div>
             )}
 
-            {/* Header Counter */}
-            <div className="absolute top-4 left-4 z-30">
-              <div className="bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-full">
-                <span className="text-white text-sm font-medium">
-                  {index + 1} / {reels.length}
-                </span>
-              </div>
-            </div>
+            {/* ❌ REMOVED: Counter (1/50) */}
 
             {/* Content Info - Bottom */}
             {isActive && (
