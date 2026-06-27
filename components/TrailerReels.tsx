@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { 
-  Heart, Info, Bookmark, Volume2, VolumeX, ChevronUp, ChevronDown,
+  Heart, Info, Volume2, VolumeX, ChevronUp, ChevronDown,
   Play, Pause, Share2, Star, Calendar, Film, Music2, Loader2, AlertCircle
 } from 'lucide-react'
 import { ContentItem } from '@/types/content'
@@ -58,13 +58,13 @@ export default function TrailerReels({
     return null
   }, [])
 
-  const getEmbedUrl = useCallback((url: string): string => {
+  const getEmbedUrl = useCallback((url: string, mutedStatus: boolean): string => {
     const videoId = extractYouTubeId(url)
     if (!videoId) return ''
     
-    // FIX: Added window.location.origin to secure the YouTube JS API
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
-    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(origin)}`
+    // Inject the exact mute state into the URL so the browser doesn't block the autoplay on scroll
+    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${mutedStatus ? '1' : '0'}&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(origin)}`
   }, [extractYouTubeId])
 
   const sendPlayerCommand = useCallback((command: 'playVideo' | 'pauseVideo' | 'mute' | 'unMute') => {
@@ -74,7 +74,7 @@ export default function TrailerReels({
           JSON.stringify({
             event: 'command',
             func: command,
-            args: [] // FIX: YouTube requires an empty array, not an empty string
+            args: []
           }),
           '*'
         )
@@ -238,24 +238,6 @@ export default function TrailerReels({
     }
   }
 
-  const handleSave = async () => {
-    const currentReel = reels[currentIndex]
-    if (!currentReel) return
-    
-    try {
-      if (isInWatchlist && isInWatchlist(currentReel.id)) {
-        await onRemoveFromWatchlist(currentReel.id)
-        toast.success(`Removed "${currentReel.title}" from saved`)
-      } else {
-        await onAddToWatchlist(currentReel)
-        toast.success(`💾 "${currentReel.title}" saved!`)
-      }
-    } catch (error) {
-      console.error("Save Error:", error)
-      toast.error('Could not save item')
-    }
-  }
-
   if (isLoading) {
     return (
       <div className="h-[80vh] w-full bg-black flex flex-col items-center justify-center">
@@ -291,7 +273,7 @@ export default function TrailerReels({
     >
       {reels.map((reel, index) => {
         const isActive = index === currentIndex
-        const embedUrl = isActive ? getEmbedUrl(reel.trailer_url) : ''
+        const embedUrl = isActive ? getEmbedUrl(reel.trailer_url, isMuted) : ''
         const isLiked = isInWatchlist ? isInWatchlist(reel.id) : false
         
         return (
@@ -301,7 +283,7 @@ export default function TrailerReels({
                 <div className="relative w-full h-full">
                   <iframe
                     ref={activeIframeRef}
-                    key={`${reel.id}-${isActive}`}
+                    key={reel.id}
                     src={embedUrl}
                     title={reel.title}
                     className="w-full h-full pointer-events-none"
@@ -336,7 +318,7 @@ export default function TrailerReels({
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none z-20" />
             <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none z-20" />
 
-            {/* NEW: Tap-to-Pause Layer (TikTok Style) */}
+            {/* Tap-to-Pause Layer */}
             {isActive && (
               <div 
                 className="absolute inset-0 z-30 cursor-pointer" 
@@ -344,7 +326,7 @@ export default function TrailerReels({
               />
             )}
 
-            {/* Layout Wrapper - MOVED UP TO bottom-24 TO PREVENT CLIPPING */}
+            {/* Layout Wrapper */}
             {isActive && (
               <div className="absolute bottom-24 left-4 right-4 z-40 flex items-end justify-between gap-4 pointer-events-none">
                 
@@ -394,18 +376,12 @@ export default function TrailerReels({
                 </div>
 
                 <div className="flex flex-col items-center gap-4 pointer-events-auto">
+                  {/* Kept Like Button, Removed Save Button */}
                   <button onClick={handleLike} className="group flex flex-col items-center gap-1">
                     <div className={`p-2.5 rounded-full transition-all duration-200 ${isLiked ? 'bg-teal-500/30 ring-2 ring-teal-500' : 'bg-black/60 hover:bg-black/80 backdrop-blur-md'}`}>
                       <Heart className={`w-5 h-5 transition-all duration-200 ${isLiked ? 'fill-teal-500 text-teal-500' : 'text-white group-hover:scale-110'}`} />
                     </div>
                     <span className="text-[10px] text-white/90 font-medium drop-shadow-md">{isLiked ? 'Liked' : 'Like'}</span>
-                  </button>
-
-                  <button onClick={handleSave} className="group flex flex-col items-center gap-1">
-                    <div className="p-2.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md transition-all duration-200">
-                      <Bookmark className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
-                    </div>
-                    <span className="text-[10px] text-white/90 font-medium drop-shadow-md">Save</span>
                   </button>
 
                   <button onClick={() => onViewDetails(reel)} className="group flex flex-col items-center gap-1">
