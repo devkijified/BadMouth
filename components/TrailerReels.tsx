@@ -30,11 +30,9 @@ export default function TrailerReels({
   const [error, setError] = useState<string | null>(null)
   const [isMuted, setIsMuted] = useState(true)
   const [isPlaying, setIsPlaying] = useState(true)
-  const [progress, setProgress] = useState(0)
   const [videoLoaded, setVideoLoaded] = useState(false)
   
   const containerRef = useRef<HTMLDivElement>(null)
-  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // 🎬 Extract YouTube Video ID safely
   const extractYouTubeId = useCallback((url: any): string | null => {
@@ -50,12 +48,10 @@ export default function TrailerReels({
     
     for (const pattern of patterns) {
       const match = url.match(pattern)
-      // FIXED: match[1] extracts the exact string match group
       if (match) return match[1]
     }
     
     const idMatch = url.match(/([a-zA-Z0-9_-]{11})/)
-    // FIXED: idMatch[1] extracts the exact string match group
     if (idMatch) return idMatch[1]
     
     return null
@@ -69,6 +65,7 @@ export default function TrailerReels({
     const autoplayValue = playing ? '1' : '0'
     const muteValue = muted ? '1' : '0'
     
+    // Kept controls=0 to hide YouTube's default UI and rely on your custom teal app UI
     return `https://www.youtube.com/embed/${videoId}?autoplay=${autoplayValue}&mute=${muteValue}&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark&playsinline=1&enablejsapi=1`
   }, [extractYouTubeId])
 
@@ -93,13 +90,7 @@ export default function TrailerReels({
           return
         }
 
-        if (!data || data.length === 0) {
-          setError('No trailers found. Add content with trailer URLs!')
-          setIsLoading(false)
-          return
-        }
-
-        const validReels = data.filter(item => extractYouTubeId(item.trailer_url) !== null)
+        const validReels = data?.filter(item => extractYouTubeId(item.trailer_url) !== null) || []
 
         if (validReels.length === 0) {
           setError('No valid trailer URLs found. Please check your URLs.')
@@ -123,7 +114,6 @@ export default function TrailerReels({
   const handleNextReel = useCallback(() => {
     if (currentIndex < reels.length - 1) {
       setCurrentIndex(prev => prev + 1)
-      setProgress(0)
       setVideoLoaded(false)
       setIsPlaying(true)
       
@@ -138,7 +128,6 @@ export default function TrailerReels({
   const handlePrevReel = useCallback(() => {
     if (currentIndex > 0) {
       setCurrentIndex(prev => prev - 1)
-      setProgress(0)
       setVideoLoaded(false)
       setIsPlaying(true)
       
@@ -149,31 +138,6 @@ export default function TrailerReels({
       }
     }
   }, [currentIndex])
-
-  // 🎵 Progress Bar Controller
-  useEffect(() => {
-    if (progress >= 100) {
-      handleNextReel()
-    }
-  }, [progress, handleNextReel])
-
-  useEffect(() => {
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current)
-    }
-
-    if (isPlaying && reels.length > 0 && !isLoading) {
-      progressIntervalRef.current = setInterval(() => {
-        setProgress(prev => (prev < 100 ? prev + 0.5 : 100))
-      }, 100)
-    }
-
-    return () => {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current)
-      }
-    }
-  }, [isPlaying, currentIndex, reels.length, isLoading])
 
   // 🖱️ Scroll handling
   useEffect(() => {
@@ -187,7 +151,6 @@ export default function TrailerReels({
       
       if (index !== currentIndex && index < reels.length && index >= 0) {
         setCurrentIndex(index)
-        setProgress(0)
         setVideoLoaded(false)
         setIsPlaying(true)
       }
@@ -249,7 +212,8 @@ export default function TrailerReels({
         toast.success(`❤️ "${currentReel.title}" added to watchlist!`)
       }
     } catch (error) {
-      toast.error('Failed to update watchlist')
+      console.error("Watchlist Error Data:", error); // <-- Check your browser console for this!
+      toast.error('Failed to update watchlist. Check console for details.')
     }
   }
 
@@ -266,7 +230,8 @@ export default function TrailerReels({
         toast.success(`💾 "${currentReel.title}" saved!`)
       }
     } catch (error) {
-      toast.error('Failed to save')
+      console.error("Save Error Data:", error);
+      toast.error('Failed to save. Check console for details.')
     }
   }
 
@@ -302,7 +267,7 @@ export default function TrailerReels({
   return (
     <div 
       ref={containerRef}
-      className="h-[80vh] w-full overflow-y-scroll snap-y snap-mandatory bg-black"
+      className="h-[80vh] w-full overflow-y-scroll snap-y snap-mandatory bg-black relative"
       style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
     >
       {reels.map((reel, index) => {
@@ -320,7 +285,7 @@ export default function TrailerReels({
                     key={`${reel.id}-${isActive}`}
                     src={embedUrl}
                     title={reel.title}
-                    className="w-full h-full"
+                    className="w-full h-full pointer-events-none" // pointer-events-none helps prevent accidental pauses when trying to swipe
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                     allowFullScreen
                     frameBorder="0"
@@ -328,11 +293,11 @@ export default function TrailerReels({
                     style={{
                       position: 'absolute', top: '50%', left: '50%',
                       transform: 'translate(-50%, -50%)',
-                      width: '100%', height: '100%', objectFit: 'cover',
+                      width: '100%', height: '120%', objectFit: 'cover', // 120% helps hide YouTube black bars
                     }}
                   />
                   {!videoLoaded && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
                       <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
                     </div>
                   )}
@@ -343,29 +308,19 @@ export default function TrailerReels({
                   <div className="text-center text-white p-4">
                     <div className="text-4xl mb-4">🎥</div>
                     <p className="text-xl font-medium mb-2">{reel.title}</p>
-                    <p className="text-sm text-gray-400">Loading Preview...</p>
+                    <p className="text-sm text-gray-400">Swipe to play...</p>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Overlays */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
-            <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-transparent pointer-events-none" />
+            {/* Overlays to make text readable */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none z-20" />
+            <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none z-20" />
 
-            {/* Progress Bar */}
+            {/* Content Info - Bottom Left */}
             {isActive && (
-              <div className="absolute top-0 left-0 right-0 h-1 z-30">
-                <div 
-                  className="h-full bg-gradient-to-r from-teal-500 to-blue-500 transition-all duration-100 ease-linear"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-            )}
-
-            {/* Content Info - Bottom */}
-            {isActive && (
-              <div className="absolute bottom-24 left-4 right-20 z-30 text-white">
+              <div className="absolute bottom-20 left-4 right-20 z-40 text-white pointer-events-none">
                 <h2 className="text-2xl md:text-3xl font-bold mb-1 drop-shadow-lg">{reel.title}</h2>
                 <p className="text-sm text-gray-300 mb-2 drop-shadow-lg">
                   {reel.type === 'movie' ? reel.director : reel.artist}
@@ -382,9 +337,6 @@ export default function TrailerReels({
                     {reel.type === 'movie' ? <Film className="w-3 h-3" /> : <Music2 className="w-3 h-3" />}
                     {reel.type === 'movie' ? 'Movie' : 'Music'}
                   </span>
-                  {reel.genre && (
-                    <span className="bg-black/40 px-2 py-1 rounded-full backdrop-blur-sm">{reel.genre}</span>
-                  )}
                   {reel.year && (
                     <span className="bg-black/40 px-2 py-1 rounded-full flex items-center gap-1 backdrop-blur-sm">
                       <Calendar className="w-3 h-3" />
@@ -399,61 +351,49 @@ export default function TrailerReels({
               </div>
             )}
 
-            {/* Action Buttons - Right Side */}
+            {/* Action Buttons - Right Side (Increased z-index to z-50) */}
             {isActive && (
-              <div className="absolute bottom-32 right-4 z-30 flex flex-col items-center gap-4">
+              <div className="absolute bottom-24 right-4 z-50 flex flex-col items-center gap-5">
                 <button onClick={handleLike} className="group flex flex-col items-center gap-1">
-                  <div className={`p-2.5 rounded-full transition-all duration-200 ${isLiked ? 'bg-teal-500/30 ring-2 ring-teal-500' : 'bg-black/40 hover:bg-black/60 backdrop-blur-sm'}`}>
+                  <div className={`p-3 rounded-full transition-all duration-200 ${isLiked ? 'bg-teal-500/30 ring-2 ring-teal-500' : 'bg-black/60 hover:bg-black/80 backdrop-blur-md'}`}>
                     <Heart className={`w-6 h-6 transition-all duration-200 ${isLiked ? 'fill-teal-500 text-teal-500' : 'text-white group-hover:scale-110'}`} />
                   </div>
-                  <span className="text-[10px] text-white/80">{isLiked ? 'Liked' : 'Like'}</span>
+                  <span className="text-[10px] text-white/90 font-medium drop-shadow-md">{isLiked ? 'Liked' : 'Like'}</span>
                 </button>
 
                 <button onClick={handleSave} className="group flex flex-col items-center gap-1">
-                  <div className="p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200">
+                  <div className="p-3 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md transition-all duration-200">
                     <Bookmark className="w-6 h-6 text-white group-hover:scale-110 transition-transform" />
                   </div>
-                  <span className="text-[10px] text-white/80">Save</span>
+                  <span className="text-[10px] text-white/90 font-medium drop-shadow-md">Save</span>
                 </button>
 
                 <button onClick={() => onViewDetails(reel)} className="group flex flex-col items-center gap-1">
-                  <div className="p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200">
+                  <div className="p-3 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md transition-all duration-200">
                     <Info className="w-6 h-6 text-white group-hover:scale-110 transition-transform" />
                   </div>
-                  <span className="text-[10px] text-white/80">Details</span>
+                  <span className="text-[10px] text-white/90 font-medium drop-shadow-md">Details</span>
                 </button>
 
                 <button onClick={handleShare} className="group flex flex-col items-center gap-1">
-                  <div className="p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200">
+                  <div className="p-3 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md transition-all duration-200">
                     <Share2 className="w-6 h-6 text-white group-hover:scale-110 transition-transform" />
                   </div>
-                  <span className="text-[10px] text-white/80">Share</span>
+                  <span className="text-[10px] text-white/90 font-medium drop-shadow-md">Share</span>
                 </button>
               </div>
             )}
 
-            {/* Bottom Controls */}
+            {/* Bottom Media Controls (Play/Mute) */}
             {isActive && (
-              <div className="absolute bottom-4 left-4 right-4 z-30 flex items-center justify-between">
-                <button onClick={() => setIsPlaying(!isPlaying)} className="p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200">
+              <div className="absolute bottom-4 left-4 z-50 flex items-center gap-4">
+                <button onClick={() => setIsPlaying(!isPlaying)} className="p-3 rounded-full bg-teal-500 hover:bg-teal-400 shadow-lg transition-all duration-200">
                   {isPlaying ? <Pause className="w-5 h-5 text-white" /> : <Play className="w-5 h-5 text-white" />}
                 </button>
-                <button onClick={() => setIsMuted(!isMuted)} className="p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200">
+                <button onClick={() => setIsMuted(!isMuted)} className="p-3 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md transition-all duration-200">
                   {isMuted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
                 </button>
               </div>
-            )}
-
-            {/* Navigation Arrows (Desktop) */}
-            {isActive && (
-              <>
-                <button onClick={handlePrevReel} className="absolute left-4 top-1/2 -translate-y-1/2 z-30 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200 hidden md:block">
-                  <ChevronUp className="w-6 h-6 text-white" />
-                </button>
-                <button onClick={handleNextReel} className="absolute right-20 top-1/2 -translate-y-1/2 z-30 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200 hidden md:block">
-                  <ChevronDown className="w-6 h-6 text-white" />
-                </button>
-              </>
             )}
           </div>
         )
