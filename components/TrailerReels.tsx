@@ -50,21 +50,22 @@ export default function TrailerReels({
     
     for (const pattern of patterns) {
       const match = url.match(pattern)
-      if (match) return match
+      // FIXED: match[1] extracts the exact string match group
+      if (match) return match[1]
     }
     
     const idMatch = url.match(/([a-zA-Z0-9_-]{11})/)
-    if (idMatch) return idMatch
+    // FIXED: idMatch[1] extracts the exact string match group
+    if (idMatch) return idMatch[1]
     
     return null
   }, [])
 
-  // 🎬 Get embed URL (Controlled via dynamic settings)
+  // 🎬 Get embed URL
   const getEmbedUrl = useCallback((url: string, muted: boolean, playing: boolean): string => {
     const videoId = extractYouTubeId(url)
     if (!videoId) return ''
     
-    // Convert states to YouTube Player query parameters
     const autoplayValue = playing ? '1' : '0'
     const muteValue = muted ? '1' : '0'
     
@@ -313,7 +314,6 @@ export default function TrailerReels({
           <div key={reel.id} className="h-[80vh] w-full snap-start relative flex items-center justify-center bg-black">
             {/* Video Container */}
             <div className="absolute inset-0 w-full h-full bg-black">
-              {/* PERFORMANCE FIX: Only mount the iframe if this slide is active */}
               {isActive && embedUrl ? (
                 <div className="relative w-full h-full">
                   <iframe
@@ -338,7 +338,7 @@ export default function TrailerReels({
                   )}
                 </div>
               ) : (
-                /* Static Placeholder for all non-active items */
+                /* Static Placeholder */
                 <div className="flex items-center justify-center w-full h-full bg-gradient-to-br from-gray-900 to-black">
                   <div className="text-center text-white p-4">
                     <div className="text-4xl mb-4">🎥</div>
@@ -353,7 +353,7 @@ export default function TrailerReels({
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
             <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-transparent pointer-events-none" />
 
-            {/* Progress Bar (Only render when active) */}
+            {/* Progress Bar */}
             {isActive && (
               <div className="absolute top-0 left-0 right-0 h-1 z-30">
                 <div 
@@ -363,7 +363,7 @@ export default function TrailerReels({
               </div>
             )}
 
-            {/* Content Info - Bottom (Only render when active) */}
+            {/* Content Info - Bottom */}
             {isActive && (
               <div className="absolute bottom-24 left-4 right-20 z-30 text-white">
                 <h2 className="text-2xl md:text-3xl font-bold mb-1 drop-shadow-lg">{reel.title}</h2>
@@ -399,7 +399,7 @@ export default function TrailerReels({
               </div>
             )}
 
-            {/* Action Buttons - Right Side (Only render when active) */}
+            {/* Action Buttons - Right Side */}
             {isActive && (
               <div className="absolute bottom-32 right-4 z-30 flex flex-col items-center gap-4">
                 <button onClick={handleLike} className="group flex flex-col items-center gap-1">
@@ -432,7 +432,7 @@ export default function TrailerReels({
               </div>
             )}
 
-            {/* Bottom Controls (Only render when active) */}
+            {/* Bottom Controls */}
             {isActive && (
               <div className="absolute bottom-4 left-4 right-4 z-30 flex items-center justify-between">
                 <button onClick={() => setIsPlaying(!isPlaying)} className="p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200">
@@ -444,7 +444,7 @@ export default function TrailerReels({
               </div>
             )}
 
-            {/* Navigation Arrows (Desktop - Only render when active) */}
+            {/* Navigation Arrows (Desktop) */}
             {isActive && (
               <>
                 <button onClick={handlePrevReel} className="absolute left-4 top-1/2 -translate-y-1/2 z-30 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200 hidden md:block">
