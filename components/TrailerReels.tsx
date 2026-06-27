@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase/client'
-import { useAuth } from '@/hooks/useAuth'
 import { 
   Heart, 
   Info, 
@@ -18,7 +17,8 @@ import {
   Calendar,
   Film,
   Music2,
-  Loader2
+  Loader2,
+  AlertCircle
 } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 import toast from 'react-hot-toast'
@@ -38,7 +38,6 @@ export default function TrailerReels({
   isInWatchlist,
   userId
 }: TrailerReelsProps) {
-  const { user } = useAuth()
   const [reels, setReels] = useState<any[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
@@ -47,49 +46,40 @@ export default function TrailerReels({
   const [isPlaying, setIsPlaying] = useState(true)
   const [progress, setProgress] = useState(0)
   const [videoLoaded, setVideoLoaded] = useState(false)
-  const [iframeRefs, setIframeRefs] = useState<{ [key: string]: HTMLIFrameElement | null }>({})
   
   const containerRef = useRef<HTMLDivElement>(null)
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  // 🎬 YouTube URL converter - extracts video ID
-  const getYouTubeEmbedUrl = useCallback((url: string) => {
-    if (!url) return ''
+  // 🎬 Extract YouTube Video ID
+  const extractYouTubeId = useCallback((url: string): string | null => {
+    if (!url) return null
     
-    // If it's already an embed URL, return it
-    if (url.includes('/embed/')) {
-      return url
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]{11})/,
+      /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
+      /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+      /(?:youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+      /(?:v=)([a-zA-Z0-9_-]{11})/
+    ]
+    
+    for (const pattern of patterns) {
+      const match = url.match(pattern)
+      if (match) return match[1]
     }
     
-    // Extract video ID from various YouTube URL formats
-    let videoId = ''
+    // Try to find any 11-character ID
+    const idMatch = url.match(/([a-zA-Z0-9_-]{11})/)
+    if (idMatch) return idMatch[1]
     
-    if (url.includes('watch?v=')) {
-      videoId = url.split('watch?v=')[1]?.split('&')[0] || ''
-    } else if (url.includes('youtu.be/')) {
-      videoId = url.split('youtu.be/')[1]?.split('?')[0] || ''
-    } else if (url.includes('/v/')) {
-      videoId = url.split('/v/')[1]?.split('?')[0] || ''
-    } else if (url.includes('/embed/')) {
-      videoId = url.split('/embed/')[1]?.split('?')[0] || ''
-    } else if (url.includes('youtube.com/shorts/')) {
-      videoId = url.split('shorts/')[1]?.split('?')[0] || ''
-    } else {
-      // Try to extract any ID from the URL
-      const match = url.match(/(?:v=|\/)([a-zA-Z0-9_-]{11})/)
-      if (match) {
-        videoId = match[1]
-      }
-    }
-    
-    if (!videoId) {
-      console.warn('Could not extract video ID from:', url)
-      return url
-    }
-    
-    // Return clean embed URL with minimal controls
-    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&enablejsapi=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark&playsinline=1&loop=1`
+    return null
   }, [])
+
+  // 🎬 Get embed URL
+  const getEmbedUrl = useCallback((url: string): string => {
+    const videoId = extractYouTubeId(url)
+    if (!videoId) return ''
+    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark&playsinline=1&enablejsapi=1`
+  }, [extractYouTubeId])
 
   // 📊 Fetch reels
   useEffect(() => {
@@ -120,8 +110,23 @@ export default function TrailerReels({
           return
         }
 
-        console.log(`✅ Loaded ${data.length} reels`)
-        setReels(data)
+        // Filter out items with invalid YouTube URLs
+        const validReels = data.filter(item => {
+          const isValid = extractYouTubeId(item.trailer_url) !== null
+          if (!isValid) {
+            console.warn('Invalid YouTube URL for:', item.title, item.trailer_url)
+          }
+          return isValid
+        })
+
+        if (validReels.length === 0) {
+          setError('No valid trailer URLs found. Please check the trailer URLs in the database.')
+          setIsLoading(false)
+          return
+        }
+
+        console.log(`✅ Loaded ${validReels.length} valid reels`)
+        setReels(validReels)
         
       } catch (err) {
         console.error('Unexpected error:', err)
@@ -132,7 +137,7 @@ export default function TrailerReels({
     }
 
     fetchReels()
-  }, [])
+  }, [extractYouTubeId])
 
   // 🎵 Progress bar animation
   useEffect(() => {
@@ -141,7 +146,7 @@ export default function TrailerReels({
       progressIntervalRef.current = null
     }
 
-    if (isPlaying && reels.length > 0) {
+    if (isPlaying && reels.length > 0 && !isLoading) {
       progressIntervalRef.current = setInterval(() => {
         setProgress(prev => {
           if (prev >= 100) {
@@ -158,19 +163,19 @@ export default function TrailerReels({
         clearInterval(progressIntervalRef.current)
       }
     }
-  }, [isPlaying, currentIndex, reels.length])
+  }, [isPlaying, currentIndex, reels.length, isLoading])
 
   // 🖱️ Scroll handling
   useEffect(() => {
     const container = containerRef.current
-    if (!container) return
+    if (!container || reels.length === 0) return
 
     const handleScroll = () => {
       const scrollTop = container.scrollTop
       const height = container.clientHeight
       const index = Math.round(scrollTop / height)
       
-      if (index !== currentIndex && index < reels.length) {
+      if (index !== currentIndex && index < reels.length && index >= 0) {
         setCurrentIndex(index)
         setProgress(0)
         setVideoLoaded(false)
@@ -216,6 +221,7 @@ export default function TrailerReels({
   // ⌨️ Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (reels.length === 0) return
       if (e.key === 'ArrowUp') handlePrevReel()
       if (e.key === 'ArrowDown') handleNextReel()
       if (e.key === ' ') {
@@ -226,7 +232,7 @@ export default function TrailerReels({
     
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handlePrevReel, handleNextReel, isPlaying])
+  }, [handlePrevReel, handleNextReel, isPlaying, reels.length])
 
   // 🖱️ Share handler
   const handleShare = async () => {
@@ -299,7 +305,7 @@ export default function TrailerReels({
   // 🎬 Loading state
   if (isLoading) {
     return (
-      <div className="h-screen w-full bg-black flex flex-col items-center justify-center">
+      <div className="h-[80vh] w-full bg-black flex flex-col items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-teal-500" />
         <p className="text-gray-400 mt-4">Loading reels...</p>
       </div>
@@ -309,8 +315,8 @@ export default function TrailerReels({
   // 🚫 Error state
   if (error || reels.length === 0) {
     return (
-      <div className="h-screen w-full bg-black flex flex-col items-center justify-center p-8">
-        <div className="text-6xl mb-6">🎬</div>
+      <div className="h-[80vh] w-full bg-black flex flex-col items-center justify-center p-8">
+        <AlertCircle className="h-16 w-16 text-yellow-500 mb-4" />
         <h2 className="text-2xl font-bold text-white mb-2">No Reels Available</h2>
         <p className="text-gray-400 text-center max-w-md">
           {error || 'No trailers found. Add content with trailer URLs to the database.'}
@@ -318,6 +324,12 @@ export default function TrailerReels({
         <p className="text-gray-500 text-sm mt-4">
           Trailer URLs should be from YouTube
         </p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="mt-6 px-6 py-2 bg-teal-600 rounded-lg hover:bg-teal-700 transition"
+        >
+          Try Again
+        </button>
       </div>
     )
   }
@@ -327,27 +339,27 @@ export default function TrailerReels({
   return (
     <div 
       ref={containerRef}
-      className="h-screen w-full overflow-y-scroll snap-y snap-mandatory bg-black"
+      className="h-[80vh] w-full overflow-y-scroll snap-y snap-mandatory bg-black"
       style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
     >
       {/* Reels Container */}
       {reels.map((reel, index) => {
         const isActive = index === currentIndex
-        const reelEmbedUrl = getYouTubeEmbedUrl(reel.trailer_url)
+        const embedUrl = getEmbedUrl(reel.trailer_url)
         const isLiked = isInWatchlist ? isInWatchlist(reel.id) : false
         
         return (
           <div
             key={reel.id}
-            className="h-screen w-full snap-start relative flex items-center justify-center bg-black"
+            className="h-[80vh] w-full snap-start relative flex items-center justify-center bg-black"
           >
             {/* Video Container */}
             <div className="absolute inset-0 w-full h-full bg-black">
-              {reelEmbedUrl ? (
+              {embedUrl ? (
                 <div className="relative w-full h-full">
                   <iframe
                     key={`${reel.id}-${isActive}`}
-                    src={reelEmbedUrl}
+                    src={embedUrl}
                     title={reel.title}
                     className="w-full h-full"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
