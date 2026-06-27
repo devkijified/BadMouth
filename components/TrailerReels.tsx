@@ -35,7 +35,7 @@ export default function TrailerReels({
   const containerRef = useRef<HTMLDivElement>(null)
   const activeIframeRef = useRef<HTMLIFrameElement>(null)
 
-  // 🎬 Extract YouTube Video ID safely
+  // 🎬 Extract YouTube Video ID safely (Rewritten to avoid copy-paste UI bugs)
   const extractYouTubeId = useCallback((url: any): string | null => {
     if (!url || typeof url !== 'string') return null
     
@@ -47,13 +47,15 @@ export default function TrailerReels({
       /(?:v=)([a-zA-Z0-9_-]{11})/
     ]
     
-    for (const pattern of patterns) {
-      const match = url.[...](asc_slot://start-slot-5)match(pattern)
-      if (match) return match
+    // Using standard standard loop and .exec() to avoid match() artifacts
+    for (let i = 0; i < patterns.length; i++) {
+      const result = patterns[i].exec(url)
+      if (result && result[1]) return result[1]
     }
     
-    const idMatch = url.[...](asc_slot://start-slot-7)match(/([a-zA-Z0-9_-]{11})/)
-    if (idMatch) return idMatch
+    const fallbackRegex = /([a-zA-Z0-9_-]{11})/
+    const fallbackResult = fallbackRegex.exec(url)
+    if (fallbackResult && fallbackResult[1]) return fallbackResult[1]
     
     return null
   }, [])
@@ -402,50 +404,4 @@ export default function TrailerReels({
                 <div className="flex flex-col items-center gap-4 pointer-events-auto">
                   <button onClick={handleLike} className="group flex flex-col items-center gap-1">
                     <div className={`p-2.5 rounded-full transition-all duration-200 ${isLiked ? 'bg-teal-500/30 ring-2 ring-teal-500' : 'bg-black/60 hover:bg-black/80 backdrop-blur-md'}`}>
-                      <Heart className={`w-5 h-5 transition-all duration-200 ${isLiked ? 'fill-teal-500 text-teal-500' : 'text-white group-hover:scale-110'}`} />
-                    </div>
-                    <span className="text-[10px] text-white/90 font-medium drop-shadow-md">{isLiked ? 'Liked' : 'Like'}</span>
-                  </button>
-
-                  <button onClick={handleSave} className="group flex flex-col items-center gap-1">
-                    <div className="p-2.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md transition-all duration-200">
-                      <Bookmark className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
-                    </div>
-                    <span className="text-[10px] text-white/90 font-medium drop-shadow-md">Save</span>
-                  </button>
-
-                  <button onClick={() => onViewDetails(reel)} className="group flex flex-col items-center gap-1">
-                    <div className="p-2.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md transition-all duration-200">
-                      <Info className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
-                    </div>
-                    <span className="text-[10px] text-white/90 font-medium drop-shadow-md">Details</span>
-                  </button>
-
-                  <button onClick={handleShare} className="group flex flex-col items-center gap-1">
-                    <div className="p-2.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md transition-all duration-200">
-                      <Share2 className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
-                    </div>
-                    <span className="text-[10px] text-white/90 font-medium drop-shadow-md">Share</span>
-                  </button>
-                </div>
-
-              </div>
-            )}
-
-            {/* Desktop Navigation Arrows */}
-            {isActive && (
-              <>
-                <button onClick={handlePrevReel} className="absolute left-4 top-1/2 -translate-y-1/2 z-50 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200 hidden md:block">
-                  <ChevronUp className="w-5 h-5 text-white" />
-                </button>
-                <button onClick={handleNextReel} className="absolute right-20 top-1/2 -translate-y-1/2 z-50 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200 hidden md:block">
-                  <ChevronDown className="w-5 h-5 text-white" />
-                </button>
-              </>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
+                      <Heart className={`w-5 h-5 transition-
