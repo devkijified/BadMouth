@@ -35,7 +35,6 @@ export default function TrailerReels({
   const containerRef = useRef<HTMLDivElement>(null)
   const activeIframeRef = useRef<HTMLIFrameElement>(null)
 
-  // 🎬 Extract YouTube Video ID safely (Rewritten to avoid copy-paste UI bugs)
   const extractYouTubeId = useCallback((url: any): string | null => {
     if (!url || typeof url !== 'string') return null
     
@@ -47,7 +46,6 @@ export default function TrailerReels({
       /(?:v=)([a-zA-Z0-9_-]{11})/
     ]
     
-    // Using standard standard loop and .exec() to avoid match() artifacts
     for (let i = 0; i < patterns.length; i++) {
       const result = patterns[i].exec(url)
       if (result && result[1]) return result[1]
@@ -60,7 +58,6 @@ export default function TrailerReels({
     return null
   }, [])
 
-  // 🎬 Get embed URL
   const getEmbedUrl = useCallback((url: string): string => {
     const videoId = extractYouTubeId(url)
     if (!videoId) return ''
@@ -68,7 +65,6 @@ export default function TrailerReels({
     return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark&playsinline=1&enablejsapi=1`
   }, [extractYouTubeId])
 
-  // 🕹️ Direct Play/Pause Command Sender to YouTube Iframe
   const sendPlayerCommand = useCallback((command: 'playVideo' | 'pauseVideo' | 'mute' | 'unMute') => {
     if (activeIframeRef.current && activeIframeRef.current.contentWindow) {
       try {
@@ -86,7 +82,6 @@ export default function TrailerReels({
     }
   }, [])
 
-  // Sync state changes with the active Iframe
   useEffect(() => {
     if (videoLoaded) {
       sendPlayerCommand(isPlaying ? 'playVideo' : 'pauseVideo')
@@ -99,7 +94,6 @@ export default function TrailerReels({
     }
   }, [isMuted, videoLoaded, sendPlayerCommand])
 
-  // 📊 Fetch reels
   useEffect(() => {
     const fetchReels = async () => {
       setIsLoading(true)
@@ -140,7 +134,6 @@ export default function TrailerReels({
     fetchReels()
   }, [extractYouTubeId])
 
-  // 🔄 Navigation handlers
   const handleNextReel = useCallback(() => {
     if (currentIndex < reels.length - 1) {
       setCurrentIndex(prev => prev + 1)
@@ -169,7 +162,6 @@ export default function TrailerReels({
     }
   }, [currentIndex])
 
-  // 🖱️ Scroll handling
   useEffect(() => {
     const container = containerRef.current
     if (!container || reels.length === 0) return
@@ -190,7 +182,6 @@ export default function TrailerReels({
     return () => container.removeEventListener('scroll', handleScroll)
   }, [currentIndex, reels.length])
 
-  // ⌨️ Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (reels.length === 0) return
@@ -206,7 +197,6 @@ export default function TrailerReels({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handlePrevReel, handleNextReel, isPlaying, reels.length])
 
-  // 🖱️ Share handler
   const handleShare = async () => {
     const currentReel = reels[currentIndex]
     if (!currentReel) return
@@ -228,7 +218,6 @@ export default function TrailerReels({
     }
   }
 
-  // Handle watchlist interactions
   const handleLike = async () => {
     const currentReel = reels[currentIndex]
     if (!currentReel) return
@@ -265,7 +254,6 @@ export default function TrailerReels({
     }
   }
 
-  // 🎬 Loading state
   if (isLoading) {
     return (
       <div className="h-[80vh] w-full bg-black flex flex-col items-center justify-center">
@@ -275,7 +263,6 @@ export default function TrailerReels({
     )
   }
 
-  // 🚫 Error state
   if (error || reels.length === 0) {
     return (
       <div className="h-[80vh] w-full bg-black flex flex-col items-center justify-center p-8">
@@ -307,7 +294,6 @@ export default function TrailerReels({
         
         return (
           <div key={reel.id} className="h-[80vh] w-full snap-start relative flex items-center justify-center bg-black overflow-hidden">
-            {/* Video Container */}
             <div className="absolute inset-0 w-full h-full bg-black">
               {isActive && embedUrl ? (
                 <div className="relative w-full h-full">
@@ -334,7 +320,6 @@ export default function TrailerReels({
                   )}
                 </div>
               ) : (
-                /* Static Placeholder */
                 <div className="flex items-center justify-center w-full h-full bg-gradient-to-br from-gray-900 to-black">
                   <div className="text-center text-white p-4">
                     <div className="text-4xl mb-4">🎥</div>
@@ -345,15 +330,12 @@ export default function TrailerReels({
               )}
             </div>
 
-            {/* Overlays */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none z-20" />
             <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none z-20" />
 
-            {/* Layout Wrapper */}
             {isActive && (
               <div className="absolute bottom-6 left-4 right-4 z-40 flex items-end justify-between gap-4 pointer-events-none">
                 
-                {/* Content Info - Left Column */}
                 <div className="flex-1 text-white max-w-[70%]">
                   <h2 className="text-xl md:text-2xl font-bold mb-1 drop-shadow-lg">{reel.title}</h2>
                   <p className="text-xs md:text-sm text-gray-300 mb-2 drop-shadow-lg">
@@ -383,7 +365,6 @@ export default function TrailerReels({
                     <p className="text-xs md:text-sm text-gray-300 mt-2 line-clamp-2 drop-shadow-lg">{reel.description}</p>
                   )}
 
-                  {/* Play & Mute Row */}
                   <div className="flex items-center gap-3 mt-4 pointer-events-auto">
                     <button 
                       onClick={() => setIsPlaying(!isPlaying)} 
@@ -400,8 +381,52 @@ export default function TrailerReels({
                   </div>
                 </div>
 
-                {/* Action Buttons Column - Right Column */}
                 <div className="flex flex-col items-center gap-4 pointer-events-auto">
                   <button onClick={handleLike} className="group flex flex-col items-center gap-1">
                     <div className={`p-2.5 rounded-full transition-all duration-200 ${isLiked ? 'bg-teal-500/30 ring-2 ring-teal-500' : 'bg-black/60 hover:bg-black/80 backdrop-blur-md'}`}>
-                      <Heart className={`w-5 h-5 transition-
+                      <Heart className={`w-5 h-5 transition-all duration-200 ${isLiked ? 'fill-teal-500 text-teal-500' : 'text-white group-hover:scale-110'}`} />
+                    </div>
+                    <span className="text-[10px] text-white/90 font-medium drop-shadow-md">{isLiked ? 'Liked' : 'Like'}</span>
+                  </button>
+
+                  <button onClick={handleSave} className="group flex flex-col items-center gap-1">
+                    <div className="p-2.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md transition-all duration-200">
+                      <Bookmark className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
+                    </div>
+                    <span className="text-[10px] text-white/90 font-medium drop-shadow-md">Save</span>
+                  </button>
+
+                  <button onClick={() => onViewDetails(reel)} className="group flex flex-col items-center gap-1">
+                    <div className="p-2.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md transition-all duration-200">
+                      <Info className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
+                    </div>
+                    <span className="text-[10px] text-white/90 font-medium drop-shadow-md">Details</span>
+                  </button>
+
+                  <button onClick={handleShare} className="group flex flex-col items-center gap-1">
+                    <div className="p-2.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md transition-all duration-200">
+                      <Share2 className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
+                    </div>
+                    <span className="text-[10px] text-white/90 font-medium drop-shadow-md">Share</span>
+                  </button>
+                </div>
+
+              </div>
+            )}
+
+            {isActive && (
+              <>
+                <button onClick={handlePrevReel} className="absolute left-4 top-1/2 -translate-y-1/2 z-50 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200 hidden md:block">
+                  <ChevronUp className="w-5 h-5 text-white" />
+                </button>
+                <button onClick={handleNextReel} className="absolute right-20 top-1/2 -translate-y-1/2 z-50 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200 hidden md:block">
+                  <ChevronDown className="w-5 h-5 text-white" />
+                </button>
+              </>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
