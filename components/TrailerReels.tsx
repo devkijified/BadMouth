@@ -48,12 +48,12 @@ export default function TrailerReels({
     ]
     
     for (const pattern of patterns) {
-      const match = url.match(pattern)
-      if (match) return match[1]
+      const match = url.[...](asc_slot://start-slot-5)match(pattern)
+      if (match) return match
     }
     
-    const idMatch = url.match(/([a-zA-Z0-9_-]{11})/)
-    if (idMatch) return idMatch[1]
+    const idMatch = url.[...](asc_slot://start-slot-7)match(/([a-zA-Z0-9_-]{11})/)
+    if (idMatch) return idMatch
     
     return null
   }, [])
@@ -343,11 +343,11 @@ export default function TrailerReels({
               )}
             </div>
 
-            {/* Overlays to make text readable */}
+            {/* Overlays */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none z-20" />
             <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none z-20" />
 
-            {/* Layout Wrapper: Houses Bottom text + Side controls nicely inside the container */}
+            {/* Layout Wrapper */}
             {isActive && (
               <div className="absolute bottom-6 left-4 right-4 z-40 flex items-end justify-between gap-4 pointer-events-none">
                 
@@ -381,7 +381,7 @@ export default function TrailerReels({
                     <p className="text-xs md:text-sm text-gray-300 mt-2 line-clamp-2 drop-shadow-lg">{reel.description}</p>
                   )}
 
-                  {/* Play & Mute Control Buttons Row */}
+                  {/* Play & Mute Row */}
                   <div className="flex items-center gap-3 mt-4 pointer-events-auto">
                     <button 
                       onClick={() => setIsPlaying(!isPlaying)} 
@@ -432,10 +432,20 @@ export default function TrailerReels({
               </div>
             )}
 
-            {/* Navigation Arrows (Desktop Only) */}
+            {/* Desktop Navigation Arrows */}
             {isActive && (
               <>
                 <button onClick={handlePrevReel} className="absolute left-4 top-1/2 -translate-y-1/2 z-50 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200 hidden md:block">
                   <ChevronUp className="w-5 h-5 text-white" />
                 </button>
-                <button onClick={handleNextReel} className="absolute right-20 top-1/2 -translate-y-1/2 z-50 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200 hid
+                <button onClick={handleNextReel} className="absolute right-20 top-1/2 -translate-y-1/2 z-50 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200 hidden md:block">
+                  <ChevronDown className="w-5 h-5 text-white" />
+                </button>
+              </>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
