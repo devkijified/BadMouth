@@ -48,12 +48,12 @@ export default function TrailerReels({
     ]
     
     for (const pattern of patterns) {
-      const match = url.[...](asc_slot://start-slot-7)match(pattern)
-      if (match) return match
+      const match = url.match(pattern)
+      if (match) return match[1]
     }
     
-    const idMatch = url.[...](asc_slot://start-slot-9)match(/([a-zA-Z0-9_-]{11})/)
-    if (idMatch) return idMatch
+    const idMatch = url.match(/([a-zA-Z0-9_-]{11})/)
+    if (idMatch) return idMatch[1]
     
     return null
   }, [])
@@ -63,7 +63,6 @@ export default function TrailerReels({
     const videoId = extractYouTubeId(url)
     if (!videoId) return ''
     
-    [...](asc_slot://start-slot-11)// We force enablejsapi=1 so we can send JS pause/play commands directly
     return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark&playsinline=1&enablejsapi=1`
   }, [extractYouTubeId])
 
@@ -241,7 +240,7 @@ export default function TrailerReels({
         toast.success(`❤️ "${currentReel.title}" added to watchlist!`)
       }
     } catch (error) {
-      console.error("Watchlist Error:", error);
+      console.error("Watchlist Error:", error)
       toast.error('Could not update watchlist')
     }
   }
@@ -259,7 +258,7 @@ export default function TrailerReels({
         toast.success(`💾 "${currentReel.title}" saved!`)
       }
     } catch (error) {
-      console.error("Save Error:", error);
+      console.error("Save Error:", error)
       toast.error('Could not save item')
     }
   }
@@ -439,14 +438,4 @@ export default function TrailerReels({
                 <button onClick={handlePrevReel} className="absolute left-4 top-1/2 -translate-y-1/2 z-50 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200 hidden md:block">
                   <ChevronUp className="w-5 h-5 text-white" />
                 </button>
-                <button onClick={handleNextReel} className="absolute right-20 top-1/2 -translate-y-1/2 z-50 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200 hidden md:block">
-                  <ChevronDown className="w-5 h-5 text-white" />
-                </button>
-              </>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
+                <button onClick={handleNextReel} className="absolute right-20 top-1/2 -translate-y-1/2 z-50 p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200 hid
