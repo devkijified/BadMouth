@@ -25,7 +25,9 @@ export default function ExplorePage() {
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set())
   const [showFilters, setShowFilters] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
-  const [filteredCount, setFilteredCount] = useState(0) // ← ADD THIS
+  const [filteredCount, setFilteredCount] = useState(0)
+  const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null)
+  const [showDetailsModal, setShowDetailsModal] = useState(false)
 
   useEffect(() => {
     const categoryParam = searchParams.get('category')
@@ -43,10 +45,9 @@ export default function ExplorePage() {
     try {
       console.log('Loading explore content...')
       
-      // ✅ FIX: Get ALL content with exact count
       const { data, error, count } = await supabase
         .from('content')
-        .select('*', { count: 'exact' })  // ← This gets the REAL count
+        .select('*', { count: 'exact' })
         .order('rating', { ascending: false })
 
       if (error) {
@@ -65,7 +66,7 @@ export default function ExplorePage() {
       
       setContent(data || [])
       setFilteredContent(data || [])
-      setTotalCount(count || 0)  // ← Use the count from Supabase
+      setTotalCount(count || 0)
       setFilteredCount(data?.length || 0)
       
       // Extract unique genres
@@ -113,7 +114,6 @@ export default function ExplorePage() {
       return
     }
     
-    // ✅ FIX: Find category by name OR id
     const category = categories.find(c => 
       c.name === categoryName || c.id === categoryName
     )
@@ -127,7 +127,6 @@ export default function ExplorePage() {
     
     console.log('Filtering by category:', category.name, category.id)
     
-    // ✅ FIX: Get content for this category
     const { data: categoryContent, error } = await supabase
       .from('content_categories')
       .select('content_id')
@@ -225,15 +224,15 @@ export default function ExplorePage() {
     return item.rating || 0
   }
 
+  // ✅ FIX: Handle view details - navigate to home with details parameter
   const handleViewDetails = (item: ContentItem) => {
-    router.push(`/?details=${item.id}`)
+    setSelectedContent(item)
+    setShowDetailsModal(true)
   }
 
-  // ✅ FIX: Combined filter function
   const applyAllFilters = () => {
     let filtered = [...content]
     
-    // Search filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim()
       filtered = filtered.filter(item => 
@@ -244,30 +243,23 @@ export default function ExplorePage() {
       )
     }
     
-    // Type filter
     if (selectedType !== 'all') {
       filtered = filtered.filter(item => item.type === selectedType)
     }
     
-    // Genre filter
     if (selectedGenre !== 'all') {
       filtered = filtered.filter(item => 
         item.genre && item.genre.split(',').some(g => g.trim() === selectedGenre)
       )
     }
     
-    // Category filter - if not "all", we need to fetch from content_categories
     if (selectedCategory !== 'all') {
-      // We'll handle this with a separate async call
-      // For now, filter client-side if we have the data
       const category = categories.find(c => 
         c.name === selectedCategory || c.id === selectedCategory
       )
       if (category) {
-        // This is a simplified client-side filter
-        // In a real app, you'd fetch from content_categories
-        // For now, we'll just keep the filtered content
-        // The actual category filtering is done in applyCategoryFilter
+        // This would need to be implemented with content_categories
+        // For now, we'll keep the filtered content
       }
     }
     
@@ -277,7 +269,6 @@ export default function ExplorePage() {
 
   const handleSearch = (query: string) => {
     setSearchQuery(query)
-    // Re-apply all filters with new search
     setTimeout(() => applyAllFilters(), 0)
   }
 
@@ -295,13 +286,11 @@ export default function ExplorePage() {
     setSelectedCategory(category)
     
     if (category === 'all') {
-      // Reset to show all content
       setFilteredContent(content)
       setFilteredCount(content.length)
       return
     }
     
-    // Find the category by name or id
     const cat = categories.find(c => 
       c.name === category || c.id === category
     )
@@ -315,7 +304,6 @@ export default function ExplorePage() {
     
     console.log('Filtering by category:', cat.name, cat.id)
     
-    // Get content IDs for this category
     const { data: categoryContent, error } = await supabase
       .from('content_categories')
       .select('content_id')
@@ -352,6 +340,18 @@ export default function ExplorePage() {
   }
 
   const isInWatchlist = (id: string) => watchlistIds.has(id)
+
+  const platformIcons: Record<string, { icon: string; color: string; url: string }> = {
+    'Spotify': { icon: '🎵', color: 'bg-green-600', url: 'https://spotify.com' },
+    'Apple Music': { icon: '🍎', color: 'bg-red-600', url: 'https://music.apple.com' },
+    'YouTube Music': { icon: '📺', color: 'bg-red-500', url: 'https://music.youtube.com' },
+    'Netflix': { icon: '📺', color: 'bg-red-700', url: 'https://netflix.com' },
+    'Prime Video': { icon: '📦', color: 'bg-blue-600', url: 'https://primevideo.com' },
+    'Max': { icon: '🔷', color: 'bg-blue-500', url: 'https://max.com' },
+    'Hulu': { icon: '🟢', color: 'bg-green-500', url: 'https://hulu.com' },
+    'Disney+': { icon: '✨', color: 'bg-blue-700', url: 'https://disneyplus.com' },
+    'Deezer': { icon: '🎧', color: 'bg-purple-600', url: 'https://deezer.com' },
+  }
 
   if (loading) {
     return (
@@ -490,7 +490,7 @@ export default function ExplorePage() {
           </div>
         )}
 
-        {/* Results Stats - ✅ FIXED: Show both total and filtered counts */}
+        {/* Results Stats */}
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">
             {totalCount.toLocaleString()} {totalCount === 1 ? 'Result' : 'Results'}
@@ -571,6 +571,164 @@ export default function ExplorePage() {
           </div>
         )}
       </div>
+
+      {/* ✅ ADD THIS: Details Modal */}
+      {showDetailsModal && selectedContent && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 overflow-y-auto">
+          <div className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
+            <div className="sticky top-0 bg-gray-900 z-10 rounded-t-xl">
+              <div className="relative">
+                <img src={selectedContent.backdrop_url || selectedContent.image_url} alt={selectedContent.title} className="w-full h-48 object-cover rounded-t-xl" />
+                <button 
+                  onClick={() => setShowDetailsModal(false)} 
+                  className="absolute top-4 right-4 p-2 bg-black/70 hover:bg-black/90 rounded-full transition z-20"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="p-5">
+              <h2 className="text-2xl font-bold mb-1">{selectedContent.title}</h2>
+              {selectedContent.artist && <p className="text-gray-400 mb-3">{selectedContent.artist}</p>}
+              <p className="text-gray-300 mb-4 text-sm leading-relaxed">{selectedContent.long_description || selectedContent.description}</p>
+              
+              <div className="flex items-center gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg">
+                <Star size={20} className="text-yellow-400 fill-yellow-400" />
+                <span className="text-2xl font-bold">{getRating(selectedContent).toFixed(1)}</span>
+                <span className="text-gray-400">/10</span>
+                <span className="text-xs text-gray-500 ml-2">
+                  based on {selectedContent.rating_count || 0} ratings
+                </span>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowDetailsModal(false)
+                  // Navigate to home with recommendation modal
+                  router.push(`/?recommend=${selectedContent.id}`)
+                }}
+                className="w-full mb-4 py-2.5 bg-gradient-to-r from-teal-600 to-blue-600 rounded-lg font-semibold hover:opacity-90 transition flex items-center justify-center gap-2"
+              >
+                <Star size={18} className="fill-white" /> Rate This {selectedContent.type === 'movie' ? 'Movie' : 'Song'}
+              </button>
+              
+              <div className="flex gap-6 mb-4 p-3 bg-gray-800/50 rounded-lg">
+                <div className="text-center">
+                  <div className="text-2xl text-yellow-400">⭐</div>
+                  <div className="text-xs text-gray-400 mt-1">RATING</div>
+                  <div className="font-bold">{getRating(selectedContent).toFixed(1)}/10</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl text-blue-500">👤</div>
+                  <div className="text-xs text-gray-400 mt-1">RATINGS</div>
+                  <div className="font-bold">{selectedContent.rating_count || 0}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl text-gray-500">📅</div>
+                  <div className="text-xs text-gray-400 mt-1">YEAR</div>
+                  <div className="font-bold">{selectedContent.year}</div>
+                </div>
+              </div>
+              
+              <div className="mb-4">
+                <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
+                <div className="flex flex-wrap gap-3">
+                  {selectedContent.platforms && selectedContent.platforms.length > 0 ? (
+                    selectedContent.platforms.map((platform: string, idx: number) => {
+                      const info = platformIcons[platform] || { icon: '🎬', color: 'bg-gray-600', url: '#' }
+                      return (
+                        <a 
+                          key={idx} 
+                          href={info.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className={`flex items-center gap-2 px-3 py-2 ${info.color} rounded-lg text-sm font-medium hover:opacity-80 transition`}
+                          title={platform}
+                        >
+                          <span className="text-base">{info.icon}</span>
+                          <span className="hidden sm:inline">{platform}</span>
+                        </a>
+                      )
+                    })
+                  ) : (
+                    <p className="text-sm text-gray-500">Platform information coming soon</p>
+                  )}
+                </div>
+              </div>
+              
+              {selectedContent.type === 'movie' && selectedContent.director && (
+                <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
+                  <div><span className="text-gray-400">🎬 Director:</span> {selectedContent.director}</div>
+                  <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
+                  <div><span className="text-gray-400">⏱️ Runtime:</span> {selectedContent.runtime || 'N/A'}</div>
+                  <div><span className="text-gray-400">🎭 Genre:</span> {selectedContent.genre}</div>
+                </div>
+              )}
+              
+              {selectedContent.type === 'music' && selectedContent.artist && (
+                <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
+                  <div className="col-span-2">
+                    <span className="text-gray-400">🎤 Artist:</span>{' '}
+                    <button
+                      onClick={() => {
+                        setShowDetailsModal(false)
+                        router.push(`/actor/${encodeURIComponent(selectedContent.artist!)}`)
+                      }}
+                      className="text-teal-400 hover:text-teal-300 hover:underline transition"
+                    >
+                      {selectedContent.artist}
+                    </button>
+                  </div>
+                  <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
+                  <div><span className="text-gray-400">⏱️ Duration:</span> {selectedContent.duration || 'N/A'}</div>
+                  <div><span className="text-gray-400">🎭 Genre:</span> {selectedContent.genre}</div>
+                </div>
+              )}
+              
+              {selectedContent.type === 'movie' && selectedContent.actors && selectedContent.actors.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="text-md font-semibold mb-2">⭐ Cast</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedContent.actors.map((actor: string, idx: number) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          setShowDetailsModal(false)
+                          router.push(`/actor/${encodeURIComponent(actor)}`)
+                        }}
+                        className="px-3 py-1 bg-gray-800 rounded-full text-sm hover:bg-teal-600/30 hover:text-teal-400 transition"
+                      >
+                        {actor}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {selectedContent.type === 'music' && selectedContent.trailer_url && (
+                <div className="mb-4">
+                  <h3 className="text-md font-semibold mb-2">🎧 Audio Preview</h3>
+                  <div className="bg-gray-800 rounded-lg p-4">
+                    <audio controls className="w-full" src={selectedContent.trailer_url}>
+                      Your browser does not support the audio element.
+                    </audio>
+                    <p className="text-xs text-gray-500 mt-2 text-center">30-second preview</p>
+                  </div>
+                </div>
+              )}
+              
+              {selectedContent.type === 'movie' && selectedContent.trailer_url && (
+                <div className="mb-4">
+                  <h3 className="text-md font-semibold mb-2">▶️ Watch Trailer</h3>
+                  <div className="aspect-video rounded-lg overflow-hidden">
+                    <iframe src={selectedContent.trailer_url} title={selectedContent.title} className="w-full h-full" allowFullScreen />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
