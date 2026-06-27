@@ -62,7 +62,9 @@ export default function TrailerReels({
     const videoId = extractYouTubeId(url)
     if (!videoId) return ''
     
-    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark&playsinline=1&enablejsapi=1`
+    // FIX: Added window.location.origin to secure the YouTube JS API
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(origin)}`
   }, [extractYouTubeId])
 
   const sendPlayerCommand = useCallback((command: 'playVideo' | 'pauseVideo' | 'mute' | 'unMute') => {
@@ -72,7 +74,7 @@ export default function TrailerReels({
           JSON.stringify({
             event: 'command',
             func: command,
-            args: ''
+            args: [] // FIX: YouTube requires an empty array, not an empty string
           }),
           '*'
         )
@@ -189,13 +191,13 @@ export default function TrailerReels({
       if (e.key === 'ArrowDown') handleNextReel()
       if (e.key === ' ') {
         e.preventDefault()
-        setIsPlaying(!isPlaying)
+        setIsPlaying(prev => !prev)
       }
     }
     
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handlePrevReel, handleNextReel, isPlaying, reels.length])
+  }, [handlePrevReel, handleNextReel, reels.length])
 
   const handleShare = async () => {
     const currentReel = reels[currentIndex]
@@ -330,11 +332,21 @@ export default function TrailerReels({
               )}
             </div>
 
+            {/* Overlays */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none z-20" />
             <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none z-20" />
 
+            {/* NEW: Tap-to-Pause Layer (TikTok Style) */}
             {isActive && (
-              <div className="absolute bottom-6 left-4 right-4 z-40 flex items-end justify-between gap-4 pointer-events-none">
+              <div 
+                className="absolute inset-0 z-30 cursor-pointer" 
+                onClick={() => setIsPlaying(prev => !prev)}
+              />
+            )}
+
+            {/* Layout Wrapper - MOVED UP TO bottom-24 TO PREVENT CLIPPING */}
+            {isActive && (
+              <div className="absolute bottom-24 left-4 right-4 z-40 flex items-end justify-between gap-4 pointer-events-none">
                 
                 <div className="flex-1 text-white max-w-[70%]">
                   <h2 className="text-xl md:text-2xl font-bold mb-1 drop-shadow-lg">{reel.title}</h2>
