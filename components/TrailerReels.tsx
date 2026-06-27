@@ -58,13 +58,14 @@ export default function TrailerReels({
     return null
   }, [])
 
-  const getEmbedUrl = useCallback((url: string, mutedStatus: boolean): string => {
+  const getEmbedUrl = useCallback((url: string): string => {
     const videoId = extractYouTubeId(url)
     if (!videoId) return ''
     
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
-    // Inject the exact mute state into the URL so the browser doesn't block the autoplay on scroll
-    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${mutedStatus ? '1' : '0'}&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(origin)}`
+    // FIX: ALWAYS load with mute=1 to guarantee the browser allows autoplay. 
+    // We will unmute it via JavaScript right after it starts playing.
+    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(origin)}`
   }, [extractYouTubeId])
 
   const sendPlayerCommand = useCallback((command: 'playVideo' | 'pauseVideo' | 'mute' | 'unMute') => {
@@ -92,7 +93,12 @@ export default function TrailerReels({
 
   useEffect(() => {
     if (videoLoaded) {
-      sendPlayerCommand(isMuted ? 'mute' : 'unMute')
+      // FIX: Add a tiny 150ms delay to ensure the video has officially started 
+      // auto-playing before we command it to unmute.
+      const timer = setTimeout(() => {
+        sendPlayerCommand(isMuted ? 'mute' : 'unMute')
+      }, 150)
+      return () => clearTimeout(timer)
     }
   }, [isMuted, videoLoaded, sendPlayerCommand])
 
@@ -273,7 +279,7 @@ export default function TrailerReels({
     >
       {reels.map((reel, index) => {
         const isActive = index === currentIndex
-        const embedUrl = isActive ? getEmbedUrl(reel.trailer_url, isMuted) : ''
+        const embedUrl = isActive ? getEmbedUrl(reel.trailer_url) : ''
         const isLiked = isInWatchlist ? isInWatchlist(reel.id) : false
         
         return (
@@ -314,11 +320,9 @@ export default function TrailerReels({
               )}
             </div>
 
-            {/* Overlays */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none z-20" />
             <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-transparent pointer-events-none z-20" />
 
-            {/* Tap-to-Pause Layer */}
             {isActive && (
               <div 
                 className="absolute inset-0 z-30 cursor-pointer" 
@@ -326,7 +330,6 @@ export default function TrailerReels({
               />
             )}
 
-            {/* Layout Wrapper */}
             {isActive && (
               <div className="absolute bottom-24 left-4 right-4 z-40 flex items-end justify-between gap-4 pointer-events-none">
                 
@@ -376,7 +379,6 @@ export default function TrailerReels({
                 </div>
 
                 <div className="flex flex-col items-center gap-4 pointer-events-auto">
-                  {/* Kept Like Button, Removed Save Button */}
                   <button onClick={handleLike} className="group flex flex-col items-center gap-1">
                     <div className={`p-2.5 rounded-full transition-all duration-200 ${isLiked ? 'bg-teal-500/30 ring-2 ring-teal-500' : 'bg-black/60 hover:bg-black/80 backdrop-blur-md'}`}>
                       <Heart className={`w-5 h-5 transition-all duration-200 ${isLiked ? 'fill-teal-500 text-teal-500' : 'text-white group-hover:scale-110'}`} />
