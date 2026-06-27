@@ -20,12 +20,6 @@ import TrailerReels from '@/components/TrailerReels'
 import { ContentItem, Category } from '@/types/content'
 import toast from 'react-hot-toast'
 
-const tierConfig = {
-  highly: { emoji: '🔥', label: 'HIGHLY RECOMMENDED', color: 'bg-teal-600/20 text-teal-400 border-teal-600' },
-  recommended: { emoji: '👍', label: 'RECOMMENDED', color: 'bg-blue-600/20 text-blue-400 border-blue-600' },
-  not: { emoji: '👎', label: 'NOT RECOMMENDED', color: 'bg-gray-600/20 text-gray-400 border-gray-600' }
-}
-
 export default function HomePage() {
   const router = useRouter()
   const { user, signOut, loading: authLoading } = useAuth()
@@ -486,7 +480,6 @@ export default function HomePage() {
     scrollToTop()
   }
 
-  // 🆕 EXPLORE CLICK HANDLER
   const handleExploreClick = () => {
     setCurrentPage('explore')
     scrollToTop()
@@ -745,7 +738,6 @@ export default function HomePage() {
                 <button onClick={handleReelsClick} className={`flex items-center gap-1 transition ${currentPage === 'reels' ? 'text-teal-500 border-b-2 border-teal-500 pb-1' : 'text-gray-300 hover:text-white'}`}>
                   <Play size={16} /> Reels
                 </button>
-                {/* 🆕 EXPLORE BUTTON IN DESKTOP NAV */}
                 <button onClick={handleExploreClick} className={`flex items-center gap-1 transition ${currentPage === 'explore' ? 'text-teal-500 border-b-2 border-teal-500 pb-1' : 'text-gray-300 hover:text-white'}`}>
                   <Compass size={16} /> Explore
                 </button>
@@ -841,7 +833,6 @@ export default function HomePage() {
               <button onClick={() => { handleMoviesClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎬 Movies</button>
               <button onClick={() => { handleMusicClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🎵 Music</button>
               <button onClick={() => { handleReelsClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">▶️ Reels</button>
-              {/* 🆕 EXPLORE IN MOBILE SIDEBAR */}
               <button onClick={() => { handleExploreClick(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">🧭 Explore</button>
               <button onClick={() => { toggleWatchlist(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">❤️ Watchlist ({watchlistCount})</button>
               <button onClick={() => { toggleProfile(); setIsSidebarOpen(false); }} className="w-full text-left p-3 hover:bg-gray-800 rounded-lg">👤 Profile</button>
@@ -869,12 +860,10 @@ export default function HomePage() {
             userId={user.id}
           />
         ) : currentPage === 'explore' ? (
-          // 🆕 EXPLORE PAGE RENDER
           <div className="min-h-screen bg-black">
             <div className="container mx-auto px-4 py-8">
               <h1 className="text-3xl font-bold text-white mb-4">Explore</h1>
               <p className="text-gray-400 mb-8">Discover new movies and music</p>
-              {/* Explore content will be loaded from the explore page */}
               <div className="text-center py-12">
                 <Compass size={48} className="mx-auto mb-4 text-teal-500" />
                 <p className="text-gray-400">Redirecting to Explore page...</p>
@@ -1162,14 +1151,15 @@ export default function HomePage() {
           if (tab === 'movie') handleMoviesClick()
           else if (tab === 'music') handleMusicClick()
           else if (tab === 'reels') handleReelsClick()
-          else if (tab === 'explore') handleExploreClick()
+          else if (tab === 'explore') {
+            router.push('/explore')
+          }
           else handleHomeClick()
         }} 
         onViewDetails={handleViewDetails}
         onHomeClick={handleHomeClick}
         onProfileClick={toggleProfile}
         onWatchlistClick={toggleWatchlist}
-        onExploreClick={handleExploreClick}
         items={filteredContent}
         currentPage={currentPage}
       />
