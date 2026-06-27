@@ -1,5 +1,3 @@
-// components/TrailerReels.tsx
-
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -11,7 +9,6 @@ import {
   Bookmark, 
   Volume2, 
   VolumeX, 
-  X, 
   ChevronUp,
   ChevronDown,
   Play,
@@ -20,7 +17,8 @@ import {
   Star,
   Calendar,
   Film,
-  Music2
+  Music2,
+  Loader2
 } from 'lucide-react'
 import { ContentItem } from '@/types/content'
 import toast from 'react-hot-toast'
@@ -48,23 +46,22 @@ export default function TrailerReels({
   const [isMuted, setIsMuted] = useState(true)
   const [isPlaying, setIsPlaying] = useState(true)
   const [progress, setProgress] = useState(0)
-  const [showDetails, setShowDetails] = useState(false)
+  const [videoLoaded, setVideoLoaded] = useState(false)
+  const [iframeRefs, setIframeRefs] = useState<{ [key: string]: HTMLIFrameElement | null }>({})
   
   const containerRef = useRef<HTMLDivElement>(null)
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  // 🎬 YouTube URL converter - removes branding
+  // 🎬 YouTube URL converter - extracts video ID
   const getYouTubeEmbedUrl = useCallback((url: string) => {
     if (!url) return ''
     
-    // If it's already an embed URL
+    // If it's already an embed URL, return it
     if (url.includes('/embed/')) {
-      // Remove YouTube branding and controls
-      const baseUrl = url.split('?')[0]
-      return `${baseUrl}?autoplay=1&mute=1&enablejsapi=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark`
+      return url
     }
     
-    // Extract video ID
+    // Extract video ID from various YouTube URL formats
     let videoId = ''
     
     if (url.includes('watch?v=')) {
@@ -73,16 +70,25 @@ export default function TrailerReels({
       videoId = url.split('youtu.be/')[1]?.split('?')[0] || ''
     } else if (url.includes('/v/')) {
       videoId = url.split('/v/')[1]?.split('?')[0] || ''
-    } else if (url.includes('/e/')) {
-      videoId = url.split('/e/')[1]?.split('?')[0] || ''
+    } else if (url.includes('/embed/')) {
+      videoId = url.split('/embed/')[1]?.split('?')[0] || ''
     } else if (url.includes('youtube.com/shorts/')) {
       videoId = url.split('shorts/')[1]?.split('?')[0] || ''
+    } else {
+      // Try to extract any ID from the URL
+      const match = url.match(/(?:v=|\/)([a-zA-Z0-9_-]{11})/)
+      if (match) {
+        videoId = match[1]
+      }
     }
     
-    if (!videoId) return url
+    if (!videoId) {
+      console.warn('Could not extract video ID from:', url)
+      return url
+    }
     
-    // Return embed URL with NO branding
-    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&enablejsapi=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark`
+    // Return clean embed URL with minimal controls
+    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&enablejsapi=1&rel=0&modestbranding=1&controls=0&showinfo=0&iv_load_policy=3&fs=0&autohide=1&color=white&theme=dark&playsinline=1&loop=1`
   }, [])
 
   // 📊 Fetch reels
@@ -93,9 +99,9 @@ export default function TrailerReels({
       
       try {
         console.log('🔍 Fetching reels...')
-        const { data, error, count } = await supabase
+        const { data, error } = await supabase
           .from('content')
-          .select('*', { count: 'exact' })
+          .select('*')
           .not('trailer_url', 'is', null)
           .neq('trailer_url', '')
           .order('rating', { ascending: false })
@@ -104,11 +110,13 @@ export default function TrailerReels({
         if (error) {
           console.error('Error fetching reels:', error)
           setError('Failed to load reels')
+          setIsLoading(false)
           return
         }
 
         if (!data || data.length === 0) {
           setError('No trailers found. Add content with trailer URLs!')
+          setIsLoading(false)
           return
         }
 
@@ -140,7 +148,7 @@ export default function TrailerReels({
             handleNextReel()
             return 0
           }
-          return prev + 0.3
+          return prev + 0.5
         })
       }, 100)
     }
@@ -165,6 +173,7 @@ export default function TrailerReels({
       if (index !== currentIndex && index < reels.length) {
         setCurrentIndex(index)
         setProgress(0)
+        setVideoLoaded(false)
         setIsPlaying(true)
       }
     }
@@ -178,6 +187,7 @@ export default function TrailerReels({
     if (currentIndex < reels.length - 1) {
       setCurrentIndex(prev => prev + 1)
       setProgress(0)
+      setVideoLoaded(false)
       setIsPlaying(true)
       
       const container = containerRef.current
@@ -192,6 +202,7 @@ export default function TrailerReels({
     if (currentIndex > 0) {
       setCurrentIndex(prev => prev - 1)
       setProgress(0)
+      setVideoLoaded(false)
       setIsPlaying(true)
       
       const container = containerRef.current
@@ -223,15 +234,19 @@ export default function TrailerReels({
     if (!currentReel) return
     
     try {
-      await navigator.share({
-        title: currentReel.title,
-        text: `Check out ${currentReel.title} on BADMOUTH!`,
-        url: window.location.href
-      })
+      if (navigator.share) {
+        await navigator.share({
+          title: currentReel.title,
+          text: `Check out ${currentReel.title} on BADMOUTH!`,
+          url: window.location.href
+        })
+      } else {
+        const url = `${window.location.origin}/?details=${currentReel.id}`
+        await navigator.clipboard.writeText(url)
+        toast.success('Link copied to clipboard!')
+      }
     } catch (error) {
-      const url = `${window.location.origin}/?details=${currentReel.id}`
-      await navigator.clipboard.writeText(url)
-      toast.success('Link copied to clipboard!')
+      console.error('Share error:', error)
     }
   }
 
@@ -240,12 +255,16 @@ export default function TrailerReels({
     const currentReel = reels[currentIndex]
     if (!currentReel) return
     
-    if (isInWatchlist && isInWatchlist(currentReel.id)) {
-      await onRemoveFromWatchlist(currentReel.id)
-      toast.success(`Removed "${currentReel.title}" from watchlist`)
-    } else {
-      await onAddToWatchlist(currentReel)
-      toast.success(`❤️ "${currentReel.title}" added to watchlist!`)
+    try {
+      if (isInWatchlist && isInWatchlist(currentReel.id)) {
+        await onRemoveFromWatchlist(currentReel.id)
+        toast.success(`Removed "${currentReel.title}" from watchlist`)
+      } else {
+        await onAddToWatchlist(currentReel)
+        toast.success(`❤️ "${currentReel.title}" added to watchlist!`)
+      }
+    } catch (error) {
+      toast.error('Failed to update watchlist')
     }
   }
 
@@ -254,24 +273,35 @@ export default function TrailerReels({
     const currentReel = reels[currentIndex]
     if (!currentReel) return
     
-    if (isInWatchlist && isInWatchlist(currentReel.id)) {
-      await onRemoveFromWatchlist(currentReel.id)
-      toast.success(`Removed "${currentReel.title}" from saved`)
-    } else {
-      await onAddToWatchlist(currentReel)
-      toast.success(`💾 "${currentReel.title}" saved!`)
+    try {
+      if (isInWatchlist && isInWatchlist(currentReel.id)) {
+        await onRemoveFromWatchlist(currentReel.id)
+        toast.success(`Removed "${currentReel.title}" from saved`)
+      } else {
+        await onAddToWatchlist(currentReel)
+        toast.success(`💾 "${currentReel.title}" saved!`)
+      }
+    } catch (error) {
+      toast.error('Failed to save')
     }
+  }
+
+  // Toggle mute
+  const toggleMute = () => {
+    setIsMuted(!isMuted)
+  }
+
+  // Toggle play/pause
+  const togglePlay = () => {
+    setIsPlaying(!isPlaying)
   }
 
   // 🎬 Loading state
   if (isLoading) {
     return (
       <div className="h-screen w-full bg-black flex flex-col items-center justify-center">
-        <div className="relative w-16 h-16">
-          <div className="absolute inset-0 border-4 border-teal-500/20 rounded-full"></div>
-          <div className="absolute inset-0 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-        <p className="text-gray-400 mt-4 animate-pulse">Loading reels...</p>
+        <Loader2 className="h-12 w-12 animate-spin text-teal-500" />
+        <p className="text-gray-400 mt-4">Loading reels...</p>
       </div>
     )
   }
@@ -286,7 +316,7 @@ export default function TrailerReels({
           {error || 'No trailers found. Add content with trailer URLs to the database.'}
         </p>
         <p className="text-gray-500 text-sm mt-4">
-          Trailer URLs should be from YouTube or Vimeo
+          Trailer URLs should be from YouTube
         </p>
       </div>
     )
@@ -297,7 +327,7 @@ export default function TrailerReels({
   return (
     <div 
       ref={containerRef}
-      className="h-screen w-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide"
+      className="h-screen w-full overflow-y-scroll snap-y snap-mandatory bg-black"
       style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
     >
       {/* Reels Container */}
@@ -314,23 +344,35 @@ export default function TrailerReels({
             {/* Video Container */}
             <div className="absolute inset-0 w-full h-full bg-black">
               {reelEmbedUrl ? (
-                <iframe
-                  src={reelEmbedUrl}
-                  title={reel.title}
-                  className="w-full h-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  allowFullScreen
-                  frameBorder="0"
-                  style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                  }}
-                />
+                <div className="relative w-full h-full">
+                  <iframe
+                    key={`${reel.id}-${isActive}`}
+                    src={reelEmbedUrl}
+                    title={reel.title}
+                    className="w-full h-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                    frameBorder="0"
+                    onLoad={() => {
+                      console.log('Video loaded:', reel.title)
+                      setVideoLoaded(true)
+                    }}
+                    style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  />
+                  {!videoLoaded && isActive && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                      <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="flex items-center justify-center w-full h-full bg-gradient-to-br from-gray-900 to-black">
                   <div className="text-center text-white p-4">
@@ -343,10 +385,10 @@ export default function TrailerReels({
             </div>
 
             {/* Overlay Gradient */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-transparent pointer-events-none" />
 
-            {/* Progress Bar - NO COUNTER */}
+            {/* Progress Bar */}
             {isActive && (
               <div className="absolute top-0 left-0 right-0 h-1 z-30">
                 <div 
@@ -355,8 +397,6 @@ export default function TrailerReels({
                 />
               </div>
             )}
-
-            {/* ❌ REMOVED: Counter (1/50) */}
 
             {/* Content Info - Bottom */}
             {isActive && (
@@ -369,14 +409,14 @@ export default function TrailerReels({
                   {reel.type === 'movie' ? reel.director : reel.artist}
                 </p>
                 
-                <div className="flex flex-wrap items-center gap-3 text-xs md:text-sm">
-                  {reel.rating && (
-                    <span className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-full">
+                <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm">
+                  {reel.rating && reel.rating > 0 && (
+                    <span className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-full backdrop-blur-sm">
                       <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
                       {reel.rating.toFixed(1)}
                     </span>
                   )}
-                  <span className="bg-black/40 px-2 py-1 rounded-full flex items-center gap-1">
+                  <span className="bg-black/40 px-2 py-1 rounded-full flex items-center gap-1 backdrop-blur-sm">
                     {reel.type === 'movie' ? (
                       <Film className="w-3 h-3" />
                     ) : (
@@ -385,12 +425,12 @@ export default function TrailerReels({
                     {reel.type === 'movie' ? 'Movie' : 'Music'}
                   </span>
                   {reel.genre && (
-                    <span className="bg-black/40 px-2 py-1 rounded-full">
+                    <span className="bg-black/40 px-2 py-1 rounded-full backdrop-blur-sm">
                       {reel.genre}
                     </span>
                   )}
                   {reel.year && (
-                    <span className="bg-black/40 px-2 py-1 rounded-full flex items-center gap-1">
+                    <span className="bg-black/40 px-2 py-1 rounded-full flex items-center gap-1 backdrop-blur-sm">
                       <Calendar className="w-3 h-3" />
                       {reel.year}
                     </span>
@@ -436,28 +476,15 @@ export default function TrailerReels({
                   onClick={handleSave}
                   className="group flex flex-col items-center gap-1"
                 >
-                  <div className={`
-                    p-2.5 rounded-full transition-all duration-200
-                    ${isLiked 
-                      ? 'bg-blue-500/30 ring-2 ring-blue-500' 
-                      : 'bg-black/40 hover:bg-black/60 backdrop-blur-sm'
-                    }
-                  `}>
-                    <Bookmark 
-                      className={`w-6 h-6 transition-all duration-200 ${
-                        isLiked ? 'fill-blue-500 text-blue-500' : 'text-white group-hover:scale-110'
-                      }`}
-                    />
+                  <div className="p-2.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200">
+                    <Bookmark className="w-6 h-6 text-white group-hover:scale-110 transition-transform" />
                   </div>
-                  <span className="text-[10px] text-white/80">
-                    {isLiked ? 'Saved' : 'Save'}
-                  </span>
+                  <span className="text-[10px] text-white/80">Save</span>
                 </button>
 
                 {/* Details Button */}
                 <button
                   onClick={() => {
-                    setShowDetails(true)
                     onViewDetails(reel)
                   }}
                   className="group flex flex-col items-center gap-1"
@@ -485,7 +512,7 @@ export default function TrailerReels({
             {isActive && (
               <div className="absolute bottom-4 left-4 right-4 z-30 flex items-center justify-between">
                 <button
-                  onClick={() => setIsPlaying(!isPlaying)}
+                  onClick={togglePlay}
                   className="p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200"
                 >
                   {isPlaying ? (
@@ -496,7 +523,7 @@ export default function TrailerReels({
                 </button>
 
                 <button
-                  onClick={() => setIsMuted(!isMuted)}
+                  onClick={toggleMute}
                   className="p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm transition-all duration-200"
                 >
                   {isMuted ? (
