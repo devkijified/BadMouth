@@ -17,7 +17,7 @@ import TrendingBar from '@/components/TrendingBar'
 import QuickStats from '@/components/QuickStats'
 import WatchlistBasedRecommendations from '@/components/WatchlistBasedRecommendations'
 import TrailerReels from '@/components/TrailerReels'
-import AIRecommendations from '@/components/AIRecommendations'  // ← NEW IMPORT
+import AIRecommendations from '@/components/AIRecommendations'
 import { ContentItem, Category } from '@/types/content'
 import toast from 'react-hot-toast'
 
@@ -59,7 +59,48 @@ export default function HomePage() {
   const [homeMusic, setHomeMusic] = useState<ContentItem[]>([])
   const [homeLoading, setHomeLoading] = useState(true)
 
+  // Onboarding check
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true)
+
   const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller', 'Hip Hop', 'R&B', 'Electronic', 'Jazz']
+
+  // ✅ CHECK ONBOARDING STATUS
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      if (!user) {
+        setCheckingOnboarding(false)
+        return
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('user_taste_profiles')
+          .select('onboarding_completed')
+          .eq('user_id', user.id)
+          .single()
+
+        // If no data or onboarding not completed, redirect to onboarding
+        if (!data?.onboarding_completed) {
+          console.log('🔒 User needs onboarding, redirecting...')
+          router.push('/onboarding')
+          return
+        }
+      } catch (error) {
+        // Table might not exist yet, redirect to onboarding
+        console.warn('⚠️ No taste profile found, redirecting to onboarding')
+        router.push('/onboarding')
+        return
+      } finally {
+        setCheckingOnboarding(false)
+      }
+    }
+
+    if (user) {
+      checkOnboarding()
+    } else {
+      setCheckingOnboarding(false)
+    }
+  }, [user, router])
 
   // Check if user is admin
   useEffect(() => {
@@ -487,7 +528,6 @@ export default function HomePage() {
     router.push('/explore')
   }
 
-  // ✅ NEW: Navigate to onboarding
   const handleOnboardingClick = () => {
     router.push('/onboarding')
   }
@@ -500,12 +540,15 @@ export default function HomePage() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  if (authLoading) {
+  // Loading states
+  if (authLoading || checkingOnboarding) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-teal-500 mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading BADMOUTH...</p>
+          <p className="text-gray-400">
+            {checkingOnboarding ? 'Checking your preferences...' : 'Loading BADMOUTH...'}
+          </p>
         </div>
       </div>
     )
@@ -887,7 +930,7 @@ export default function HomePage() {
             <TrendingBar onViewDetails={handleViewDetails} />
             <QuickStats userId={user.id} />
             <div className="container mx-auto px-4">
-              {/* ✅ ADDED: AI Recommendations Section */}
+              {/* AI Recommendations Section */}
               <div className="mb-8">
                 <AIRecommendations 
                   userId={user.id}
@@ -1180,7 +1223,7 @@ export default function HomePage() {
         currentPage={currentPage}
       />
 
-      {/* ✅ ADDED: AI Onboarding Floating Button */}
+      {/* AI Onboarding Floating Button */}
       <button
         onClick={handleOnboardingClick}
         className="fixed bottom-24 right-4 z-40 md:hidden bg-gradient-to-r from-teal-500 to-blue-500 text-white p-3 rounded-full shadow-lg shadow-teal-500/30 hover:scale-105 transition-transform"
