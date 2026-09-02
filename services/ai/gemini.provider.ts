@@ -3,8 +3,8 @@ import { GoogleGenerativeAI, GenerativeModel, HarmCategory, HarmBlockThreshold }
 import { AIProvider, RecommendationParams, AIRecommendationResponse, TasteProfile } from './types';
 
 export class GeminiProvider implements AIProvider {
-  private model: GenerativeModel | null = null;  // ← Allow null
-  private modelName: string = '';  // ← Initialize with empty string
+  private model: GenerativeModel | null = null;
+  private modelName: string = '';
   private isInitialized: boolean = false;
 
   constructor(apiKey: string, model = 'gemini-2.0-flash-lite-preview-02-05') {
@@ -144,7 +144,9 @@ Return ONLY valid JSON:
   }
 
   private buildExplanationPrompt(content: any, userProfile: any): string {
-    const topGenres = Object.entries(userProfile?.genreAffinities || {})
+    // ✅ FIX: Cast entries to [string, number][] to avoid unknown type
+    const entries = Object.entries(userProfile?.genreAffinities || {}) as [string, number][];
+    const topGenres = entries
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
       .map(([genre]) => genre)
@@ -186,7 +188,9 @@ Return JSON:
           return parsed;
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      // Ignore parsing errors
+    }
     return { recommendations: [] };
   }
 
