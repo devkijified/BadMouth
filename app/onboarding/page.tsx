@@ -112,7 +112,7 @@ export default function OnboardingPage() {
           release_date: movie.release_date,
           vote_average: movie.vote_average,
           genre_ids: movie.genre_ids || [],
-          genres: (movie.genre_ids || []).map(id => GENRE_MAP[id] || 'Unknown'),
+          genres: (movie.genre_ids || []).map((id: number) => GENRE_MAP[id] || 'Unknown'), // ✅ FIX: added type
           mood: getMoodsForGenres(movie.genre_ids || []),
         }));
         
