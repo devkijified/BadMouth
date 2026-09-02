@@ -3,8 +3,8 @@ import { GoogleGenerativeAI, GenerativeModel, HarmCategory, HarmBlockThreshold }
 import { AIProvider, RecommendationParams, AIRecommendationResponse, TasteProfile } from './types';
 
 export class GeminiProvider implements AIProvider {
-  private model: GenerativeModel;
-  private modelName: string;
+  private model: GenerativeModel | null = null;  // ← Allow null
+  private modelName: string = '';  // ← Initialize with empty string
   private isInitialized: boolean = false;
 
   constructor(apiKey: string, model = 'gemini-2.0-flash-lite-preview-02-05') {
@@ -36,7 +36,9 @@ export class GeminiProvider implements AIProvider {
   }
 
   async generateRecommendations(params: RecommendationParams): Promise<AIRecommendationResponse> {
-    if (!this.isInitialized) return this.getFallbackRecommendations(params);
+    if (!this.isInitialized || !this.model) {
+      return this.getFallbackRecommendations(params);
+    }
 
     try {
       const prompt = this.buildRecommendationPrompt(params);
@@ -63,7 +65,9 @@ export class GeminiProvider implements AIProvider {
   }
 
   async explainRecommendation(content: any, userProfile: any): Promise<string> {
-    if (!this.isInitialized) return this.getFallbackExplanation(content, userProfile);
+    if (!this.isInitialized || !this.model) {
+      return this.getFallbackExplanation(content, userProfile);
+    }
 
     try {
       const prompt = this.buildExplanationPrompt(content, userProfile);
@@ -77,7 +81,9 @@ export class GeminiProvider implements AIProvider {
   }
 
   async generateTasteProfile(history: any[]): Promise<TasteProfile> {
-    if (!this.isInitialized || history.length === 0) return this.getDefaultTasteProfile();
+    if (!this.isInitialized || !this.model || history.length === 0) {
+      return this.getDefaultTasteProfile();
+    }
 
     try {
       const prompt = this.buildTasteProfilePrompt(history);
@@ -185,7 +191,15 @@ Return JSON:
   }
 
   private getFallbackRecommendations(params: RecommendationParams): AIRecommendationResponse {
-    return { recommendations: [], metadata: { model: 'fallback', tokensUsed: 0, latencyMs: 0, provider: 'fallback' } };
+    return { 
+      recommendations: [], 
+      metadata: { 
+        model: 'fallback', 
+        tokensUsed: 0, 
+        latencyMs: 0, 
+        provider: 'fallback' 
+      } 
+    };
   }
 
   private getFallbackExplanation(content: any, userProfile: any): string {
