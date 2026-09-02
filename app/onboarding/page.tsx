@@ -117,6 +117,78 @@ const getMoodsForGenres = (genreIds: number[]): string[] => {
   return moods.length > 0 ? moods : ['Entertaining'];
 };
 
+// Fallback movies if TMDB fails
+const getFallbackMovies = (): Movie[] => {
+  return [
+    { 
+      id: '1', 
+      title: 'The Shawshank Redemption', 
+      poster_path: '/q6y0Go1tsGEsmtFryDOJo3dEmqu.jpg',
+      overview: 'Two imprisoned men bond over a number of years.',
+      release_date: '1994-09-23',
+      vote_average: 8.7,
+      genre_ids: [18],
+      genres: ['Drama'],
+      mood: ['Emotional', 'Heartwarming']
+    },
+    { 
+      id: '2', 
+      title: 'The Godfather', 
+      poster_path: '/3bhkrj58Vtu7enYsRolD1fZdja1.jpg',
+      overview: 'The aging patriarch of an organized crime dynasty...',
+      release_date: '1972-03-24',
+      vote_average: 8.7,
+      genre_ids: [80, 18],
+      genres: ['Crime', 'Drama'],
+      mood: ['Dark', 'Epic']
+    },
+    { 
+      id: '3', 
+      title: 'The Dark Knight', 
+      poster_path: '/qJ2tW6WMUDux911r6m7haRef0WH.jpg',
+      overview: 'When the menace known as the Joker wreaks havoc...',
+      release_date: '2008-07-18',
+      vote_average: 8.5,
+      genre_ids: [28, 80, 18],
+      genres: ['Action', 'Crime', 'Drama'],
+      mood: ['Action-packed', 'Dark', 'Suspenseful']
+    },
+    { 
+      id: '4', 
+      title: 'Inception', 
+      poster_path: '/edv5CZvWj09upOsy2Y6IwDhK8bt.jpg',
+      overview: 'A thief who steals corporate secrets through dream-sharing technology...',
+      release_date: '2010-07-16',
+      vote_average: 8.3,
+      genre_ids: [28, 878, 12],
+      genres: ['Action', 'Sci-Fi', 'Adventure'],
+      mood: ['Mind-bending', 'Epic', 'Suspenseful']
+    },
+    { 
+      id: '5', 
+      title: 'Interstellar', 
+      poster_path: '/gEU2QniE6E77NI6lCU6M1NbZvWd.jpg',
+      overview: 'A team of explorers travel through a wormhole in space...',
+      release_date: '2014-11-07',
+      vote_average: 8.6,
+      genre_ids: [878, 12, 18],
+      genres: ['Sci-Fi', 'Adventure', 'Drama'],
+      mood: ['Mind-bending', 'Epic', 'Emotional']
+    },
+    { 
+      id: '6', 
+      title: 'Forrest Gump', 
+      poster_path: '/arw2vcBveWOVZr6pxd9XTd1TdQa.jpg',
+      overview: 'The presidencies of Kennedy and Johnson...',
+      release_date: '1994-07-06',
+      vote_average: 8.5,
+      genre_ids: [35, 18, 10749],
+      genres: ['Comedy', 'Drama', 'Romance'],
+      mood: ['Heartwarming', 'Feel-good', 'Emotional']
+    },
+  ];
+};
+
 export default function OnboardingPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -133,6 +205,7 @@ export default function OnboardingPage() {
     runtimeMin: 90,
     runtimeMax: 150,
   });
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
 
   // Fetch popular movies from TMDB
   useEffect(() => {
@@ -174,99 +247,43 @@ export default function OnboardingPage() {
     fetchPopularMovies();
   }, []);
 
-  // Fallback movies if TMDB fails
-  const getFallbackMovies = (): Movie[] => {
-    return [
-      { 
-        id: '1', 
-        title: 'The Shawshank Redemption', 
-        poster_path: '/q6y0Go1tsGEsmtFryDOJo3dEmqu.jpg',
-        overview: 'Two imprisoned men bond over a number of years.',
-        release_date: '1994-09-23',
-        vote_average: 8.7,
-        genre_ids: [18],
-        genres: ['Drama'],
-        mood: ['Emotional', 'Heartwarming']
-      },
-      { 
-        id: '2', 
-        title: 'The Godfather', 
-        poster_path: '/3bhkrj58Vtu7enYsRolD1fZdja1.jpg',
-        overview: 'The aging patriarch of an organized crime dynasty...',
-        release_date: '1972-03-24',
-        vote_average: 8.7,
-        genre_ids: [80, 18],
-        genres: ['Crime', 'Drama'],
-        mood: ['Dark', 'Epic']
-      },
-      { 
-        id: '3', 
-        title: 'The Dark Knight', 
-        poster_path: '/qJ2tW6WMUDux911r6m7haRef0WH.jpg',
-        overview: 'When the menace known as the Joker wreaks havoc...',
-        release_date: '2008-07-18',
-        vote_average: 8.5,
-        genre_ids: [28, 80, 18],
-        genres: ['Action', 'Crime', 'Drama'],
-        mood: ['Action-packed', 'Dark', 'Suspenseful']
-      },
-      { 
-        id: '4', 
-        title: 'Inception', 
-        poster_path: '/edv5CZvWj09upOsy2Y6IwDhK8bt.jpg',
-        overview: 'A thief who steals corporate secrets through dream-sharing technology...',
-        release_date: '2010-07-16',
-        vote_average: 8.3,
-        genre_ids: [28, 878, 12],
-        genres: ['Action', 'Sci-Fi', 'Adventure'],
-        mood: ['Mind-bending', 'Epic', 'Suspenseful']
-      },
-      { 
-        id: '5', 
-        title: 'Interstellar', 
-        poster_path: '/gEU2QniE6E77NI6lCU6M1NbZvWd.jpg',
-        overview: 'A team of explorers travel through a wormhole in space...',
-        release_date: '2014-11-07',
-        vote_average: 8.6,
-        genre_ids: [878, 12, 18],
-        genres: ['Sci-Fi', 'Adventure', 'Drama'],
-        mood: ['Mind-bending', 'Epic', 'Emotional']
-      },
-      { 
-        id: '6', 
-        title: 'Forrest Gump', 
-        poster_path: '/arw2vcBveWOVZr6pxd9XTd1TdQa.jpg',
-        overview: 'The presidencies of Kennedy and Johnson...',
-        release_date: '1994-07-06',
-        vote_average: 8.5,
-        genre_ids: [35, 18, 10749],
-        genres: ['Comedy', 'Drama', 'Romance'],
-        mood: ['Heartwarming', 'Feel-good', 'Emotional']
-      },
-    ];
-  };
-
   // Check if user already onboarded
   useEffect(() => {
     const checkOnboarding = async () => {
-      if (!user) return;
+      if (!user) {
+        setCheckingOnboarding(false);
+        return;
+      }
       
       try {
+        console.log('🔍 Checking onboarding status for user:', user.id);
         const { data, error } = await supabase
           .from('user_taste_profiles')
-          .select('onboarding_completed')
+          .select('onboarding_completed, id')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (data?.onboarding_completed) {
+        console.log('📊 Onboarding data:', data);
+
+        if (data?.onboarding_completed === true) {
+          console.log('✅ User already onboarded, redirecting to home');
           router.push('/');
+          return;
         }
+
+        console.log('📝 User needs onboarding');
+        setCheckingOnboarding(false);
       } catch (error) {
-        console.log('No profile found, continuing with onboarding');
+        console.error('Error checking onboarding:', error);
+        setCheckingOnboarding(false);
       }
     };
 
-    checkOnboarding();
+    if (user) {
+      checkOnboarding();
+    } else {
+      setCheckingOnboarding(false);
+    }
   }, [user, router]);
 
   const toggleMovie = (movie: Movie) => {
@@ -302,7 +319,6 @@ export default function OnboardingPage() {
     );
   };
 
-  // ✅ UPDATED: Delete existing profile first, then insert
   const handleSave = async () => {
     if (!user) {
       toast.error('Please sign in');
@@ -357,7 +373,7 @@ export default function OnboardingPage() {
         .slice(0, 5)
         .map(([mood]) => mood);
 
-      // ✅ STEP 1: Delete existing profile if it exists
+      // Delete existing profile if it exists
       console.log('🗑️ Deleting existing profile for user:', user.id);
       const { error: deleteError } = await supabase
         .from('user_taste_profiles')
@@ -371,7 +387,7 @@ export default function OnboardingPage() {
         console.log('✅ Existing profile deleted (if any)');
       }
 
-      // ✅ STEP 2: Insert new profile
+      // Insert new profile
       console.log('📝 Inserting new profile for user:', user.id);
       const { data, error } = await supabase
         .from('user_taste_profiles')
@@ -602,12 +618,15 @@ export default function OnboardingPage() {
     }
   };
 
-  if (loadingMovies) {
+  // Show loading while checking onboarding
+  if (checkingOnboarding || loadingMovies) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-teal-500 mx-auto mb-4" />
-          <p className="text-gray-400">Loading popular movies...</p>
+          <p className="text-gray-400">
+            {checkingOnboarding ? 'Checking your preferences...' : 'Loading popular movies...'}
+          </p>
         </div>
       </div>
     );
