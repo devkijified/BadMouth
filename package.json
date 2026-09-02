@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "tmdb:test": "npx ts-node scripts/test-tmdb.ts",
+    "tmdb:sync": "npx ts-node scripts/sync-tmdb.ts"
   },
   "dependencies": {
     "next": "14.0.4",
@@ -20,7 +22,9 @@
     "react-hot-toast": "^2.4.1",
     "react-rating-stars-component": "^2.2.0",
     "resend": "^3.2.0",
-    "swiper": "^11.0.7"
+    "swiper": "^11.0.7",
+    "@google/generative-ai": "^0.21.0",
+    "axios": "^1.7.7"
   },
   "devDependencies": {
     "@types/node": "^20.10.5",
@@ -29,6 +33,7 @@
     "autoprefixer": "^10.4.16",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2"
   }
 }
