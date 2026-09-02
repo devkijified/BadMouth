@@ -10,23 +10,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User ID required' }, { status: 401 });
     }
 
-    const searchParams = request.nextUrl.searchParams;
-    const mood = searchParams.get('mood') || undefined;
-    const language = searchParams.get('language') || undefined;
-    const limit = parseInt(searchParams.get('limit') || '10');
-
-    // Get user data
-    const { data: watchHistory } = await supabase
-      .from('user_watch_history')
-      .select('*, content(*)')
-      .eq('user_id', userId)
-      .limit(50);
-
+    // Get user taste profile
     const { data: tasteProfile } = await supabase
       .from('user_taste_profiles')
       .select('*')
       .eq('user_id', userId)
       .single();
+
+    // Get watch history
+    const { data: watchHistory } = await supabase
+      .from('user_watch_history')
+      .select('*, content(*)')
+      .eq('user_id', userId)
+      .limit(50);
 
     // Get AI recommendations
     const aiProvider = getAIProvider();
@@ -34,9 +30,7 @@ export async function GET(request: NextRequest) {
       userId,
       userTasteProfile: tasteProfile,
       watchHistory: watchHistory || [],
-      mood,
-      language,
-      limit,
+      limit: 10,
       excludeIds: watchHistory?.map(h => h.content_id) || [],
     });
 
@@ -54,6 +48,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, recommendations: merged });
   } catch (error: any) {
+    console.error('Recommendation error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
