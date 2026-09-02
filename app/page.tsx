@@ -17,6 +17,7 @@ import TrendingBar from '@/components/TrendingBar'
 import QuickStats from '@/components/QuickStats'
 import WatchlistBasedRecommendations from '@/components/WatchlistBasedRecommendations'
 import TrailerReels from '@/components/TrailerReels'
+import AIRecommendations from '@/components/AIRecommendations'  // ← NEW IMPORT
 import { ContentItem, Category } from '@/types/content'
 import toast from 'react-hot-toast'
 
@@ -486,6 +487,11 @@ export default function HomePage() {
     router.push('/explore')
   }
 
+  // ✅ NEW: Navigate to onboarding
+  const handleOnboardingClick = () => {
+    router.push('/onboarding')
+  }
+
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50)
@@ -881,6 +887,16 @@ export default function HomePage() {
             <TrendingBar onViewDetails={handleViewDetails} />
             <QuickStats userId={user.id} />
             <div className="container mx-auto px-4">
+              {/* ✅ ADDED: AI Recommendations Section */}
+              <div className="mb-8">
+                <AIRecommendations 
+                  userId={user.id}
+                  onViewDetails={handleViewDetails}
+                  onAddToWatchlist={addToWatchlist}
+                  isInWatchlist={isInWatchlist}
+                />
+              </div>
+              
               <HomeFeed 
                 onViewDetails={handleViewDetails}
                 onRecommend={handleRecommend}
@@ -1163,6 +1179,15 @@ export default function HomePage() {
         items={filteredContent}
         currentPage={currentPage}
       />
+
+      {/* ✅ ADDED: AI Onboarding Floating Button */}
+      <button
+        onClick={handleOnboardingClick}
+        className="fixed bottom-24 right-4 z-40 md:hidden bg-gradient-to-r from-teal-500 to-blue-500 text-white p-3 rounded-full shadow-lg shadow-teal-500/30 hover:scale-105 transition-transform"
+        aria-label="AI Recommendations"
+      >
+        <Sparkles size={20} />
+      </button>
     </div>
   )
 }
