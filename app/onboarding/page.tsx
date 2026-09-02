@@ -297,19 +297,18 @@ export default function OnboardingPage() {
       const movies = getMoviesByMood(moodId, popularMovies);
       allMoodMovies.push(...movies);
     });
-    // Remove duplicates
     return allMoodMovies.filter((movie, index, self) => 
       index === self.findIndex(m => m.id === movie.id)
     );
   };
 
+  // ✅ UPDATED: Delete existing profile first, then insert
   const handleSave = async () => {
     if (!user) {
       toast.error('Please sign in');
       return;
     }
 
-    // Check if user has selected movies OR moods
     if (selectedMovies.length === 0 && selectedMoods.length === 0) {
       toast.error('Please select at least one movie or mood');
       return;
@@ -335,9 +334,8 @@ export default function OnboardingPage() {
       selectedMoods.forEach(moodId => {
         const moodOption = MOOD_OPTIONS.find(m => m.id === moodId);
         if (moodOption) {
-          moodCounts[moodOption.label] = (moodCounts[moodOption.label] || 0) + 2; // Higher weight for direct mood selection
+          moodCounts[moodOption.label] = (moodCounts[moodOption.label] || 0) + 2;
           
-          // Add genre affinities based on mood
           const genreIds = MOOD_TO_GENRES[moodId] || [];
           genreIds.forEach(genreId => {
             const genreName = GENRE_MAP[genreId];
@@ -359,9 +357,25 @@ export default function OnboardingPage() {
         .slice(0, 5)
         .map(([mood]) => mood);
 
+      // ✅ STEP 1: Delete existing profile if it exists
+      console.log('🗑️ Deleting existing profile for user:', user.id);
+      const { error: deleteError } = await supabase
+        .from('user_taste_profiles')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (deleteError) {
+        console.error('Delete error:', deleteError);
+        // Continue anyway - if it doesn't exist, that's fine
+      } else {
+        console.log('✅ Existing profile deleted (if any)');
+      }
+
+      // ✅ STEP 2: Insert new profile
+      console.log('📝 Inserting new profile for user:', user.id);
       const { data, error } = await supabase
         .from('user_taste_profiles')
-        .upsert({
+        .insert({
           user_id: user.id,
           genre_affinities: genreAffinities,
           mood_preferences: moodPreferences,
@@ -369,16 +383,18 @@ export default function OnboardingPage() {
           preferred_runtime_min: preferences.runtimeMin || 90,
           preferred_runtime_max: preferences.runtimeMax || 150,
           onboarding_completed: true,
+          created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
         .select();
 
       if (error) {
-        console.error('Supabase error:', error);
+        console.error('Supabase insert error:', error);
         toast.error(`Failed to save: ${error.message}`);
         return;
       }
 
+      console.log('✅ Profile saved successfully!', data);
       toast.success(`🎉 Great choices! We've learned your taste!`);
       router.push('/');
     } catch (error: any) {
