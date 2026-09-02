@@ -56,9 +56,6 @@ export class GeminiProvider implements AIProvider {
     }
   }
 
-  /**
-   * Generate personalized recommendations using Gemini
-   */
   async generateRecommendations(params: RecommendationParams): Promise<AIRecommendationResponse> {
     const startTime = Date.now();
 
@@ -75,16 +72,13 @@ export class GeminiProvider implements AIProvider {
       const response = await result.response;
       const text = response.text();
 
-      // Log token usage for cost tracking
       const usage = await result.response.usageMetadata;
       if (usage) {
         console.log(`📊 Gemini Token Usage - Prompt: ${usage.promptTokenCount}, Response: ${usage.candidatesTokenCount}, Total: ${usage.totalTokenCount}`);
       }
 
-      // Parse the JSON response
       const parsed = this.parseRecommendationResponse(text);
       
-      // Ensure we have recommendations
       if (!parsed.recommendations || parsed.recommendations.length === 0) {
         console.warn('⚠️ No recommendations found in Gemini response, using fallback');
         return this.getFallbackRecommendations(params);
@@ -105,9 +99,6 @@ export class GeminiProvider implements AIProvider {
     }
   }
 
-  /**
-   * Generate an explanation for why a movie is recommended
-   */
   async explainRecommendation(content: any, userProfile: any): Promise<string> {
     if (!this.isInitialized) {
       return this.getFallbackExplanation(content, userProfile);
@@ -128,9 +119,6 @@ export class GeminiProvider implements AIProvider {
     }
   }
 
-  /**
-   * Generate a taste profile from watch history
-   */
   async generateTasteProfile(history: any[]): Promise<TasteProfile> {
     if (!this.isInitialized || history.length === 0) {
       console.log('📊 Using default taste profile (no history or Gemini not initialized)');
@@ -145,7 +133,6 @@ export class GeminiProvider implements AIProvider {
       const response = await result.response;
       const text = response.text();
 
-      // Try to parse JSON from response
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         try {
@@ -170,13 +157,6 @@ export class GeminiProvider implements AIProvider {
     }
   }
 
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // Private helper methods
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  /**
-   * Build the recommendation prompt for Gemini
-   */
   private buildRecommendationPrompt(params: RecommendationParams): string {
     const { userTasteProfile, watchHistory, mood, language, minRuntime, maxRuntime, genres, limit = 10 } = params;
 
@@ -221,9 +201,6 @@ ${genres?.length ? `- Preferred Genres: ${genres.join(', ')}` : ''}
     return prompt;
   }
 
-  /**
-   * Build the explanation prompt for Gemini
-   */
   private buildExplanationPrompt(content: any, userProfile: any): string {
     const topGenres = Object.entries(userProfile?.genreAffinities || {})
       .sort((a, b) => b[1] - a[1])
@@ -247,9 +224,6 @@ Example: "Based on your love for mind-bending sci-fi like Inception, this movie 
     return prompt;
   }
 
-  /**
-   * Build the taste profile prompt for Gemini
-   */
   private buildTasteProfilePrompt(history: any[]): string {
     return `Based on this user's watching history and ratings, generate a detailed taste profile.
 
@@ -272,16 +246,11 @@ Return ONLY valid JSON in this exact format:
 }`;
   }
 
-  /**
-   * Parse the recommendation response from Gemini
-   */
   private parseRecommendationResponse(text: string): any {
     try {
-      // Try to find JSON in the response
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        // Validate that it has recommendations
         if (parsed.recommendations && Array.isArray(parsed.recommendations)) {
           return parsed;
         }
@@ -290,15 +259,13 @@ Return ONLY valid JSON in this exact format:
       console.warn('⚠️ Could not parse Gemini response as JSON');
     }
     
-    // Try to extract recommendations from text
+    // Fallback: Try to extract from text
     const lines = text.split('\n').filter(line => line.trim());
     const recommendations = [];
     
     for (const line of lines) {
-      // Look for patterns like "contentId", "score", "reason"
       if (line.includes('contentId') || line.includes('"contentId"')) {
         try {
-          // Try to parse individual JSON objects
           const objMatch = line.match(/\{[\s\S]*?\}/);
           if (objMatch) {
             const obj = JSON.parse(objMatch[0]);
@@ -315,11 +282,8 @@ Return ONLY valid JSON in this exact format:
     return { recommendations };
   }
 
-  /**
-   * Fallback recommendations when Gemini is not available
-   */
   private getFallbackRecommendations(params: RecommendationParams): AIRecommendationResponse {
-    console.log('📊 Using fallback recommendations (TMDB trending)');
+    console.log('📊 Using fallback recommendations');
     return {
       recommendations: [],
       metadata: {
@@ -331,9 +295,6 @@ Return ONLY valid JSON in this exact format:
     };
   }
 
-  /**
-   * Fallback explanation when Gemini is not available
-   */
   private getFallbackExplanation(content: any, userProfile: any): string {
     const topGenre = Object.entries(userProfile?.genreAffinities || {})
       .sort((a, b) => b[1] - a[1])
@@ -343,9 +304,6 @@ Return ONLY valid JSON in this exact format:
     return `Based on your love for ${topGenre}, "${content.title}" is a great match that aligns with your viewing preferences.`;
   }
 
-  /**
-   * Default taste profile when no history is available
-   */
   private getDefaultTasteProfile(): TasteProfile {
     return {
       genreAffinities: {},
