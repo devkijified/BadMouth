@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Sparkles, Star, ChevronRight, Loader2 } from 'lucide-react';
+import { Sparkles, Star, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { ContentItem } from '@/types/content';
 import toast from 'react-hot-toast';
@@ -23,7 +23,7 @@ export default function AIRecommendations({
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasProfile, setHasProfile] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     checkTasteProfile();
@@ -31,58 +31,84 @@ export default function AIRecommendations({
 
   const checkTasteProfile = async () => {
     try {
-      const { data } = await supabase
+      setLoading(true);
+      setError(null);
+      
+      const { data, error } = await supabase
         .from('user_taste_profiles')
-        .select('id')
+        .select('id, onboarding_completed')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
-      setHasProfile(!!data);
-      if (data) {
-        fetchRecommendations();
+      if (error) {
+        console.error('Error checking taste profile:', error);
+        setError('Could not check your preferences');
+        setHasProfile(false);
+        setLoading(false);
+        return;
+      }
+
+      // ✅ FIX: Check if profile exists AND onboarding is completed
+      const profileExists = !!data;
+      const onboardingCompleted = data?.onboarding_completed === true;
+      
+      setHasProfile(profileExists && onboardingCompleted);
+      
+      if (profileExists && onboardingCompleted) {
+        console.log('✅ User has taste profile, fetching recommendations');
+        await fetchRecommendations();
       } else {
+        console.log('📝 User needs onboarding or profile incomplete');
         setLoading(false);
       }
     } catch (error) {
+      console.error('Error in checkTasteProfile:', error);
+      setError('Something went wrong');
       setLoading(false);
     }
   };
 
   const fetchRecommendations = async () => {
     setLoading(true);
+    setError(null);
+    
     try {
       const response = await fetch('/api/recommendations', {
         headers: { 'x-user-id': userId },
       });
       const data = await response.json();
       
-      if (data.success) {
-        setRecommendations(data.recommendations || []);
+      if (data.success && data.recommendations) {
+        // Filter out recommendations without content
+        const validRecs = data.recommendations.filter((rec: any) => rec.content !== null);
+        setRecommendations(validRecs);
+        
+        if (validRecs.length === 0) {
+          setError('No recommendations found. Try selecting more movies or moods!');
+        }
+      } else {
+        setError('Could not get recommendations');
       }
     } catch (error) {
       console.error('Error fetching AI recommendations:', error);
+      setError('Failed to load recommendations');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGetRecommendations = async () => {
-    // Check if user has taste profile
-    const { data } = await supabase
-      .from('user_taste_profiles')
-      .select('id')
-      .eq('user_id', userId)
-      .single();
-
-    if (data) {
-      // Has profile - get recommendations
-      await fetchRecommendations();
-    } else {
-      // No profile - show onboarding
-      window.location.href = '/onboarding';
-    }
+  // Handle refresh
+  const handleRefresh = async () => {
+    await fetchRecommendations();
+    toast.success('Recommendations refreshed!');
   };
 
+  // Handle onboarding
+  const handleGetStarted = () => {
+    window.location.href = '/onboarding';
+  };
+
+  // ✅ Show loading state
   if (loading) {
     return (
       <div className="bg-gray-900/50 rounded-xl p-6 text-center">
@@ -92,7 +118,7 @@ export default function AIRecommendations({
     );
   }
 
-  // Show onboarding prompt if no taste profile
+  // ✅ Show onboarding prompt if no profile
   if (!hasProfile) {
     return (
       <div className="bg-gradient-to-r from-teal-600/20 to-blue-600/20 rounded-xl p-6 border border-teal-500/30">
@@ -107,7 +133,7 @@ export default function AIRecommendations({
               Tell us what you like and we'll find the perfect matches.
             </p>
             <button
-              onClick={handleGetRecommendations}
+              onClick={handleGetStarted}
               className="mt-3 px-4 py-2 bg-gradient-to-r from-teal-500 to-blue-500 rounded-lg text-sm font-semibold hover:opacity-90 transition flex items-center gap-2"
             >
               Get Started <ChevronRight size={16} />
@@ -118,22 +144,39 @@ export default function AIRecommendations({
     );
   }
 
-  // No recommendations yet
+  // ✅ Show error state
+  if (error) {
+    return (
+      <div className="bg-gray-900/50 rounded-xl p-6 text-center">
+        <Sparkles className="w-8 h-8 text-gray-500 mx-auto" />
+        <p className="text-gray-400 mt-2">{error}</p>
+        <button
+          onClick={handleRefresh}
+          className="mt-2 px-4 py-2 bg-teal-500 rounded-lg text-sm hover:bg-teal-600 transition flex items-center gap-2 mx-auto"
+        >
+          <RefreshCw size={14} /> Try Again
+        </button>
+      </div>
+    );
+  }
+
+  // ✅ No recommendations yet
   if (recommendations.length === 0) {
     return (
       <div className="bg-gray-900/50 rounded-xl p-6 text-center">
         <Sparkles className="w-8 h-8 text-gray-500 mx-auto" />
         <p className="text-gray-400 mt-2">No AI recommendations yet</p>
         <button
-          onClick={fetchRecommendations}
-          className="mt-2 text-teal-400 hover:text-teal-300 text-sm"
+          onClick={handleRefresh}
+          className="mt-2 px-4 py-2 bg-teal-500 rounded-lg text-sm hover:bg-teal-600 transition flex items-center gap-2 mx-auto"
         >
-          Generate recommendations
+          <RefreshCw size={14} /> Generate recommendations
         </button>
       </div>
     );
   }
 
+  // ✅ Show recommendations
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -143,15 +186,15 @@ export default function AIRecommendations({
           <span className="text-xs bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded-full">Powered by Gemini</span>
         </div>
         <button
-          onClick={fetchRecommendations}
-          className="text-sm text-gray-400 hover:text-white transition"
+          onClick={handleRefresh}
+          className="text-sm text-gray-400 hover:text-white transition flex items-center gap-1"
         >
-          Refresh
+          <RefreshCw size={14} /> Refresh
         </button>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {recommendations.map((rec: any) => {
+        {recommendations.slice(0, 10).map((rec: any) => {
           const item = rec.content;
           if (!item) return null;
           
@@ -196,7 +239,6 @@ export default function AIRecommendations({
                     <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
                   </svg>
                 </button>
-                {/* AI Score Badge */}
                 {rec.score && (
                   <div className="absolute bottom-2 left-2 bg-black/70 px-1.5 py-0.5 rounded text-[10px] text-teal-400">
                     {Math.round(rec.score * 100)}% match
