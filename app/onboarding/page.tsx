@@ -1,12 +1,15 @@
 // app/onboarding/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase/client';
-import { Film, Music, Heart, Star, Clock, Languages, ChevronRight } from 'lucide-react';
+import { ChevronRight, Sparkles, Film, Heart, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+const allGenres = ['Action', 'Comedy', 'Drama', 'Sci-Fi', 'Thriller', 'Romance', 'Horror', 'Adventure', 'Animation', 'Documentary'];
+const allMoods = ['Mind-bending', 'Feel-good', 'Suspenseful', 'Emotional', 'Thought-provoking', 'Action-packed', 'Heartwarming', 'Dark', 'Quirky', 'Epic'];
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -19,11 +22,7 @@ export default function OnboardingPage() {
     languages: ['en'],
     runtimeMin: 90,
     runtimeMax: 150,
-    watchedMovies: [] as string[],
   });
-
-  const allGenres = ['Action', 'Comedy', 'Drama', 'Sci-Fi', 'Thriller', 'Romance', 'Horror', 'Adventure', 'Animation', 'Documentary'];
-  const allMoods = ['Mind-bending', 'Feel-good', 'Suspenseful', 'Emotional', 'Thought-provoking', 'Action-packed', 'Heartwarming', 'Dark', 'Quirky', 'Epic'];
 
   const handleGenreToggle = (genre: string) => {
     setPreferences(prev => ({
@@ -43,9 +42,14 @@ export default function OnboardingPage() {
     }));
   };
 
-  const handleSavePreferences = async () => {
+  const handleSave = async () => {
     if (!user) {
-      toast.error('Please sign in first');
+      toast.error('Please sign in');
+      return;
+    }
+
+    if (preferences.genres.length === 0) {
+      toast.error('Please select at least one genre');
       return;
     }
 
@@ -55,7 +59,7 @@ export default function OnboardingPage() {
         .from('user_taste_profiles')
         .upsert({
           user_id: user.id,
-          genre_affinities: preferences.genres.reduce((acc, genre) => ({ ...acc, [genre]: 0.8 }), {}),
+          genre_affinities: preferences.genres.reduce((acc, g) => ({ ...acc, [g]: 0.8 }), {}),
           mood_preferences: preferences.moods,
           language_preferences: preferences.languages,
           preferred_runtime_min: preferences.runtimeMin,
@@ -65,10 +69,10 @@ export default function OnboardingPage() {
 
       if (error) throw error;
 
-      toast.success('Preferences saved!');
+      toast.success('Preferences saved! Getting your recommendations...');
       router.push('/');
     } catch (error) {
-      console.error('Error saving preferences:', error);
+      console.error('Error:', error);
       toast.error('Failed to save preferences');
     } finally {
       setLoading(false);
@@ -76,24 +80,30 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
       <div className="max-w-2xl w-full">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <Sparkles className="w-8 h-8 text-teal-500" />
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-teal-500 to-blue-500 bg-clip-text text-transparent">
+              BADMOUTH AI
+            </h1>
+          </div>
+          <p className="text-gray-400">Let's personalize your movie recommendations</p>
+        </div>
+
         {/* Progress */}
         <div className="flex items-center gap-2 mb-8">
           <div className={`h-1 flex-1 rounded ${step >= 1 ? 'bg-teal-500' : 'bg-gray-700'}`} />
           <div className={`h-1 flex-1 rounded ${step >= 2 ? 'bg-teal-500' : 'bg-gray-700'}`} />
-          <div className={`h-1 flex-1 rounded ${step >= 3 ? 'bg-teal-500' : 'bg-gray-700'}`} />
         </div>
 
-        <h1 className="text-3xl font-bold mb-2">Welcome to BADMOUTH</h1>
-        <p className="text-gray-400 mb-8">Let's personalize your movie recommendations</p>
-
-        {/* Step 1: Genres */}
         {step === 1 && (
-          <div>
+          <div className="bg-gray-900/50 rounded-xl p-6">
             <h2 className="text-xl font-semibold mb-2">What genres do you love?</h2>
             <p className="text-gray-400 text-sm mb-6">Select all that apply</p>
-            <div className="flex flex-wrap gap-2 mb-8">
+            <div className="flex flex-wrap gap-2 mb-6">
               {allGenres.map(genre => (
                 <button
                   key={genre}
@@ -110,18 +120,18 @@ export default function OnboardingPage() {
             </div>
             <button
               onClick={() => setStep(2)}
-              className="w-full py-3 bg-teal-500 rounded-lg font-semibold hover:bg-teal-600 transition flex items-center justify-center gap-2"
+              disabled={preferences.genres.length === 0}
+              className="w-full py-3 bg-teal-500 rounded-lg font-semibold hover:bg-teal-600 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               Next <ChevronRight size={18} />
             </button>
           </div>
         )}
 
-        {/* Step 2: Moods & Preferences */}
         {step === 2 && (
-          <div>
-            <h2 className="text-xl font-semibold mb-2">What mood are you usually in?</h2>
-            <p className="text-gray-400 text-sm mb-6">Pick your favorite movie moods</p>
+          <div className="bg-gray-900/50 rounded-xl p-6">
+            <h2 className="text-xl font-semibold mb-2">What mood are you in?</h2>
+            <p className="text-gray-400 text-sm mb-6">Pick your favorite movie vibes</p>
             <div className="flex flex-wrap gap-2 mb-6">
               {allMoods.map(mood => (
                 <button
@@ -129,7 +139,7 @@ export default function OnboardingPage() {
                   onClick={() => handleMoodToggle(mood)}
                   className={`px-4 py-2 rounded-full text-sm transition ${
                     preferences.moods.includes(mood)
-                      ? 'bg-teal-500 text-white'
+                      ? 'bg-blue-500 text-white'
                       : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                   }`}
                 >
@@ -138,18 +148,18 @@ export default function OnboardingPage() {
               ))}
             </div>
 
-            <div className="bg-gray-900 rounded-lg p-4 mb-6">
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <Clock size={18} /> Runtime Preference
-              </h3>
-              <div className="flex items-center gap-4">
+            <div className="bg-gray-800/50 rounded-lg p-4 mb-6">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <Clock size={16} /> Runtime preference
+              </label>
+              <div className="flex items-center gap-4 mt-2">
                 <input
                   type="range"
                   min="60"
                   max="240"
                   value={preferences.runtimeMin}
                   onChange={(e) => setPreferences(prev => ({ ...prev, runtimeMin: parseInt(e.target.value) }))}
-                  className="flex-1"
+                  className="flex-1 accent-teal-500"
                 />
                 <span className="text-sm text-gray-400">{preferences.runtimeMin}-{preferences.runtimeMax} min</span>
               </div>
@@ -163,61 +173,11 @@ export default function OnboardingPage() {
                 Back
               </button>
               <button
-                onClick={() => setStep(3)}
-                className="flex-1 py-3 bg-teal-500 rounded-lg font-semibold hover:bg-teal-600 transition flex items-center justify-center gap-2"
-              >
-                Next <ChevronRight size={18} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Summary & Save */}
-        {step === 3 && (
-          <div>
-            <h2 className="text-xl font-semibold mb-2">You're all set!</h2>
-            <p className="text-gray-400 text-sm mb-6">Here's your taste profile</p>
-
-            <div className="bg-gray-900 rounded-lg p-4 mb-6 space-y-3">
-              <div>
-                <span className="text-sm text-gray-400">Genres</span>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {preferences.genres.length > 0 ? (
-                    preferences.genres.map(g => (
-                      <span key={g} className="px-2 py-0.5 bg-teal-500/20 text-teal-400 rounded text-xs">{g}</span>
-                    ))
-                  ) : (
-                    <span className="text-sm text-gray-500">No genres selected</span>
-                  )}
-                </div>
-              </div>
-              <div>
-                <span className="text-sm text-gray-400">Moods</span>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {preferences.moods.map(m => (
-                    <span key={m} className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs">{m}</span>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <span className="text-sm text-gray-400">Runtime</span>
-                <p className="text-sm">{preferences.runtimeMin}-{preferences.runtimeMax} minutes</p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setStep(2)}
-                className="flex-1 py-3 bg-gray-800 rounded-lg font-semibold hover:bg-gray-700 transition"
-              >
-                Back
-              </button>
-              <button
-                onClick={handleSavePreferences}
+                onClick={handleSave}
                 disabled={loading}
-                className="flex-1 py-3 bg-teal-500 rounded-lg font-semibold hover:bg-teal-600 transition disabled:opacity-50"
+                className="flex-1 py-3 bg-gradient-to-r from-teal-500 to-blue-500 rounded-lg font-semibold hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {loading ? 'Saving...' : 'Save & Get Started'}
+                {loading ? 'Saving...' : 'Get Recommendations'} <Sparkles size={16} />
               </button>
             </div>
           </div>
