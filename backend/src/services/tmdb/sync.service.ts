@@ -1,6 +1,7 @@
 // backend/src/services/tmdb/sync.service.ts
-import { supabase } from '@/lib/supabase/client';
+import { supabase } from '../supabase/client';
 import { TMDBClient } from './client';
+import { TMDBMovie, TMDBPerson } from './types';
 
 export class TMDBSyncService {
   private tmdb: TMDBClient;
@@ -9,7 +10,7 @@ export class TMDBSyncService {
     this.tmdb = tmdbClient;
   }
 
-  async syncTrendingMovies() {
+  async syncTrendingMovies(): Promise<{ syncedCount: number; skippedCount: number }> {
     console.log('🔄 Syncing trending movies from TMDB...');
     
     try {
@@ -51,15 +52,16 @@ export class TMDBSyncService {
     }
   }
 
-  async syncAllMovies() {
+  async syncAllMovies(limit = 100): Promise<{ totalSynced: number; totalSkipped: number }> {
     console.log('🔄 Syncing all movies from TMDB...');
     
     let page = 1;
     let totalSynced = 0;
     let totalSkipped = 0;
     let hasMore = true;
+    let totalProcessed = 0;
 
-    while (hasMore && page <= 10) { // Limit to 10 pages initially
+    while (hasMore && totalProcessed < limit) {
       try {
         const movies = await this.tmdb.discoverMovies({
           page,
@@ -74,6 +76,8 @@ export class TMDBSyncService {
         console.log(`📄 Page ${page}: Found ${movies.results.length} movies`);
 
         for (const movie of movies.results) {
+          if (totalProcessed >= limit) break;
+
           // Check if content exists
           const { data: existing } = await supabase
             .from('content')
@@ -94,11 +98,12 @@ export class TMDBSyncService {
           } else {
             totalSkipped++;
           }
+          totalProcessed++;
         }
 
         page++;
-        // Rate limiting - wait 1 second between pages
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Rate limiting - wait 500ms between pages
+        await new Promise(resolve => setTimeout(resolve, 500));
 
       } catch (error) {
         console.error(`❌ Error on page ${page}:`, error);
@@ -110,9 +115,11 @@ export class TMDBSyncService {
     return { totalSynced, totalSkipped };
   }
 
-  async createContentFromTMDB(details: any) {
+  async createContentFromTMDB(details: TMDBMovie): Promise<any> {
     // Get YouTube trailer
-    const trailer = details.videos?.results?.find((v: any) => v.type === 'Trailer' && v.site === 'YouTube');
+    const trailer = details.videos?.results?.find(
+      (v: any) => v.type === 'Trailer' && v.site === 'YouTube'
+    );
     const trailerUrl = trailer ? `https://www.youtube.com/embed/${trailer.key}` : null;
 
     // Get director
@@ -135,7 +142,7 @@ export class TMDBSyncService {
         genre: details.genres?.map((g: any) => g.name).join(', ') || null,
         trailer_url: trailerUrl,
         runtime: `${details.runtime} min`,
-        platforms: [], // You can add streaming platform data here
+        platforms: [],
       })
       .select()
       .single();
@@ -250,16 +257,15 @@ export class TMDBSyncService {
     return content;
   }
 
-  async syncSpecificMovie(tmdbId: number) {
+  async syncSpecificMovie(tmdbId: number): Promise<any> {
     console.log(`🎬 Syncing specific movie: ${tmdbId}`);
     const details = await this.tmdb.getMovieDetails(tmdbId);
     return await this.createContentFromTMDB(details);
   }
 
-  async updateExistingMovies() {
+  async updateExistingMovies(): Promise<{ updated: number; failed: number }> {
     console.log('🔄 Updating existing movies from TMDB...');
     
-    // Get content without metadata
     const { data: content } = await supabase
       .from('content')
       .select('id, title, year')
@@ -267,7 +273,7 @@ export class TMDBSyncService {
 
     if (!content || content.length === 0) {
       console.log('No content to update');
-      return { updated: 0 };
+      return { updated: 0, failed: 0 };
     }
 
     let updated = 0;
@@ -275,7 +281,6 @@ export class TMDBSyncService {
 
     for (const item of content) {
       try {
-        // Search for movie in TMDB
         const search = await this.tmdb.searchMovies(item.title);
         if (search.results && search.results.length > 0) {
           const movie = search.results[0];
@@ -289,7 +294,6 @@ export class TMDBSyncService {
         failed++;
       }
       
-      // Rate limiting
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
