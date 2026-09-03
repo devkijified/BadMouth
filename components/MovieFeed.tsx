@@ -349,10 +349,12 @@ export default function MovieFeed({
     });
   };
 
-  // Get top genres from user taste
+  // ✅ FIXED: Properly typed getTopGenres function
   const getTopGenres = () => {
     if (!userTaste?.genre_affinities) return [];
-    return Object.entries(userTaste.genre_affinities)
+    // Cast the entries to [string, number][] to fix the type error
+    const entries = Object.entries(userTaste.genre_affinities) as [string, number][];
+    return entries
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
       .map(([genre]) => genre);
