@@ -10,12 +10,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User ID required' }, { status: 401 });
     }
 
+    console.log('🎯 Fetching AI recommendations for user:', userId);
+
     // Get user taste profile
-    const { data: tasteProfile } = await supabase
+    const { data: tasteProfile, error: tasteError } = await supabase
       .from('user_taste_profiles')
       .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
+
+    if (tasteError) {
+      console.error('Error fetching taste profile:', tasteError);
+    }
+
+    console.log('📊 Taste profile:', tasteProfile);
 
     // Get watch history
     const { data: watchHistory } = await supabase
@@ -24,8 +32,12 @@ export async function GET(request: NextRequest) {
       .eq('user_id', userId)
       .limit(50);
 
-    // Get AI recommendations
+    console.log('📺 Watch history:', watchHistory?.length || 0, 'items');
+
+    // ✅ Get AI provider (Gemini)
     const aiProvider = getAIProvider();
+    
+    console.log('🧠 Calling Gemini AI...');
     const result = await aiProvider.generateRecommendations({
       userId,
       userTasteProfile: tasteProfile,
@@ -34,21 +46,36 @@ export async function GET(request: NextRequest) {
       excludeIds: watchHistory?.map(h => h.content_id) || [],
     });
 
+    console.log('📊 Gemini response:', result.recommendations?.length || 0, 'recommendations');
+
     // Get full content details
     const contentIds = result.recommendations.map((r: any) => r.contentId);
-    const { data: content } = await supabase
-      .from('content')
-      .select('*')
-      .in('id', contentIds);
+    
+    let contentItems: any[] = [];
+    if (contentIds.length > 0) {
+      const { data: content } = await supabase
+        .from('content')
+        .select('*')
+        .in('id', contentIds);
+      contentItems = content || [];
+    }
 
     const merged = result.recommendations.map((rec: any) => ({
       ...rec,
-      content: content?.find((c: any) => c.id === rec.contentId) || null,
+      content: contentItems.find((c: any) => c.id === rec.contentId) || null,
     }));
 
-    return NextResponse.json({ success: true, recommendations: merged });
+    return NextResponse.json({ 
+      success: true, 
+      recommendations: merged,
+      metadata: result.metadata 
+    });
+    
   } catch (error: any) {
-    console.error('Recommendation error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('❌ Recommendation error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to get recommendations' },
+      { status: 500 }
+    );
   }
 }
