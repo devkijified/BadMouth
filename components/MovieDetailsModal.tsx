@@ -4,10 +4,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   X, Star, Heart, Play, Users, Calendar, Clock, Film, 
-  ExternalLink, Sparkles, Loader2, ThumbsUp, ThumbsDown,
-  Share2, Bookmark, Volume2, VolumeX, Maximize2, ChevronDown,
-  Award, Globe, Clock as ClockIcon, Tag, User, Clapperboard,
-  Info, Download, Eye
+  ExternalLink, Sparkles, Loader2, Share2,
+  Globe, Tag, ChevronDown, Clapperboard
 } from 'lucide-react';
 import { ContentItem } from '@/types/content';
 import { supabase } from '@/lib/supabase/client';
@@ -29,7 +27,6 @@ interface CastMember {
   name: string;
   character: string;
   profile_path: string | null;
-  popularity: number;
 }
 
 interface CrewMember {
@@ -52,6 +49,7 @@ interface Platform {
   provider_name: string;
   logo_path: string;
   display_priority: number;
+  link?: string;
 }
 
 interface MovieDetails {
@@ -60,19 +58,42 @@ interface MovieDetails {
   tagline: string;
   release_date: string;
   runtime: number;
-  budget: number;
-  revenue: number;
-  status: string;
-  vote_average: number;
-  vote_count: number;
-  popularity: number;
   genres: { id: number; name: string }[];
   production_companies: { id: number; name: string; logo_path: string }[];
-  production_countries: { iso_3166_1: string; name: string }[];
-  spoken_languages: { iso_639_1: string; name: string }[];
-  keywords: { id: number; name: string }[];
   certification?: string;
 }
+
+// Platform mapping to direct URLs
+const PLATFORM_URLS: Record<string, string> = {
+  'Netflix': 'https://www.netflix.com/search?q=',
+  'Prime Video': 'https://www.amazon.com/s?k=',
+  'Disney+': 'https://www.disneyplus.com/search/',
+  'HBO Max': 'https://www.max.com/search?q=',
+  'Max': 'https://www.max.com/search?q=',
+  'Hulu': 'https://www.hulu.com/search?q=',
+  'Apple TV+': 'https://tv.apple.com/search/',
+  'Peacock': 'https://www.peacocktv.com/search?q=',
+  'Paramount+': 'https://www.paramountplus.com/search/',
+  'MGM+': 'https://www.mgmplus.com/search?q=',
+  'Starz': 'https://www.starz.com/search?q=',
+  'Showtime': 'https://www.sho.com/search?q=',
+};
+
+// Platform display names with icons
+const PLATFORM_DISPLAY: Record<string, { icon: string; color: string }> = {
+  'Netflix': { icon: '📺', color: 'bg-red-700' },
+  'Prime Video': { icon: '📦', color: 'bg-blue-600' },
+  'Disney+': { icon: '✨', color: 'bg-blue-700' },
+  'HBO Max': { icon: '🔷', color: 'bg-blue-500' },
+  'Max': { icon: '🔷', color: 'bg-blue-500' },
+  'Hulu': { icon: '🟢', color: 'bg-green-500' },
+  'Apple TV+': { icon: '🍎', color: 'bg-gray-600' },
+  'Peacock': { icon: '🦚', color: 'bg-blue-600' },
+  'Paramount+': { icon: '⛰️', color: 'bg-blue-600' },
+  'MGM+': { icon: '🎬', color: 'bg-red-600' },
+  'Starz': { icon: '⭐', color: 'bg-purple-600' },
+  'Showtime': { icon: '📺', color: 'bg-yellow-600' },
+};
 
 export default function MovieDetailsModal({
   isOpen,
@@ -90,13 +111,10 @@ export default function MovieDetailsModal({
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>([]);
-  const [aiReview, setAiReview] = useState<string | null>(null);
-  const [aiRating, setAiRating] = useState<number | null>(null);
+  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
   const [loadingAI, setLoadingAI] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
   const [activeTab, setActiveTab] = useState<'details' | 'cast' | 'trailers' | 'platforms'>('details');
   const [expandedDescription, setExpandedDescription] = useState(false);
-  const [similarMovies, setSimilarMovies] = useState<any[]>([]);
   
   const videoRef = useRef<HTMLIFrameElement>(null);
 
@@ -104,7 +122,7 @@ export default function MovieDetailsModal({
   useEffect(() => {
     if (content && isOpen) {
       fetchFullMovieDetails();
-      generateAIReview();
+      fetchAIRecommendations();
     }
   }, [content, isOpen]);
 
@@ -116,12 +134,11 @@ export default function MovieDetailsModal({
       const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f';
       
       // Fetch all data in parallel
-      const [movieRes, creditsRes, videosRes, providersRes, similarRes] = await Promise.all([
+      const [movieRes, creditsRes, videosRes, providersRes] = await Promise.all([
         fetch(`https://api.themoviedb.org/3/movie/${content.id}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=release_dates`),
         fetch(`https://api.themoviedb.org/3/movie/${content.id}/credits?api_key=${TMDB_API_KEY}&language=en-US`),
         fetch(`https://api.themoviedb.org/3/movie/${content.id}/videos?api_key=${TMDB_API_KEY}&language=en-US`),
         fetch(`https://api.themoviedb.org/3/movie/${content.id}/watch/providers?api_key=${TMDB_API_KEY}`),
-        fetch(`https://api.themoviedb.org/3/movie/${content.id}/similar?api_key=${TMDB_API_KEY}&language=en-US&page=1`),
       ]);
 
       // Process movie details
@@ -133,17 +150,8 @@ export default function MovieDetailsModal({
           tagline: data.tagline,
           release_date: data.release_date,
           runtime: data.runtime,
-          budget: data.budget,
-          revenue: data.revenue,
-          status: data.status,
-          vote_average: data.vote_average,
-          vote_count: data.vote_count,
-          popularity: data.popularity,
           genres: data.genres || [],
           production_companies: data.production_companies || [],
-          production_countries: data.production_countries || [],
-          spoken_languages: data.spoken_languages || [],
-          keywords: data.keywords?.keywords || [],
           certification: data.release_dates?.results?.find((r: any) => r.iso_3166_1 === 'US')?.release_dates?.[0]?.certification || 'NR',
         });
       }
@@ -157,7 +165,6 @@ export default function MovieDetailsModal({
             name: c.name,
             character: c.character || 'Unknown',
             profile_path: c.profile_path,
-            popularity: c.popularity,
           })));
         }
         if (data.crew) {
@@ -184,7 +191,7 @@ export default function MovieDetailsModal({
         setVideos(trailers);
       }
 
-      // Process platforms
+      // Process platforms with direct links
       if (providersRes.ok) {
         const data = await providersRes.json();
         if (data.results?.US) {
@@ -200,14 +207,17 @@ export default function MovieDetailsModal({
             }
             return acc;
           }, []);
-          setPlatforms(unique.slice(0, 10));
+          
+          // Add direct links to platforms
+          const platformsWithLinks = unique.slice(0, 10).map((p: any) => {
+            const baseUrl = PLATFORM_URLS[p.provider_name] || 'https://www.themoviedb.org/search?q=';
+            return {
+              ...p,
+              link: `${baseUrl}${encodeURIComponent(content.title)}`,
+            };
+          });
+          setPlatforms(platformsWithLinks);
         }
-      }
-
-      // Process similar movies
-      if (similarRes.ok) {
-        const data = await similarRes.json();
-        setSimilarMovies(data.results?.slice(0, 6) || []);
       }
 
     } catch (error) {
@@ -218,30 +228,30 @@ export default function MovieDetailsModal({
     }
   };
 
-  const generateAIReview = async () => {
+  const fetchAIRecommendations = async () => {
     if (!content) return;
     setLoadingAI(true);
 
     try {
-      const response = await fetch('/api/ai/review', {
+      // Get AI recommendations for similar movies
+      const response = await fetch('/api/ai/similar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: content.title,
-          description: content.description,
-          year: content.year,
           genre: content.genre,
-          rating: content.rating,
+          year: content.year,
         }),
       });
 
       if (response.ok) {
         const data = await response.json();
-        if (data.review) setAiReview(data.review);
-        if (data.rating) setAiRating(data.rating);
+        if (data.recommendations) {
+          setAiRecommendations(data.recommendations);
+        }
       }
     } catch (error) {
-      console.error('Error generating AI review:', error);
+      console.error('Error fetching AI recommendations:', error);
     } finally {
       setLoadingAI(false);
     }
@@ -252,15 +262,18 @@ export default function MovieDetailsModal({
     window.location.href = `/actor/${encodeURIComponent(actorName)}`;
   };
 
-  const formatCurrency = (value: number) => {
-    if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
-    if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
-    return `$${value}`;
-  };
-
   const formatDate = (dateStr: string) => {
     if (!dateStr) return 'N/A';
     return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  };
+
+  const handlePlatformClick = (platform: Platform) => {
+    if (platform.link) {
+      window.open(platform.link, '_blank');
+    } else {
+      // Fallback to TMDB watch page
+      window.open(`https://www.themoviedb.org/movie/${content?.id}/watch`, '_blank');
+    }
   };
 
   if (!isOpen || !content) return null;
@@ -375,16 +388,9 @@ export default function MovieDetailsModal({
                     <div className="flex items-center gap-4 mt-2">
                       <div className="flex items-center gap-1">
                         <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                        <span className="text-white font-bold">{details?.vote_average?.toFixed(1) || content.rating?.toFixed(1) || 'N/A'}</span>
-                        <span className="text-gray-400 text-xs">({details?.vote_count?.toLocaleString() || content.rating_count || 0} ratings)</span>
+                        <span className="text-white font-bold">{content.rating?.toFixed(1) || 'N/A'}</span>
+                        <span className="text-gray-400 text-xs">({content.rating_count || 0} ratings)</span>
                       </div>
-                      {aiRating && (
-                        <div className="flex items-center gap-1">
-                          <Sparkles className="w-4 h-4 text-teal-400" />
-                          <span className="text-teal-400 font-bold">{aiRating.toFixed(1)}</span>
-                          <span className="text-gray-400 text-xs">AI</span>
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -398,13 +404,16 @@ export default function MovieDetailsModal({
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab as any)}
-                    className={`px-3 py-2 text-sm font-medium transition border-b-2 ${
+                    className={`px-3 py-2 text-sm font-medium transition border-b-2 whitespace-nowrap ${
                       activeTab === tab
                         ? 'border-teal-500 text-teal-400'
                         : 'border-transparent text-gray-400 hover:text-white'
                     }`}
                   >
-                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    {tab === 'details' && 'Details'}
+                    {tab === 'cast' && 'Cast & Crew'}
+                    {tab === 'trailers' && 'Trailers'}
+                    {tab === 'platforms' && 'Where to Watch'}
                   </button>
                 ))}
               </div>
@@ -415,40 +424,8 @@ export default function MovieDetailsModal({
               {/* Details Tab */}
               {activeTab === 'details' && (
                 <div className="space-y-4">
-                  {/* AI Review */}
-                  <div className="p-4 bg-gradient-to-r from-teal-600/20 to-blue-600/20 rounded-xl border border-teal-500/20">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-teal-500" />
-                        <h3 className="font-semibold text-white">BADMOUTH AI Review</h3>
-                        <span className="text-xs bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded-full">Powered by Gemini</span>
-                      </div>
-                      {loadingAI && <Loader2 className="w-4 h-4 animate-spin text-teal-500" />}
-                    </div>
-                    {loadingAI ? (
-                      <p className="text-gray-400 text-sm">Generating AI review...</p>
-                    ) : aiReview ? (
-                      <>
-                        {aiRating && (
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="flex items-center gap-1">
-                              <Sparkles className="w-4 h-4 text-teal-400" />
-                              <span className="text-lg font-bold text-teal-400">{aiRating.toFixed(1)}</span>
-                              <span className="text-gray-400 text-sm">/10</span>
-                            </div>
-                            <span className="text-xs text-gray-500">• BADMOUTH AI Rating</span>
-                          </div>
-                        )}
-                        <p className="text-gray-300 text-sm leading-relaxed">{aiReview}</p>
-                      </>
-                    ) : (
-                      <p className="text-gray-400 text-sm">AI review not available for this title.</p>
-                    )}
-                  </div>
-
                   {/* Description */}
                   <div>
-                    <h4 className="text-sm font-semibold text-gray-400 mb-1">Overview</h4>
                     <p className={`text-gray-300 text-sm leading-relaxed ${!expandedDescription ? 'line-clamp-4' : ''}`}>
                       {details?.overview || content.long_description || content.description}
                     </p>
@@ -460,48 +437,38 @@ export default function MovieDetailsModal({
                     </button>
                   </div>
 
-                  {/* Movie Stats */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-gray-800/50 rounded-lg">
-                    <div className="text-center">
-                      <p className="text-2xl">{details?.status || 'Released'}</p>
-                      <p className="text-xs text-gray-400">Status</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-2xl">{details?.popularity?.toFixed(0) || 'N/A'}</p>
-                      <p className="text-xs text-gray-400">Popularity</p>
-                    </div>
-                    {details?.budget && details.budget > 0 && (
-                      <div className="text-center">
-                        <p className="text-2xl">{formatCurrency(details.budget)}</p>
-                        <p className="text-xs text-gray-400">Budget</p>
-                      </div>
-                    )}
-                    {details?.revenue && details.revenue > 0 && (
-                      <div className="text-center">
-                        <p className="text-2xl">{formatCurrency(details.revenue)}</p>
-                        <p className="text-xs text-gray-400">Revenue</p>
-                      </div>
-                    )}
-                  </div>
-
                   {/* Additional Details */}
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    {details?.production_countries && details.production_countries.length > 0 && (
+                  <div className="grid grid-cols-2 gap-3 p-4 bg-gray-800/50 rounded-lg">
+                    {details?.release_date && (
                       <div>
-                        <span className="text-gray-400">Country:</span>{' '}
-                        <span className="text-gray-300">{details.production_countries.map(c => c.name).join(', ')}</span>
+                        <p className="text-xs text-gray-400">Release Date</p>
+                        <p className="text-sm text-white">{formatDate(details.release_date)}</p>
                       </div>
                     )}
-                    {details?.spoken_languages && details.spoken_languages.length > 0 && (
+                    {details?.runtime && (
                       <div>
-                        <span className="text-gray-400">Language:</span>{' '}
-                        <span className="text-gray-300">{details.spoken_languages.map(l => l.name).join(', ')}</span>
+                        <p className="text-xs text-gray-400">Runtime</p>
+                        <p className="text-sm text-white">{details.runtime} minutes</p>
                       </div>
                     )}
-                    {details?.keywords && details.keywords.length > 0 && (
+                    {details?.genres && details.genres.length > 0 && (
                       <div className="col-span-2">
-                        <span className="text-gray-400">Keywords:</span>{' '}
-                        <span className="text-gray-300">{details.keywords.slice(0, 10).map(k => k.name).join(', ')}</span>
+                        <p className="text-xs text-gray-400">Genres</p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {details.genres.map((genre) => (
+                            <span key={genre.id} className="px-2 py-0.5 bg-gray-700 rounded text-xs text-gray-300">
+                              {genre.name}
+                            </span>
+                          ))}
+                          </div>
+                      </div>
+                    )}
+                    {details?.production_companies && details.production_companies.length > 0 && (
+                      <div className="col-span-2">
+                        <p className="text-xs text-gray-400">Production</p>
+                        <p className="text-sm text-white">
+                          {details.production_companies.slice(0, 3).map(c => c.name).join(', ')}
+                        </p>
                       </div>
                     )}
                   </div>
@@ -541,6 +508,55 @@ export default function MovieDetailsModal({
                     >
                       <Share2 size={16} /> Share
                     </button>
+                  </div>
+
+                  {/* ✅ AI Recommendations Section */}
+                  <div className="mt-6 pt-4 border-t border-gray-800">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Sparkles className="w-5 h-5 text-teal-500" />
+                      <h3 className="text-sm font-semibold text-white">You might also like</h3>
+                      <span className="text-xs bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded-full">AI Powered</span>
+                      {loadingAI && <Loader2 className="w-4 h-4 animate-spin text-teal-500 ml-2" />}
+                    </div>
+                    
+                    {loadingAI ? (
+                      <div className="flex justify-center py-4">
+                        <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
+                      </div>
+                    ) : aiRecommendations.length > 0 ? (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                        {aiRecommendations.slice(0, 6).map((movie: any) => (
+                          <div
+                            key={movie.id}
+                            className="group cursor-pointer"
+                            onClick={() => {
+                              onClose();
+                              // Navigate to movie details
+                              window.location.href = `/?details=${movie.id}`;
+                            }}
+                          >
+                            <img
+                              src={movie.poster_path ? `https://image.tmdb.org/t/p/w185${movie.poster_path}` : ''}
+                              alt={movie.title}
+                              className="w-full aspect-[2/3] object-cover rounded-lg group-hover:scale-105 transition"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=200&name=${encodeURIComponent(movie.title)}`;
+                              }}
+                            />
+                            <p className="text-xs text-gray-400 mt-1 truncate group-hover:text-white transition">
+                              {movie.title}
+                            </p>
+                            {movie.release_date && (
+                              <p className="text-[10px] text-gray-500">
+                                {new Date(movie.release_date).getFullYear()}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-400">No similar recommendations available.</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -643,25 +659,35 @@ export default function MovieDetailsModal({
                     <div>
                       <p className="text-sm text-gray-400 mb-3">Where to watch {content.title}</p>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {platforms.map((platform) => (
-                          <a
-                            key={platform.provider_id}
-                            href={`https://www.themoviedb.org/movie/${content.id}/watch`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-3 p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition group"
-                          >
-                            <img
-                              src={`https://image.tmdb.org/t/p/w92${platform.logo_path}`}
-                              alt={platform.provider_name}
-                              className="w-8 h-8 rounded object-contain"
-                            />
-                            <span className="text-sm text-white group-hover:text-teal-400 transition flex-1">
-                              {platform.provider_name}
-                            </span>
-                            <ExternalLink size={14} className="text-gray-500 group-hover:text-teal-400" />
-                          </a>
-                        ))}
+                        {platforms.map((platform) => {
+                          const display = PLATFORM_DISPLAY[platform.provider_name] || { icon: '🎬', color: 'bg-gray-600' };
+                          return (
+                            <button
+                              key={platform.provider_id}
+                              onClick={() => handlePlatformClick(platform)}
+                              className="flex items-center gap-3 p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition group text-left"
+                            >
+                              {platform.logo_path ? (
+                                <img
+                                  src={`https://image.tmdb.org/t/p/w92${platform.logo_path}`}
+                                  alt={platform.provider_name}
+                                  className="w-8 h-8 rounded object-contain"
+                                />
+                              ) : (
+                                <span className="text-2xl">{display.icon}</span>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-white group-hover:text-teal-400 transition truncate">
+                                  {platform.provider_name}
+                                </p>
+                                <p className="text-[10px] text-gray-400">
+                                  {platform.link ? 'Click to watch' : 'Check availability'}
+                                </p>
+                              </div>
+                              <ExternalLink size={14} className="text-gray-500 group-hover:text-teal-400 flex-shrink-0" />
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   ) : (
@@ -675,42 +701,10 @@ export default function MovieDetailsModal({
               )}
             </div>
 
-            {/* Similar Movies */}
-            {similarMovies.length > 0 && (
-              <div className="px-6 pb-6">
-                <h4 className="text-sm font-semibold text-gray-400 mb-3">You might also like</h4>
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-                  {similarMovies.map((movie: any) => (
-                    <div
-                      key={movie.id}
-                      className="group cursor-pointer"
-                      onClick={() => {
-                        onClose();
-                        // You'd need to load this movie's details
-                        // window.location.href = `/?details=${movie.id}`;
-                      }}
-                    >
-                      <img
-                        src={movie.poster_path ? `https://image.tmdb.org/t/p/w185${movie.poster_path}` : ''}
-                        alt={movie.title}
-                        className="w-full aspect-[2/3] object-cover rounded-lg group-hover:scale-105 transition"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=200&name=${encodeURIComponent(movie.title)}`;
-                        }}
-                      />
-                      <p className="text-xs text-gray-400 mt-1 truncate group-hover:text-white transition">
-                        {movie.title}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* TMDB Attribution */}
             <div className="px-6 pb-4 pt-2 border-t border-gray-800 flex justify-between items-center">
               <p className="text-[10px] text-gray-500">
-                Data provided by TMDB • BADMOUTH AI Rating by Gemini
+                Data provided by TMDB • AI Recommendations by Gemini
               </p>
               <button
                 onClick={() => {
