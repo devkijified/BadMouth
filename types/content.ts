@@ -1,3 +1,5 @@
+// types/content.ts
+
 export interface ContentItem {
   id: string
   title: string
@@ -18,8 +20,8 @@ export interface ContentItem {
   stats_highly: number
   stats_recommended: number
   stats_not: number
-  rating: number  // NEW: 1-10 rating
-  rating_count: number  // NEW: number of ratings
+  rating: number
+  rating_count: number
   is_tv_show?: boolean
   created_at?: string
   updated_at?: string
@@ -29,32 +31,20 @@ export interface Category {
   id: string
   name: string
   description: string
-  type: 'movie' | 'music'
+  type: 'movie' | 'music' | 'experience'  // ← NEW: experience type
   is_active: boolean
   display_order: number
+  icon?: string
   created_at?: string
 }
 
-export interface Recommendation {
+// ✅ NEW: Experience/Mood Categories
+export interface ExperienceCategory {
   id: string
-  user_id: string
-  content_id: string
-  content_type: 'movie' | 'music'
-  rating: number  // Changed from recommendation_tier
-  comment?: string
-  created_at?: string
-  profiles?: {
-    username: string
-    avatar_url: string
-  }
-  content?: ContentItem
-}
-
-export interface WatchlistItem {
-  id: string
-  user_id: string
-  content_id: string
-  content_type: 'movie' | 'music'
-  created_at?: string
-  content?: ContentItem
+  name: string
+  pitch: string
+  icon: string
+  color: string
+  tags: string[] // Genre tags for filtering TMDB
+  keywords: string[] // For search/description matching
 }
