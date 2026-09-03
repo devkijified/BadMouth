@@ -24,8 +24,8 @@ interface Movie {
 
 interface MovieFeedProps {
   onViewDetails: (item: ContentItem) => void;
-  onAddToWatchlist: (item: ContentItem) => void;
-  onRemoveFromWatchlist: (id: string) => void;
+  onAddToWatchlist: (item: ContentItem) => Promise<void>;
+  onRemoveFromWatchlist: (id: string) => Promise<void>;
   isInWatchlist: (id: string) => boolean;
   userId: string;
 }
@@ -47,6 +47,44 @@ const GENRE_TO_ID: Record<string, number> = {
   'Mystery': 9648, 'Romance': 10749, 'Sci-Fi': 878, 'TV Movie': 10770,
   'Thriller': 53, 'War': 10752, 'Western': 37
 };
+
+// Mood to genre mapping
+const MOOD_TO_GENRES: Record<string, number[]> = {
+  'action-packed': [28, 53, 878],
+  'feel-good': [35, 10751, 10749],
+  'mind-bending': [878, 53, 9648],
+  'comedy': [35],
+  'dark': [18, 80, 53],
+  'romantic': [10749, 18],
+  'scary': [27, 53],
+  'epic': [12, 28, 878],
+  'quirky': [35, 80, 18],
+  'musical': [10402, 10749],
+  'thoughtful': [18, 99, 36],
+  'family': [10751, 16, 12],
+};
+
+// Mood options
+const MOOD_OPTIONS = [
+  { id: 'all', label: 'All Moods' },
+  { id: 'action-packed', label: '⚡ Action-Packed' },
+  { id: 'feel-good', label: '😊 Feel Good' },
+  { id: 'mind-bending', label: '🧠 Mind-Bending' },
+  { id: 'comedy', label: '😂 Funny' },
+  { id: 'dark', label: '🌙 Dark & Gritty' },
+  { id: 'romantic', label: '💕 Romantic' },
+  { id: 'scary', label: '👻 Scary' },
+  { id: 'epic', label: '🔥 Epic' },
+  { id: 'quirky', label: '🎉 Quirky' },
+  { id: 'musical', label: '🎵 Musical' },
+  { id: 'thoughtful', label: '☕ Thoughtful' },
+  { id: 'family', label: '👨‍👩‍👧‍👦 Family' },
+];
+
+const GENRE_OPTIONS = [
+  'all',
+  ...Object.values(GENRE_MAP).filter((v, i, a) => a.indexOf(v) === i)
+];
 
 export default function MovieFeed({
   onViewDetails,
@@ -71,22 +109,6 @@ export default function MovieFeed({
   const observerRef = useRef<IntersectionObserver | null>(null);
   const lastMovieRef = useRef<HTMLDivElement | null>(null);
   const loaderRef = useRef<HTMLDivElement | null>(null);
-
-  // Mood to genre mapping
-  const MOOD_TO_GENRES: Record<string, number[]> = {
-    'action-packed': [28, 53, 878],
-    'feel-good': [35, 10751, 10749],
-    'mind-bending': [878, 53, 9648],
-    'comedy': [35],
-    'dark': [18, 80, 53],
-    'romantic': [10749, 18],
-    'scary': [27, 53],
-    'epic': [12, 28, 878],
-    'quirky': [35, 80, 18],
-    'musical': [10402, 10749],
-    'thoughtful': [18, 99, 36],
-    'family': [10751, 16, 12],
-  };
 
   // Fetch user taste profile
   useEffect(() => {
@@ -146,21 +168,17 @@ export default function MovieFeed({
       if (pageNum === 1) setLoading(true);
       else setLoadingMore(true);
 
-      // Build URL with filters
       let url = `https://api.themoviedb.org/3/discover/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&page=${pageNum}&sort_by=popularity.desc`;
 
-      // Apply genre filter
       if (selectedGenre !== 'all' && GENRE_TO_ID[selectedGenre]) {
         url += `&with_genres=${GENRE_TO_ID[selectedGenre]}`;
       }
 
-      // Apply mood filter (maps to genres)
       if (selectedMood !== 'all' && MOOD_TO_GENRES[selectedMood]) {
         const moodGenres = MOOD_TO_GENRES[selectedMood].join(',');
         url += `&with_genres=${moodGenres}`;
       }
 
-      // Apply search
       if (searchQuery.trim()) {
         url = `https://api.themoviedb.org/3/search/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&page=${pageNum}&query=${encodeURIComponent(searchQuery)}`;
       }
@@ -192,7 +210,6 @@ export default function MovieFeed({
         popularity: movie.popularity,
       }));
 
-      // Filter out movies that are already in the user's watchlist or watched
       const filteredMovies = formattedMovies.filter(
         (movie: Movie) => !watchlistIds.has(movie.id)
       );
@@ -261,42 +278,66 @@ export default function MovieFeed({
     return `https://image.tmdb.org/t/p/original${path}`;
   };
 
+  // ✅ FIXED: Complete ContentItem conversion matching your interface
   const handleMovieClick = (movie: Movie) => {
-    // Convert to ContentItem format
     const contentItem: ContentItem = {
       id: movie.id,
       title: movie.title,
-      description: movie.overview,
+      description: movie.overview || '',
+      long_description: movie.overview || null,
       image_url: getImageUrl(movie.poster_path) || '',
-      backdrop_url: getBackdropUrl(movie.backdrop_path) || '',
+      backdrop_url: getBackdropUrl(movie.backdrop_path) || null,
       type: 'movie',
-      year: parseInt(movie.release_date?.split('-')[0] || '0'),
+      year: movie.release_date ? parseInt(movie.release_date.split('-')[0]) : 0,
+      director: null,
+      artist: null,
+      actors: [],
+      platforms: [],
+      trailer_url: null,
+      runtime: null,
+      duration: null,
+      genre: movie.genres?.join(', ') || '',
+      stats_highly: 0,
+      stats_recommended: 0,
+      stats_not: 0,
       rating: movie.vote_average || 0,
       rating_count: movie.vote_count || 0,
-      genre: movie.genres?.join(', ') || '',
+      is_tv_show: false,
     };
     onViewDetails(contentItem);
   };
 
+  // ✅ FIXED: Complete ContentItem conversion for watchlist
   const handleAddToWatchlist = async (movie: Movie, e: React.MouseEvent) => {
     e.stopPropagation();
     
     const contentItem: ContentItem = {
       id: movie.id,
       title: movie.title,
-      description: movie.overview,
+      description: movie.overview || '',
+      long_description: movie.overview || null,
       image_url: getImageUrl(movie.poster_path) || '',
-      backdrop_url: getBackdropUrl(movie.backdrop_path) || '',
+      backdrop_url: getBackdropUrl(movie.backdrop_path) || null,
       type: 'movie',
-      year: parseInt(movie.release_date?.split('-')[0] || '0'),
+      year: movie.release_date ? parseInt(movie.release_date.split('-')[0]) : 0,
+      director: null,
+      artist: null,
+      actors: [],
+      platforms: [],
+      trailer_url: null,
+      runtime: null,
+      duration: null,
+      genre: movie.genres?.join(', ') || '',
+      stats_highly: 0,
+      stats_recommended: 0,
+      stats_not: 0,
       rating: movie.vote_average || 0,
       rating_count: movie.vote_count || 0,
-      genre: movie.genres?.join(', ') || '',
+      is_tv_show: false,
     };
     
     await onAddToWatchlist(contentItem);
     
-    // Update watchlist IDs locally
     setWatchlistIds(prev => {
       const newSet = new Set(prev);
       if (newSet.has(movie.id)) {
@@ -316,28 +357,6 @@ export default function MovieFeed({
       .slice(0, 3)
       .map(([genre]) => genre);
   };
-
-  // Mood options (same as onboarding)
-  const MOOD_OPTIONS = [
-    { id: 'all', label: 'All Moods' },
-    { id: 'action-packed', label: '⚡ Action-Packed' },
-    { id: 'feel-good', label: '😊 Feel Good' },
-    { id: 'mind-bending', label: '🧠 Mind-Bending' },
-    { id: 'comedy', label: '😂 Funny' },
-    { id: 'dark', label: '🌙 Dark & Gritty' },
-    { id: 'romantic', label: '💕 Romantic' },
-    { id: 'scary', label: '👻 Scary' },
-    { id: 'epic', label: '🔥 Epic' },
-    { id: 'quirky', label: '🎉 Quirky' },
-    { id: 'musical', label: '🎵 Musical' },
-    { id: 'thoughtful', label: '☕ Thoughtful' },
-    { id: 'family', label: '👨‍👩‍👧‍👦 Family' },
-  ];
-
-  const GENRE_OPTIONS = [
-    'all',
-    ...Object.values(GENRE_MAP).filter((v, i, a) => a.indexOf(v) === i)
-  ];
 
   if (loading && page === 1) {
     return (
