@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       console.error('Error fetching taste profile:', tasteError);
     }
 
-    console.log('📊 Taste profile:', tasteProfile);
+    console.log('📊 Taste profile:', tasteProfile ? 'Found' : 'Not found');
 
     // Get watch history
     const { data: watchHistory } = await supabase
