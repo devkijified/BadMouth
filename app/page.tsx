@@ -20,7 +20,9 @@ import TrailerReels from '@/components/TrailerReels'
 import AIRecommendations from '@/components/AIRecommendations'
 import MovieFeed from '@/components/MovieFeed'
 import ExperienceCategories from '@/components/ExperienceCategories'
+import ExperienceModal from '@/components/ExperienceModal'
 import { ContentItem, Category } from '@/types/content'
+import { EXPERIENCE_CATEGORIES } from '@/constants/experienceCategories'
 import toast from 'react-hot-toast'
 
 export default function HomePage() {
@@ -48,6 +50,7 @@ export default function HomePage() {
   
   // Experience Categories
   const [selectedExperience, setSelectedExperience] = useState<string | null>(null)
+  const [isExperienceModalOpen, setIsExperienceModalOpen] = useState(false)
   
   // User's own recommendations for profile modal
   const [myRecommendations, setMyRecommendations] = useState<any[]>([])
@@ -538,11 +541,9 @@ export default function HomePage() {
   // ✅ Experience Category Handler
   const handleExperienceSelect = (categoryId: string | null) => {
     setSelectedExperience(categoryId)
-    // If a category is selected, switch to movies tab to show filtered results
     if (categoryId) {
       setCurrentPage('movies')
     } else {
-      // If cleared, go back to home
       setCurrentPage('home')
     }
   }
@@ -642,6 +643,14 @@ export default function HomePage() {
         item={recommendItem}
         userId={user.id}
         onSuccess={handleRecommendSuccess}
+      />
+
+      {/* Experience Modal */}
+      <ExperienceModal 
+        isOpen={isExperienceModalOpen}
+        onClose={() => setIsExperienceModalOpen(false)}
+        onSelectCategory={handleExperienceSelect}
+        selectedCategory={selectedExperience}
       />
 
       {/* Notifications Panel */}
@@ -945,11 +954,11 @@ export default function HomePage() {
             <TrendingBar onViewDetails={handleViewDetails} />
             <QuickStats userId={user.id} />
             
-            {/* ✅ ADDED: Experience Categories */}
+            {/* ✅ Experience Categories - Now a button that opens modal */}
             <div className="container mx-auto px-4 py-4">
               <ExperienceCategories 
-                onSelectCategory={handleExperienceSelect}
-                selectedCategory={selectedExperience}
+                onOpenModal={() => setIsExperienceModalOpen(true)}
+                selectedCategory={selectedExperience ? EXPERIENCE_CATEGORIES.find(c => c.id === selectedExperience)?.name || null : null}
               />
             </div>
             
@@ -970,7 +979,7 @@ export default function HomePage() {
                   <h2 className="text-xl font-semibold">🎬 Discover Movies</h2>
                   {selectedExperience && (
                     <span className="text-xs text-teal-400 bg-teal-500/20 px-2 py-1 rounded-full">
-                      Filtered by: {selectedExperience}
+                      🎯 {EXPERIENCE_CATEGORIES.find(c => c.id === selectedExperience)?.name}
                     </span>
                   )}
                 </div>
@@ -1013,44 +1022,77 @@ export default function HomePage() {
             />
             <TrendingBar onViewDetails={handleViewDetails} />
             
-            {/* ✅ ADDED: Experience Categories in Movies Tab */}
+            {/* ✅ Experience Categories - Now a button that opens modal */}
             <div className="container mx-auto px-4 py-4">
               <ExperienceCategories 
-                onSelectCategory={handleExperienceSelect}
-                selectedCategory={selectedExperience}
+                onOpenModal={() => setIsExperienceModalOpen(true)}
+                selectedCategory={selectedExperience ? EXPERIENCE_CATEGORIES.find(c => c.id === selectedExperience)?.name || null : null}
               />
             </div>
             
             <div className="container mx-auto px-4">
-              {categories.filter(c => c.name === '🔥 Trending Now').map((category) => (
-                <ContentRow 
-                  key={category.id}
-                  title={category.name}
-                  items={contentByCategory[category.name] || allContent.slice(0, 10)}
-                  type={activeTab}
+              {/* ✅ MovieFeed with experienceFilter */}
+              <div className="mb-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold">
+                    {selectedExperience 
+                      ? `🎯 ${EXPERIENCE_CATEGORIES.find(c => c.id === selectedExperience)?.name || 'Movies'}`
+                      : '🎬 Movies'
+                    }
+                  </h2>
+                  {selectedExperience && (
+                    <button
+                      onClick={() => handleExperienceSelect(null)}
+                      className="text-sm text-teal-400 hover:text-teal-300 transition"
+                    >
+                      ✕ Clear Filter
+                    </button>
+                  )}
+                </div>
+                <MovieFeed 
                   onViewDetails={handleViewDetails}
-                  onRecommend={handleRecommend}
                   onAddToWatchlist={addToWatchlist}
                   onRemoveFromWatchlist={removeFromWatchlist}
                   isInWatchlist={isInWatchlist}
-                  maxItems={20}
+                  userId={user.id}
+                  experienceFilter={selectedExperience}
                 />
-              ))}
+              </div>
               
-              {categories.filter(c => c.name !== '🔥 Trending Now' && c.type === 'movie').map((category) => (
-                <ContentRow 
-                  key={category.id}
-                  title={category.name}
-                  items={contentByCategory[category.name] || []}
-                  type={activeTab}
-                  onViewDetails={handleViewDetails}
-                  onRecommend={handleRecommend}
-                  onAddToWatchlist={addToWatchlist}
-                  onRemoveFromWatchlist={removeFromWatchlist}
-                  isInWatchlist={isInWatchlist}
-                  maxItems={20}
-                />
-              ))}
+              {/* ContentRow sections - only show if no experience filter */}
+              {!selectedExperience && (
+                <>
+                  {categories.filter(c => c.name === '🔥 Trending Now').map((category) => (
+                    <ContentRow 
+                      key={category.id}
+                      title={category.name}
+                      items={contentByCategory[category.name] || allContent.slice(0, 10)}
+                      type={activeTab}
+                      onViewDetails={handleViewDetails}
+                      onRecommend={handleRecommend}
+                      onAddToWatchlist={addToWatchlist}
+                      onRemoveFromWatchlist={removeFromWatchlist}
+                      isInWatchlist={isInWatchlist}
+                      maxItems={20}
+                    />
+                  ))}
+                  
+                  {categories.filter(c => c.name !== '🔥 Trending Now' && c.type === 'movie').map((category) => (
+                    <ContentRow 
+                      key={category.id}
+                      title={category.name}
+                      items={contentByCategory[category.name] || []}
+                      type={activeTab}
+                      onViewDetails={handleViewDetails}
+                      onRecommend={handleRecommend}
+                      onAddToWatchlist={addToWatchlist}
+                      onRemoveFromWatchlist={removeFromWatchlist}
+                      isInWatchlist={isInWatchlist}
+                      maxItems={20}
+                    />
+                  ))}
+                </>
+              )}
               
               <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
             </div>
