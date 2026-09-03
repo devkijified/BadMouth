@@ -16,19 +16,58 @@ async function getMovieDetails(tmdbId: string) {
     return {
       id: data.id.toString(),
       title: data.title,
-      description: data.overview,
+      description: data.overview || '',
+      long_description: data.overview || null,
       image_url: data.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : null,
       backdrop_url: data.backdrop_path ? `https://image.tmdb.org/t/p/original${data.backdrop_path}` : null,
-      type: 'movie',
+      type: 'movie' as const,
       year: data.release_date ? new Date(data.release_date).getFullYear() : 0,
+      director: null,
+      artist: null,
+      actors: [],
+      platforms: [],
+      trailer_url: null,
+      runtime: data.runtime ? `${data.runtime} min` : null,
+      duration: null,
+      genre: data.genres?.map((g: any) => g.name).join(', ') || '',
+      stats_highly: 0,
+      stats_recommended: 0,
+      stats_not: 0,
       rating: data.vote_average || 0,
       rating_count: data.vote_count || 0,
-      genre: data.genres?.map((g: any) => g.name).join(', ') || '',
-      runtime: data.runtime ? `${data.runtime} min` : null,
+      is_tv_show: false,
     };
   } catch (error) {
     console.error('Error fetching TMDB movie:', error);
     return null;
+  }
+}
+
+async function getTrendingMovies() {
+  try {
+    const response = await fetch(
+      `${TMDB_BASE_URL}/trending/movie/week?api_key=${TMDB_API_KEY}&language=en-US`
+    );
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.results || [];
+  } catch (error) {
+    console.error('Error fetching trending:', error);
+    return [];
+  }
+}
+
+async function getTopRatedMovies() {
+  try {
+    const response = await fetch(
+      `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&language=en-US&sort_by=vote_average.desc&vote_count.gte=100&page=1`
+    );
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.results || [];
+  } catch (error) {
+    console.error('Error fetching top rated:', error);
+    return [];
   }
 }
 
@@ -54,49 +93,147 @@ export async function GET(request: NextRequest) {
 
     console.log('📊 Taste profile:', tasteProfile ? 'Found' : 'Not found');
 
-    // Get AI provider (Gemini)
-    const aiProvider = getAIProvider();
-    
-    console.log('🧠 Calling Gemini AI...');
-    const result = await aiProvider.generateRecommendations({
-      userId,
-      userTasteProfile: tasteProfile,
-      watchHistory: [],
-      limit: 10,
-      excludeIds: [],
-    });
+    let recommendations = [];
+    let source = 'none';
 
-    console.log('📊 Gemini response:', result.recommendations?.length || 0, 'recommendations');
+    // Try Gemini first
+    try {
+      console.log('🧠 Calling Gemini AI...');
+      const aiProvider = getAIProvider();
+      const result = await aiProvider.generateRecommendations({
+        userId,
+        userTasteProfile: tasteProfile,
+        watchHistory: [],
+        limit: 10,
+        excludeIds: [],
+      });
 
-    // ✅ Fetch movie details from TMDB for each recommendation
-    const merged = await Promise.all(
-      (result.recommendations || []).map(async (rec: any) => {
-        try {
-          const tmdbData = await getMovieDetails(rec.contentId);
-          if (tmdbData) {
-            return {
-              ...rec,
-              content: tmdbData
-            };
+      console.log('📊 Gemini response:', result.recommendations?.length || 0, 'recommendations');
+
+      if (result.recommendations && result.recommendations.length > 0) {
+        // Fetch TMDB data for each recommendation
+        const merged = await Promise.all(
+          result.recommendations.map(async (rec: any) => {
+            try {
+              const tmdbData = await getMovieDetails(rec.contentId);
+              if (tmdbData) {
+                return {
+                  ...rec,
+                  content: tmdbData
+                };
+              }
+              return null;
+            } catch (error) {
+              return null;
+            }
+          })
+        );
+
+        recommendations = merged.filter((rec: any) => rec !== null);
+        source = 'gemini';
+        console.log(`✅ Gemini returned ${recommendations.length} valid recommendations`);
+      }
+    } catch (error) {
+      console.error('❌ Gemini error:', error);
+    }
+
+    // ✅ FALLBACK: If Gemini returns nothing, use TMDB trending
+    if (recommendations.length === 0) {
+      console.log('⚠️ No Gemini recommendations, falling back to TMDB trending...');
+      
+      const trendingMovies = await getTrendingMovies();
+      
+      if (trendingMovies.length > 0) {
+        // Get top genres from taste profile for personalized reasons
+        const topGenres = tasteProfile?.genre_affinities 
+          ? Object.entries(tasteProfile.genre_affinities)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 3)
+              .map(([genre]) => genre)
+              .join(', ')
+          : 'various genres';
+
+        recommendations = trendingMovies.slice(0, 10).map((movie: any) => ({
+          contentId: movie.id.toString(),
+          score: 0.7 + (Math.random() * 0.2),
+          reason: `Trending now! Based on your interest in ${topGenres || 'movies'}, this is a must-watch.`,
+          content: {
+            id: movie.id.toString(),
+            title: movie.title,
+            description: movie.overview || '',
+            long_description: movie.overview || null,
+            image_url: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null,
+            backdrop_url: movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : null,
+            type: 'movie' as const,
+            year: movie.release_date ? new Date(movie.release_date).getFullYear() : 0,
+            director: null,
+            artist: null,
+            actors: [],
+            platforms: [],
+            trailer_url: null,
+            runtime: null,
+            duration: null,
+            genre: movie.genre_ids?.join(', ') || '',
+            stats_highly: 0,
+            stats_recommended: 0,
+            stats_not: 0,
+            rating: movie.vote_average || 0,
+            rating_count: movie.vote_count || 0,
+            is_tv_show: false,
           }
-          console.warn('⚠️ Could not fetch TMDB data for ID:', rec.contentId);
-          return { ...rec, content: null };
-        } catch (error) {
-          console.error('Error fetching TMDB data for:', rec.contentId, error);
-          return { ...rec, content: null };
-        }
-      })
-    );
+        }));
+        source = 'tmdb-trending';
+        console.log(`✅ TMDB trending returned ${recommendations.length} recommendations`);
+      }
+    }
 
-    // Filter out null content
-    const validRecommendations = merged.filter((rec: any) => rec.content !== null);
+    // ✅ FINAL FALLBACK: If still nothing, use top rated
+    if (recommendations.length === 0) {
+      console.log('⚠️ No trending movies, falling back to top rated...');
+      
+      const topRated = await getTopRatedMovies();
+      
+      if (topRated.length > 0) {
+        recommendations = topRated.slice(0, 10).map((movie: any) => ({
+          contentId: movie.id.toString(),
+          score: 0.8,
+          reason: 'Highly rated by audiences worldwide. A must-see classic!',
+          content: {
+            id: movie.id.toString(),
+            title: movie.title,
+            description: movie.overview || '',
+            long_description: movie.overview || null,
+            image_url: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null,
+            backdrop_url: movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : null,
+            type: 'movie' as const,
+            year: movie.release_date ? new Date(movie.release_date).getFullYear() : 0,
+            director: null,
+            artist: null,
+            actors: [],
+            platforms: [],
+            trailer_url: null,
+            runtime: null,
+            duration: null,
+            genre: movie.genre_ids?.join(', ') || '',
+            stats_highly: 0,
+            stats_recommended: 0,
+            stats_not: 0,
+            rating: movie.vote_average || 0,
+            rating_count: movie.vote_count || 0,
+            is_tv_show: false,
+          }
+        }));
+        source = 'tmdb-top-rated';
+        console.log(`✅ TMDB top rated returned ${recommendations.length} recommendations`);
+      }
+    }
 
-    console.log(`✅ Returning ${validRecommendations.length} valid recommendations`);
+    console.log(`✅ Returning ${recommendations.length} recommendations from ${source}`);
 
     return NextResponse.json({ 
       success: true, 
-      recommendations: validRecommendations,
-      metadata: result.metadata 
+      recommendations,
+      metadata: { source }
     });
     
   } catch (error: any) {
