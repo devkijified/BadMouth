@@ -94,6 +94,8 @@ export default function MovieDetailsModal({
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>([]);
+  const [streamingLinks, setStreamingLinks] = useState<any[]>([]);
+  const [loadingStreaming, setLoadingStreaming] = useState(false);
   const [aiReview, setAiReview] = useState<string | null>(null);
   const [aiRating, setAiRating] = useState<number | null>(null);
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
@@ -110,6 +112,7 @@ export default function MovieDetailsModal({
       fetchFullMovieDetails();
       generateAIReview();
       fetchAIRecommendations();
+      fetchStreamingLinks(content.id);
     }
   }, [content, isOpen]);
 
@@ -263,6 +266,26 @@ export default function MovieDetailsModal({
     }
   };
 
+  const fetchStreamingLinks = async (movieId: string) => {
+    setLoadingStreaming(true);
+    try {
+      console.log('🔍 Fetching streaming links for:', movieId);
+      const response = await fetch(`/api/streaming/${movieId}`);
+      const data = await response.json();
+      
+      if (data.success && data.links && data.links.length > 0) {
+        setStreamingLinks(data.links);
+        console.log('🎬 Streaming links loaded:', data.links);
+      } else {
+        console.log('ℹ️ No streaming links found');
+      }
+    } catch (error) {
+      console.error('Error fetching streaming links:', error);
+    } finally {
+      setLoadingStreaming(false);
+    }
+  };
+
   const handleCastClick = (actorName: string) => {
     onClose();
     window.location.href = `/actor/${encodeURIComponent(actorName)}`;
@@ -271,11 +294,6 @@ export default function MovieDetailsModal({
   const formatDate = (dateStr: string) => {
     if (!dateStr) return 'N/A';
     return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  };
-
-  const handlePlatformClick = (platformName: string) => {
-    // Open TMDB watch page - this is the most reliable way
-    window.open(`https://www.themoviedb.org/movie/${content?.id}/watch`, '_blank');
   };
 
   if (!isOpen || !content) return null;
@@ -433,7 +451,7 @@ export default function MovieDetailsModal({
               {/* Details Tab */}
               {activeTab === 'details' && (
                 <div className="space-y-4">
-                  {/* ✅ BADMOUTH AI Review (Restored) */}
+                  {/* BADMOUTH AI Review */}
                   <div className="p-4 bg-gradient-to-r from-teal-600/20 to-blue-600/20 rounded-xl border border-teal-500/20">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
@@ -550,7 +568,7 @@ export default function MovieDetailsModal({
                     </button>
                   </div>
 
-                  {/* ✅ AI "You might also like" Section */}
+                  {/* AI "You might also like" Section */}
                   <div className="mt-6 pt-4 border-t border-gray-800">
                     <div className="flex items-center gap-2 mb-3">
                       <Sparkles className="w-5 h-5 text-teal-500" />
@@ -694,16 +712,90 @@ export default function MovieDetailsModal({
               {/* Platforms Tab */}
               {activeTab === 'platforms' && (
                 <div className="space-y-4">
-                  {platforms.length > 0 ? (
+                  {loadingStreaming ? (
+                    <div className="flex flex-col items-center justify-center py-8">
+                      <Loader2 className="w-8 h-8 animate-spin text-teal-500" />
+                      <p className="text-gray-400 mt-2 text-sm">Loading streaming options...</p>
+                    </div>
+                  ) : streamingLinks.length > 0 ? (
                     <div>
-                      <p className="text-sm text-gray-400 mb-3">Where to watch {content.title}</p>
+                      <p className="text-sm text-gray-400 mb-3">Watch {content.title} on:</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {streamingLinks.map((link, idx) => {
+                          // Get icon for provider
+                          const getProviderIcon = (name: string) => {
+                            const icons: Record<string, string> = {
+                              'Netflix': '📺',
+                              'Prime Video': '📦',
+                              'Disney+': '✨',
+                              'HBO Max': '🔷',
+                              'Max': '🔷',
+                              'Hulu': '🟢',
+                              'Apple TV+': '🍎',
+                              'Peacock': '🦚',
+                              'Paramount+': '⛰️',
+                              'MGM+': '🎬',
+                              'Starz': '⭐',
+                              'Showtime': '📺',
+                              'iTunes': '🍏',
+                              'Google Play': '▶️',
+                              'Vudu': '🎥',
+                              'YouTube': '▶️',
+                            };
+                            return icons[name] || '🎬';
+                          };
+
+                          // Get type label
+                          const getTypeLabel = (type: string) => {
+                            const labels: Record<string, string> = {
+                              'flatrate': '📺 Streaming',
+                              'sub': '📺 Streaming',
+                              'rent': '💰 Rent',
+                              'buy': '💵 Buy',
+                              'free': '🆓 Free',
+                            };
+                            return labels[type] || type;
+                          };
+
+                          return (
+                            <a
+                              key={idx}
+                              href={link.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-3 p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition group"
+                            >
+                              <span className="text-2xl">{getProviderIcon(link.provider)}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-white group-hover:text-teal-400 transition truncate">
+                                  {link.provider}
+                                </p>
+                                <p className="text-[10px] text-gray-400">
+                                  {getTypeLabel(link.type)}
+                                  {link.quality && ` • ${link.quality}`}
+                                  {link.price && ` • $${link.price}`}
+                                </p>
+                              </div>
+                              <ExternalLink size={14} className="text-gray-500 group-hover:text-teal-400 flex-shrink-0" />
+                            </a>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-3 text-center">
+                        Direct links to streaming services • Powered by Watchmode
+                      </p>
+                    </div>
+                  ) : platforms.length > 0 ? (
+                    // Fallback to TMDB providers
+                    <div>
+                      <p className="text-sm text-gray-400 mb-3">Available on (via TMDB):</p>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         {platforms.map((platform) => {
                           const display = PLATFORM_DISPLAY[platform.provider_name] || { icon: '🎬', color: 'bg-gray-600' };
                           return (
                             <button
                               key={platform.provider_id}
-                              onClick={() => handlePlatformClick(platform.provider_name)}
+                              onClick={() => window.open(`https://www.themoviedb.org/movie/${content.id}/watch`, '_blank')}
                               className="flex items-center gap-3 p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition group text-left"
                             >
                               {platform.logo_path ? (
@@ -719,7 +811,7 @@ export default function MovieDetailsModal({
                                 <p className="text-sm text-white group-hover:text-teal-400 transition truncate">
                                   {platform.provider_name}
                                 </p>
-                                <p className="text-[10px] text-gray-400">Click to find on TMDB</p>
+                                <p className="text-[10px] text-gray-400">Check TMDB</p>
                               </div>
                               <ExternalLink size={14} className="text-gray-500 group-hover:text-teal-400 flex-shrink-0" />
                             </button>
@@ -727,13 +819,13 @@ export default function MovieDetailsModal({
                         })}
                       </div>
                       <p className="text-xs text-gray-500 mt-3 text-center">
-                        Click any platform to see availability on TMDB
+                        Streaming links not available • Check TMDB for availability
                       </p>
                     </div>
                   ) : (
                     <div className="text-center py-8">
                       <Globe className="w-12 h-12 text-gray-600 mx-auto mb-2" />
-                      <p className="text-gray-400">Platform information not available.</p>
+                      <p className="text-gray-400">No streaming information available.</p>
                       <p className="text-xs text-gray-500 mt-1">Check your local streaming services.</p>
                     </div>
                   )}
@@ -744,7 +836,7 @@ export default function MovieDetailsModal({
             {/* TMDB Attribution */}
             <div className="px-6 pb-4 pt-2 border-t border-gray-800 flex justify-between items-center">
               <p className="text-[10px] text-gray-500">
-                Data provided by TMDB • BADMOUTH AI Review by Gemini
+                Data provided by TMDB • BADMOUTH AI Review by Gemini • Streaming by Watchmode
               </p>
               <button
                 onClick={() => {
