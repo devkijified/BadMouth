@@ -3,6 +3,35 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAIProvider } from '@/services/ai/provider';
 import { supabase } from '@/lib/supabase/client';
 
+const TMDB_API_KEY = process.env.TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f';
+const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+
+async function getMovieDetails(tmdbId: string) {
+  try {
+    const response = await fetch(
+      `${TMDB_BASE_URL}/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=en-US`
+    );
+    if (!response.ok) return null;
+    const data = await response.json();
+    return {
+      id: data.id.toString(),
+      title: data.title,
+      description: data.overview,
+      image_url: data.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : null,
+      backdrop_url: data.backdrop_path ? `https://image.tmdb.org/t/p/original${data.backdrop_path}` : null,
+      type: 'movie',
+      year: data.release_date ? new Date(data.release_date).getFullYear() : 0,
+      rating: data.vote_average || 0,
+      rating_count: data.vote_count || 0,
+      genre: data.genres?.map((g: any) => g.name).join(', ') || '',
+      runtime: data.runtime ? `${data.runtime} min` : null,
+    };
+  } catch (error) {
+    console.error('Error fetching TMDB movie:', error);
+    return null;
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const userId = request.headers.get('x-user-id');
@@ -25,49 +54,48 @@ export async function GET(request: NextRequest) {
 
     console.log('📊 Taste profile:', tasteProfile ? 'Found' : 'Not found');
 
-    // Get watch history
-    const { data: watchHistory } = await supabase
-      .from('user_watch_history')
-      .select('*, content(*)')
-      .eq('user_id', userId)
-      .limit(50);
-
-    console.log('📺 Watch history:', watchHistory?.length || 0, 'items');
-
-    // ✅ Get AI provider (Gemini)
+    // Get AI provider (Gemini)
     const aiProvider = getAIProvider();
     
     console.log('🧠 Calling Gemini AI...');
     const result = await aiProvider.generateRecommendations({
       userId,
       userTasteProfile: tasteProfile,
-      watchHistory: watchHistory || [],
+      watchHistory: [],
       limit: 10,
-      excludeIds: watchHistory?.map(h => h.content_id) || [],
+      excludeIds: [],
     });
 
     console.log('📊 Gemini response:', result.recommendations?.length || 0, 'recommendations');
 
-    // Get full content details
-    const contentIds = result.recommendations.map((r: any) => r.contentId);
-    
-    let contentItems: any[] = [];
-    if (contentIds.length > 0) {
-      const { data: content } = await supabase
-        .from('content')
-        .select('*')
-        .in('id', contentIds);
-      contentItems = content || [];
-    }
+    // ✅ Fetch movie details from TMDB for each recommendation
+    const merged = await Promise.all(
+      (result.recommendations || []).map(async (rec: any) => {
+        try {
+          const tmdbData = await getMovieDetails(rec.contentId);
+          if (tmdbData) {
+            return {
+              ...rec,
+              content: tmdbData
+            };
+          }
+          console.warn('⚠️ Could not fetch TMDB data for ID:', rec.contentId);
+          return { ...rec, content: null };
+        } catch (error) {
+          console.error('Error fetching TMDB data for:', rec.contentId, error);
+          return { ...rec, content: null };
+        }
+      })
+    );
 
-    const merged = result.recommendations.map((rec: any) => ({
-      ...rec,
-      content: contentItems.find((c: any) => c.id === rec.contentId) || null,
-    }));
+    // Filter out null content
+    const validRecommendations = merged.filter((rec: any) => rec.content !== null);
+
+    console.log(`✅ Returning ${validRecommendations.length} valid recommendations`);
 
     return NextResponse.json({ 
       success: true, 
-      recommendations: merged,
+      recommendations: validRecommendations,
       metadata: result.metadata 
     });
     
