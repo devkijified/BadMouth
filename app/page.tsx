@@ -19,6 +19,7 @@ import WatchlistBasedRecommendations from '@/components/WatchlistBasedRecommenda
 import TrailerReels from '@/components/TrailerReels'
 import AIRecommendations from '@/components/AIRecommendations'
 import MovieFeed from '@/components/MovieFeed'
+import ExperienceCategories from '@/components/ExperienceCategories'
 import { ContentItem, Category } from '@/types/content'
 import toast from 'react-hot-toast'
 
@@ -44,6 +45,9 @@ export default function HomePage() {
   const [showRecommendModal, setShowRecommendModal] = useState(false)
   const [recommendItem, setRecommendItem] = useState<ContentItem | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  
+  // Experience Categories
+  const [selectedExperience, setSelectedExperience] = useState<string | null>(null)
   
   // User's own recommendations for profile modal
   const [myRecommendations, setMyRecommendations] = useState<any[]>([])
@@ -531,6 +535,18 @@ export default function HomePage() {
     router.push('/onboarding')
   }
 
+  // ✅ Experience Category Handler
+  const handleExperienceSelect = (categoryId: string | null) => {
+    setSelectedExperience(categoryId)
+    // If a category is selected, switch to movies tab to show filtered results
+    if (categoryId) {
+      setCurrentPage('movies')
+    } else {
+      // If cleared, go back to home
+      setCurrentPage('home')
+    }
+  }
+
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50)
@@ -928,6 +944,15 @@ export default function HomePage() {
             />
             <TrendingBar onViewDetails={handleViewDetails} />
             <QuickStats userId={user.id} />
+            
+            {/* ✅ ADDED: Experience Categories */}
+            <div className="container mx-auto px-4 py-4">
+              <ExperienceCategories 
+                onSelectCategory={handleExperienceSelect}
+                selectedCategory={selectedExperience}
+              />
+            </div>
+            
             <div className="container mx-auto px-4">
               {/* AI Recommendations Section */}
               <div className="mb-8">
@@ -943,7 +968,11 @@ export default function HomePage() {
               <div className="mb-8">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold">🎬 Discover Movies</h2>
-                  <span className="text-xs text-gray-400">Based on your taste</span>
+                  {selectedExperience && (
+                    <span className="text-xs text-teal-400 bg-teal-500/20 px-2 py-1 rounded-full">
+                      Filtered by: {selectedExperience}
+                    </span>
+                  )}
                 </div>
                 <MovieFeed 
                   onViewDetails={handleViewDetails}
@@ -951,6 +980,7 @@ export default function HomePage() {
                   onRemoveFromWatchlist={removeFromWatchlist}
                   isInWatchlist={isInWatchlist}
                   userId={user.id}
+                  experienceFilter={selectedExperience}
                 />
               </div>
               
@@ -982,6 +1012,15 @@ export default function HomePage() {
               activeTab={activeTab} 
             />
             <TrendingBar onViewDetails={handleViewDetails} />
+            
+            {/* ✅ ADDED: Experience Categories in Movies Tab */}
+            <div className="container mx-auto px-4 py-4">
+              <ExperienceCategories 
+                onSelectCategory={handleExperienceSelect}
+                selectedCategory={selectedExperience}
+              />
+            </div>
+            
             <div className="container mx-auto px-4">
               {categories.filter(c => c.name === '🔥 Trending Now').map((category) => (
                 <ContentRow 
@@ -998,7 +1037,7 @@ export default function HomePage() {
                 />
               ))}
               
-              {categories.filter(c => c.name !== '🔥 Trending Now').map((category) => (
+              {categories.filter(c => c.name !== '🔥 Trending Now' && c.type === 'movie').map((category) => (
                 <ContentRow 
                   key={category.id}
                   title={category.name}
@@ -1027,7 +1066,7 @@ export default function HomePage() {
             <TrendingBar onViewDetails={handleViewDetails} />
             <div className="container mx-auto px-4">
               {categories.length > 0 ? (
-                categories.map((category) => (
+                categories.filter(c => c.type === 'music').map((category) => (
                   <ContentRow 
                     key={category.id}
                     title={category.name}
