@@ -40,7 +40,10 @@ export default function ExperienceCategories({
           return (
             <button
               key={category.id}
-              onClick={() => onSelectCategory(isSelected ? null : category.id)}
+              onClick={() => {
+                console.log('🎯 Category clicked:', category.id);
+                onSelectCategory(isSelected ? null : category.id);
+              }}
               onMouseEnter={() => setHoveredId(category.id)}
               onMouseLeave={() => setHoveredId(null)}
               className={`relative p-4 rounded-xl text-left transition-all duration-300 ${
