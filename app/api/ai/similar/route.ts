@@ -1,3 +1,5 @@
+// app/api/ai/similar/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getAIProvider } from '@/services/ai/provider';
 
@@ -63,14 +65,16 @@ export async function POST(request: NextRequest) {
 
     const aiProvider = getAIProvider();
 
-    const result = await aiProvider.generateSimilarMovies({
+    const result = (await aiProvider.generateSimilarMovies({
       title,
       genre: body.genre || '',
       year: body.year || '',
-    });
+    })) as { titles?: string[] };
+
+    const titlesList = Array.isArray(result?.titles) ? result.titles : [];
 
     const recommendations = await Promise.all(
-      result.titles.map(async (movieTitle) => {
+      titlesList.map(async (movieTitle: string) => {
         const movie = await searchTmdbMovie(movieTitle);
 
         if (!movie) return null;
