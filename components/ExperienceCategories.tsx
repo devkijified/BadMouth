@@ -1,12 +1,12 @@
 // components/ExperienceCategories.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { EXPERIENCE_CATEGORIES } from '@/constants/experienceCategories';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, X } from 'lucide-react';
 
 interface ExperienceCategoriesProps {
-  onSelectCategory: (categoryId: string) => void;
+  onSelectCategory: (categoryId: string | null) => void;
   selectedCategory: string | null;
 }
 
@@ -22,7 +22,14 @@ export default function ExperienceCategories({
         <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
           🎯 How do you want to feel?
         </h3>
-        <span className="text-xs text-gray-500">Pick your vibe</span>
+        {selectedCategory && (
+          <button
+            onClick={() => onSelectCategory(null)}
+            className="text-xs text-gray-400 hover:text-white transition flex items-center gap-1"
+          >
+            <X size={14} /> Clear
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -33,7 +40,7 @@ export default function ExperienceCategories({
           return (
             <button
               key={category.id}
-              onClick={() => onSelectCategory(category.id)}
+              onClick={() => onSelectCategory(isSelected ? null : category.id)}
               onMouseEnter={() => setHoveredId(category.id)}
               onMouseLeave={() => setHoveredId(null)}
               className={`relative p-4 rounded-xl text-left transition-all duration-300 ${
