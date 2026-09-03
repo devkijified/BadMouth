@@ -197,6 +197,38 @@ Description: ${params.description || 'No description available'}
     }
   }
 
+  async generateSimilarMovies(params: {
+    title: string;
+    genre: string;
+    year: string | number;
+  }): Promise<any> {
+    if (!this.isInitialized) {
+      return { similar: [] };
+    }
+
+    try {
+      const prompt = `
+Find movies similar to the following:
+Title: ${params.title}
+Genre: ${params.genre || 'Unknown'}
+Year: ${params.year || 'Unknown'}
+
+Return only valid JSON listing similar movie titles, reasons, or relevant data format expected by your application.
+`;
+      const text = await this.generateText(prompt);
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+      if (!jsonMatch) {
+        return { similar: [] };
+      }
+
+      return JSON.parse(jsonMatch[0]);
+    } catch (error) {
+      console.error('❌ Gemini similar movies error:', error);
+      return { similar: [] };
+    }
+  }
+
   private buildRecommendationPrompt(
     params: RecommendationParams
   ): string {
@@ -289,7 +321,7 @@ ${JSON.stringify(
     title: item.content?.title || 'Unknown',
     genre: item.content?.genre || 'Unknown',
     rating: item.rating,
-  })),
+  )),
   null,
   2
 )}
