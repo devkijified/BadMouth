@@ -17,6 +17,12 @@ export interface AIProvider {
   generateReview(
     params: ReviewParams
   ): Promise<AIReviewResponse>;
+
+  generateSimilarMovies(params: {
+    title: string;
+    genre: string;
+    year: string | number;
+  }): Promise<any>;
 }
 
 export interface RecommendationParams {
