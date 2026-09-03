@@ -21,6 +21,7 @@ import AIRecommendations from '@/components/AIRecommendations'
 import MovieFeed from '@/components/MovieFeed'
 import ExperienceCategories from '@/components/ExperienceCategories'
 import ExperienceModal from '@/components/ExperienceModal'
+import MovieDetailsModal from '@/components/MovieDetailsModal'
 import { ContentItem, Category } from '@/types/content'
 import { EXPERIENCE_CATEGORIES } from '@/constants/experienceCategories'
 import toast from 'react-hot-toast'
@@ -538,7 +539,7 @@ export default function HomePage() {
     router.push('/onboarding')
   }
 
-  // ✅ Experience Category Handler
+  // Experience Category Handler
   const handleExperienceSelect = (categoryId: string | null) => {
     setSelectedExperience(categoryId)
     if (categoryId) {
@@ -651,6 +652,18 @@ export default function HomePage() {
         onClose={() => setIsExperienceModalOpen(false)}
         onSelectCategory={handleExperienceSelect}
         selectedCategory={selectedExperience}
+      />
+
+      {/* Movie Details Modal */}
+      <MovieDetailsModal
+        isOpen={showDetailsModal}
+        onClose={() => setShowDetailsModal(false)}
+        content={selectedContent}
+        onRecommend={handleRecommend}
+        onAddToWatchlist={addToWatchlist}
+        onRemoveFromWatchlist={removeFromWatchlist}
+        isInWatchlist={isInWatchlist}
+        userId={user.id}
       />
 
       {/* Notifications Panel */}
@@ -954,7 +967,7 @@ export default function HomePage() {
             <TrendingBar onViewDetails={handleViewDetails} />
             <QuickStats userId={user.id} />
             
-            {/* ✅ Experience Categories - Now a button that opens modal */}
+            {/* Experience Categories - Button that opens modal */}
             <div className="container mx-auto px-4 py-4">
               <ExperienceCategories 
                 onOpenModal={() => setIsExperienceModalOpen(true)}
@@ -1022,7 +1035,7 @@ export default function HomePage() {
             />
             <TrendingBar onViewDetails={handleViewDetails} />
             
-            {/* ✅ Experience Categories - Now a button that opens modal */}
+            {/* Experience Categories - Button that opens modal */}
             <div className="container mx-auto px-4 py-4">
               <ExperienceCategories 
                 onOpenModal={() => setIsExperienceModalOpen(true)}
@@ -1031,7 +1044,7 @@ export default function HomePage() {
             </div>
             
             <div className="container mx-auto px-4">
-              {/* ✅ MovieFeed with experienceFilter */}
+              {/* MovieFeed with experienceFilter */}
               <div className="mb-8">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold">
@@ -1140,163 +1153,6 @@ export default function HomePage() {
           </>
         )}
       </main>
-
-      {/* Details Modal */}
-      {showDetailsModal && selectedContent && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 overflow-y-auto">
-          <div className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
-            <div className="sticky top-0 bg-gray-900 z-10 rounded-t-xl">
-              <div className="relative">
-                <img src={selectedContent.backdrop_url || selectedContent.image_url} alt={selectedContent.title} className="w-full h-48 object-cover rounded-t-xl" />
-                <button 
-                  onClick={() => setShowDetailsModal(false)} 
-                  className="absolute top-4 right-4 p-2 bg-black/70 hover:bg-black/90 rounded-full transition z-20"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            </div>
-            <div className="p-5">
-              <h2 className="text-2xl font-bold mb-1">{selectedContent.title}</h2>
-              {selectedContent.artist && <p className="text-gray-400 mb-3">{selectedContent.artist}</p>}
-              <p className="text-gray-300 mb-4 text-sm leading-relaxed">{selectedContent.long_description || selectedContent.description}</p>
-              
-              <div className="flex items-center gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg">
-                <Star size={20} className="text-yellow-400 fill-yellow-400" />
-                <span className="text-2xl font-bold">{getRating(selectedContent).toFixed(1)}</span>
-                <span className="text-gray-400">/10</span>
-                <span className="text-xs text-gray-500 ml-2">
-                  based on {selectedContent.rating_count || 0} ratings
-                </span>
-              </div>
-
-              <button
-                onClick={() => {
-                  setShowDetailsModal(false)
-                  handleRecommend(selectedContent)
-                }}
-                className="w-full mb-4 py-2.5 bg-gradient-to-r from-teal-600 to-blue-600 rounded-lg font-semibold hover:opacity-90 transition flex items-center justify-center gap-2"
-              >
-                <Star size={18} className="fill-white" /> Rate This {selectedContent.type === 'movie' ? 'Movie' : 'Song'}
-              </button>
-              
-              <div className="flex gap-6 mb-4 p-3 bg-gray-800/50 rounded-lg">
-                <div className="text-center">
-                  <div className="text-2xl text-yellow-400">⭐</div>
-                  <div className="text-xs text-gray-400 mt-1">RATING</div>
-                  <div className="font-bold">{getRating(selectedContent).toFixed(1)}/10</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl text-blue-500">👤</div>
-                  <div className="text-xs text-gray-400 mt-1">RATINGS</div>
-                  <div className="font-bold">{selectedContent.rating_count || 0}</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl text-gray-500">📅</div>
-                  <div className="text-xs text-gray-400 mt-1">YEAR</div>
-                  <div className="font-bold">{selectedContent.year}</div>
-                </div>
-              </div>
-              
-              <div className="mb-4">
-                <h3 className="text-md font-semibold mb-2">{selectedContent.type === 'movie' ? '📺 Where to Watch' : '🎧 Where to Listen'}</h3>
-                <div className="flex flex-wrap gap-3">
-                  {selectedContent.platforms && selectedContent.platforms.length > 0 ? (
-                    selectedContent.platforms.map((platform: string, idx: number) => {
-                      const info = platformIcons[platform] || { icon: '🎬', color: 'bg-gray-600', url: '#' }
-                      return (
-                        <a 
-                          key={idx} 
-                          href={info.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className={`flex items-center gap-2 px-3 py-2 ${info.color} rounded-lg text-sm font-medium hover:opacity-80 transition`}
-                          title={platform}
-                        >
-                          <span className="text-base">{info.icon}</span>
-                          <span className="hidden sm:inline">{platform}</span>
-                        </a>
-                      )
-                    })
-                  ) : (
-                    <p className="text-sm text-gray-500">Platform information coming soon</p>
-                  )}
-                </div>
-              </div>
-              
-              {selectedContent.type === 'movie' && selectedContent.director && (
-                <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
-                  <div><span className="text-gray-400">🎬 Director:</span> {selectedContent.director}</div>
-                  <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
-                  <div><span className="text-gray-400">⏱️ Runtime:</span> {selectedContent.runtime || 'N/A'}</div>
-                  <div><span className="text-gray-400">🎭 Genre:</span> {selectedContent.genre}</div>
-                </div>
-              )}
-              
-              {selectedContent.type === 'music' && selectedContent.artist && (
-                <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-800/50 rounded-lg text-sm">
-                  <div className="col-span-2">
-                    <span className="text-gray-400">🎤 Artist:</span>{' '}
-                    <button
-                      onClick={() => {
-                        setShowDetailsModal(false)
-                        router.push(`/actor/${encodeURIComponent(selectedContent.artist!)}`)
-                      }}
-                      className="text-teal-400 hover:text-teal-300 hover:underline transition"
-                    >
-                      {selectedContent.artist}
-                    </button>
-                  </div>
-                  <div><span className="text-gray-400">📅 Year:</span> {selectedContent.year}</div>
-                  <div><span className="text-gray-400">⏱️ Duration:</span> {selectedContent.duration || 'N/A'}</div>
-                  <div><span className="text-gray-400">🎭 Genre:</span> {selectedContent.genre}</div>
-                </div>
-              )}
-              
-              {selectedContent.type === 'movie' && selectedContent.actors && selectedContent.actors.length > 0 && (
-                <div className="mb-4">
-                  <h3 className="text-md font-semibold mb-2">⭐ Cast</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedContent.actors.map((actor: string, idx: number) => (
-                      <button
-                        key={idx}
-                        onClick={() => {
-                          setShowDetailsModal(false)
-                          router.push(`/actor/${encodeURIComponent(actor)}`)
-                        }}
-                        className="px-3 py-1 bg-gray-800 rounded-full text-sm hover:bg-teal-600/30 hover:text-teal-400 transition"
-                      >
-                        {actor}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {selectedContent.type === 'music' && selectedContent.trailer_url && (
-                <div className="mb-4">
-                  <h3 className="text-md font-semibold mb-2">🎧 Audio Preview</h3>
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <audio controls className="w-full" src={selectedContent.trailer_url}>
-                      Your browser does not support the audio element.
-                    </audio>
-                    <p className="text-xs text-gray-500 mt-2 text-center">30-second preview</p>
-                  </div>
-                </div>
-              )}
-              
-              {selectedContent.type === 'movie' && selectedContent.trailer_url && (
-                <div className="mb-4">
-                  <h3 className="text-md font-semibold mb-2">▶️ Watch Trailer</h3>
-                  <div className="aspect-video rounded-lg overflow-hidden">
-                    <iframe src={selectedContent.trailer_url} title={selectedContent.title} className="w-full h-full" allowFullScreen />
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Mobile Navigation */}
       <MobileNav 
