@@ -48,13 +48,28 @@ const GENRE_TO_ID: Record<string, number> = {
   'Thriller': 53, 'War': 10752, 'Western': 37
 };
 
-// Platform to genre mapping (for "What people are watching on X")
-const PLATFORM_GENRES: Record<string, number[]> = {
-  'netflix': [28, 12, 18, 10749, 35, 80, 53],
-  'prime': [28, 878, 12, 53, 18],
-  'disney': [16, 10751, 12, 28, 878],
-  'hbo': [18, 53, 80, 10749, 35],
-  'apple': [878, 18, 53, 10749],
+// ✅ TMDB Platform Provider IDs (from JustWatch integration)
+const PLATFORM_IDS: Record<string, number> = {
+  'netflix': 8,
+  'prime': 9,
+  'disney': 337,
+  'hbo': 384,
+  'apple': 350,
+  'hulu': 15,
+  'peacock': 386,
+  'paramount': 531,
+};
+
+// Platform display names
+const PLATFORM_NAMES: Record<string, string> = {
+  'netflix': 'Netflix',
+  'prime': 'Prime Video',
+  'disney': 'Disney+',
+  'hbo': 'HBO Max',
+  'apple': 'Apple TV+',
+  'hulu': 'Hulu',
+  'peacock': 'Peacock',
+  'paramount': 'Paramount+',
 };
 
 // Mood to genre mapping
@@ -73,7 +88,7 @@ const MOOD_TO_GENRES: Record<string, number[]> = {
   'family': [10751, 16, 12],
 };
 
-// ✅ NEW: Filter presets for quick access
+// Filter presets
 const FILTER_PRESETS = [
   { id: 'trending', label: '🔥 Trending', icon: TrendingUp },
   { id: 'top-rated', label: '⭐ Top Rated', icon: Award },
@@ -133,7 +148,6 @@ export default function MovieFeed({
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   
-  // Debounce timer for search
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loaderRef = useRef<HTMLDivElement | null>(null);
@@ -211,7 +225,7 @@ export default function MovieFeed({
         url += `&with_genres=${GENRE_TO_ID[selectedGenre]}`;
       }
 
-      // Mood filter (maps to genres)
+      // Mood filter
       if (selectedMood !== 'all' && MOOD_TO_GENRES[selectedMood]) {
         const moodGenres = MOOD_TO_GENRES[selectedMood].join(',');
         url += `&with_genres=${moodGenres}`;
@@ -222,10 +236,10 @@ export default function MovieFeed({
         url += `&primary_release_year=${selectedYear}`;
       }
 
-      // Platform filter (maps to genres)
-      if (selectedPlatform !== 'all' && PLATFORM_GENRES[selectedPlatform]) {
-        const platformGenres = PLATFORM_GENRES[selectedPlatform].join(',');
-        url += `&with_genres=${platformGenres}`;
+      // ✅ Platform filter using TMDB watch providers
+      if (selectedPlatform !== 'all' && PLATFORM_IDS[selectedPlatform]) {
+        const providerId = PLATFORM_IDS[selectedPlatform];
+        url += `&with_watch_providers=${providerId}&watch_region=US`;
       }
 
       // Search
@@ -281,17 +295,15 @@ export default function MovieFeed({
     }
   }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, searchQuery, activePreset, watchlistIds]);
 
-  // ✅ Debounced search handler
+  // Debounced search handler
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     setShowSuggestions(value.length > 0);
     
-    // Clear existing timeout
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
     
-    // Set new timeout (500ms delay)
     searchTimeoutRef.current = setTimeout(() => {
       setPage(1);
       setMovies([]);
@@ -300,7 +312,7 @@ export default function MovieFeed({
     }, 500);
   };
 
-  // ✅ Fetch search suggestions
+  // Fetch search suggestions
   const fetchSuggestions = async (query: string) => {
     if (query.length < 2) {
       setSearchSuggestions([]);
@@ -456,18 +468,20 @@ export default function MovieFeed({
       .map(([genre]) => genre);
   };
 
-  // Handle preset click
   const handlePresetClick = (presetId: string) => {
     setActivePreset(presetId);
-    // Reset other filters when preset is selected
     if (presetId === '2026') {
       setSelectedYear('2026');
+      setSelectedPlatform('all');
     } else if (presetId === 'netflix') {
       setSelectedPlatform('netflix');
+      setSelectedYear('all');
     } else if (presetId === 'prime') {
       setSelectedPlatform('prime');
+      setSelectedYear('all');
     } else if (presetId === 'disney') {
       setSelectedPlatform('disney');
+      setSelectedYear('all');
     } else {
       setSelectedYear('all');
       setSelectedPlatform('all');
@@ -503,7 +517,7 @@ export default function MovieFeed({
         </div>
       )}
 
-      {/* ✅ NEW: Filter Presets */}
+      {/* Filter Presets */}
       <div className="flex flex-wrap gap-2">
         {FILTER_PRESETS.map(preset => {
           const Icon = preset.icon;
@@ -714,7 +728,7 @@ export default function MovieFeed({
                     : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                 }`}
               >
-                HBO/Max
+                HBO Max
               </button>
               <button
                 onClick={() => setSelectedPlatform('apple')}
