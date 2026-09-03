@@ -23,7 +23,6 @@ export default function AIRecommendations({
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasProfile, setHasProfile] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     checkTasteProfile();
@@ -32,7 +31,6 @@ export default function AIRecommendations({
   const checkTasteProfile = async () => {
     try {
       setLoading(true);
-      setError(null);
       
       const { data, error } = await supabase
         .from('user_taste_profiles')
@@ -42,13 +40,11 @@ export default function AIRecommendations({
 
       if (error) {
         console.error('Error checking taste profile:', error);
-        setError('Could not check your preferences');
         setHasProfile(false);
         setLoading(false);
         return;
       }
 
-      // ✅ FIX: Check if profile exists AND onboarding is completed
       const profileExists = !!data;
       const onboardingCompleted = data?.onboarding_completed === true;
       
@@ -58,19 +54,16 @@ export default function AIRecommendations({
         console.log('✅ User has taste profile, fetching recommendations');
         await fetchRecommendations();
       } else {
-        console.log('📝 User needs onboarding or profile incomplete');
         setLoading(false);
       }
     } catch (error) {
       console.error('Error in checkTasteProfile:', error);
-      setError('Something went wrong');
       setLoading(false);
     }
   };
 
   const fetchRecommendations = async () => {
     setLoading(true);
-    setError(null);
     
     try {
       const response = await fetch('/api/recommendations', {
@@ -79,36 +72,21 @@ export default function AIRecommendations({
       const data = await response.json();
       
       if (data.success && data.recommendations) {
-        // Filter out recommendations without content
         const validRecs = data.recommendations.filter((rec: any) => rec.content !== null);
         setRecommendations(validRecs);
-        
-        if (validRecs.length === 0) {
-          setError('No recommendations found. Try selecting more movies or moods!');
-        }
-      } else {
-        setError('Could not get recommendations');
       }
     } catch (error) {
       console.error('Error fetching AI recommendations:', error);
-      setError('Failed to load recommendations');
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle refresh
-  const handleRefresh = async () => {
-    await fetchRecommendations();
-    toast.success('Recommendations refreshed!');
-  };
-
-  // Handle onboarding
   const handleGetStarted = () => {
     window.location.href = '/onboarding';
   };
 
-  // ✅ Show loading state
+  // Show loading state
   if (loading) {
     return (
       <div className="bg-gray-900/50 rounded-xl p-6 text-center">
@@ -118,7 +96,7 @@ export default function AIRecommendations({
     );
   }
 
-  // ✅ Show onboarding prompt if no profile
+  // Show onboarding prompt if no profile
   if (!hasProfile) {
     return (
       <div className="bg-gradient-to-r from-teal-600/20 to-blue-600/20 rounded-xl p-6 border border-teal-500/30">
@@ -144,39 +122,12 @@ export default function AIRecommendations({
     );
   }
 
-  // ✅ Show error state
-  if (error) {
-    return (
-      <div className="bg-gray-900/50 rounded-xl p-6 text-center">
-        <Sparkles className="w-8 h-8 text-gray-500 mx-auto" />
-        <p className="text-gray-400 mt-2">{error}</p>
-        <button
-          onClick={handleRefresh}
-          className="mt-2 px-4 py-2 bg-teal-500 rounded-lg text-sm hover:bg-teal-600 transition flex items-center gap-2 mx-auto"
-        >
-          <RefreshCw size={14} /> Try Again
-        </button>
-      </div>
-    );
-  }
-
-  // ✅ No recommendations yet
+  // ✅ REMOVED: "No recommendations found" box - now returns null if no recs
   if (recommendations.length === 0) {
-    return (
-      <div className="bg-gray-900/50 rounded-xl p-6 text-center">
-        <Sparkles className="w-8 h-8 text-gray-500 mx-auto" />
-        <p className="text-gray-400 mt-2">No AI recommendations yet</p>
-        <button
-          onClick={handleRefresh}
-          className="mt-2 px-4 py-2 bg-teal-500 rounded-lg text-sm hover:bg-teal-600 transition flex items-center gap-2 mx-auto"
-        >
-          <RefreshCw size={14} /> Generate recommendations
-        </button>
-      </div>
-    );
+    return null; // Don't show anything
   }
 
-  // ✅ Show recommendations
+  // Show recommendations
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -185,12 +136,6 @@ export default function AIRecommendations({
           <h2 className="text-xl font-semibold text-white">AI Picks for You</h2>
           <span className="text-xs bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded-full">Powered by Gemini</span>
         </div>
-        <button
-          onClick={handleRefresh}
-          className="text-sm text-gray-400 hover:text-white transition flex items-center gap-1"
-        >
-          <RefreshCw size={14} /> Refresh
-        </button>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -226,18 +171,10 @@ export default function AIRecommendations({
                   }}
                   className="absolute bottom-2 right-2 p-1.5 bg-black/70 rounded-full hover:bg-teal-600 transition"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill={isLiked ? "currentColor" : "none"}
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    className={isLiked ? "text-teal-500" : "text-gray-400"}
-                  >
-                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                  </svg>
+                  <Heart
+                    size={14}
+                    className={isLiked ? 'fill-teal-500 text-teal-500' : 'text-gray-400'}
+                  />
                 </button>
                 {rec.score && (
                   <div className="absolute bottom-2 left-2 bg-black/70 px-1.5 py-0.5 rounded text-[10px] text-teal-400">
