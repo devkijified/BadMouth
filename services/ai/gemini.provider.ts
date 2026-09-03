@@ -243,6 +243,18 @@ Return only valid JSON listing similar movie titles, reasons, or relevant data f
       limit = 10,
     } = params;
 
+    const formattedHistory = JSON.stringify(
+      watchHistory?.slice(0, 20).map((item: any) => ({
+        title: item.content?.title || 'Unknown',
+        rating: item.rating,
+        liked:
+          item.interaction_type === 'like' ||
+          item.rating >= 7,
+      })) || [],
+      null,
+      2
+    );
+
     return `
 You are BADMOUTH, an expert movie recommender AI.
 
@@ -250,17 +262,7 @@ User taste profile:
 ${JSON.stringify(userTasteProfile || {}, null, 2)}
 
 Watch history:
-${JSON.stringify(
-  watchHistory?.slice(0, 20).map((item: any) => ({
-    title: item.content?.title || 'Unknown',
-    rating: item.rating,
-    liked:
-      item.interaction_type === 'like' ||
-      item.rating >= 7,
-  })) || [],
-  null,
-  2
-)}
+${formattedHistory}
 
 Preferences:
 ${mood ? `Mood: ${mood}` : ''}
@@ -313,18 +315,20 @@ Write 2 or 3 sentences.
   }
 
   private buildTasteProfilePrompt(history: any[]): string {
+    const mappedHistory = JSON.stringify(
+      history.slice(0, 30).map((item: any) => ({
+        title: item.content?.title || 'Unknown',
+        genre: item.content?.genre || 'Unknown',
+        rating: item.rating,
+      })),
+      null,
+      2
+    );
+
     return `
 Based on this watch history, generate a taste profile:
 
-${JSON.stringify(
-  history.slice(0, 30).map((item: any) => ({
-    title: item.content?.title || 'Unknown',
-    genre: item.content?.genre || 'Unknown',
-    rating: item.rating,
-  )),
-  null,
-  2
-)}
+${mappedHistory}
 
 Return only JSON:
 {
