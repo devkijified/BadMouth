@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase/client';
 import { Search, Loader2, Heart, Star, Filter, X, Calendar, TrendingUp, Award, Tv } from 'lucide-react';
 import { ContentItem } from '@/types/content';
+import { EXPERIENCE_CATEGORIES } from '@/constants/experienceCategories';
 import toast from 'react-hot-toast';
 
 interface Movie {
@@ -28,6 +29,7 @@ interface MovieFeedProps {
   onRemoveFromWatchlist: (id: string) => Promise<void>;
   isInWatchlist: (id: string) => boolean;
   userId: string;
+  experienceFilter?: string | null;
 }
 
 // Genre mapping
@@ -48,7 +50,7 @@ const GENRE_TO_ID: Record<string, number> = {
   'Thriller': 53, 'War': 10752, 'Western': 37
 };
 
-// ✅ TMDB Platform Provider IDs (from JustWatch integration)
+// TMDB Platform Provider IDs
 const PLATFORM_IDS: Record<string, number> = {
   'netflix': 8,
   'prime': 9,
@@ -128,7 +130,8 @@ export default function MovieFeed({
   onAddToWatchlist,
   onRemoveFromWatchlist,
   isInWatchlist,
-  userId
+  userId,
+  experienceFilter
 }: MovieFeedProps) {
   const { user } = useAuth();
   const [movies, setMovies] = useState<Movie[]>([]);
@@ -236,10 +239,23 @@ export default function MovieFeed({
         url += `&primary_release_year=${selectedYear}`;
       }
 
-      // ✅ Platform filter using TMDB watch providers
+      // Platform filter using TMDB watch providers
       if (selectedPlatform !== 'all' && PLATFORM_IDS[selectedPlatform]) {
         const providerId = PLATFORM_IDS[selectedPlatform];
         url += `&with_watch_providers=${providerId}&watch_region=US`;
+      }
+
+      // ✅ Experience filter
+      if (experienceFilter) {
+        const experience = EXPERIENCE_CATEGORIES.find(c => c.id === experienceFilter);
+        if (experience && experience.tags.length > 0) {
+          const genreIds = experience.tags
+            .map(tag => GENRE_TO_ID[tag])
+            .filter(id => id !== undefined);
+          if (genreIds.length > 0) {
+            url += `&with_genres=${genreIds.join(',')}`;
+          }
+        }
       }
 
       // Search
@@ -293,7 +309,7 @@ export default function MovieFeed({
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, searchQuery, activePreset, watchlistIds]);
+  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, searchQuery, activePreset, watchlistIds, experienceFilter]);
 
   // Debounced search handler
   const handleSearchChange = (value: string) => {
@@ -349,7 +365,7 @@ export default function MovieFeed({
     setMovies([]);
     setHasMore(true);
     fetchMovies(1, false);
-  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, activePreset, fetchMovies]);
+  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, activePreset, experienceFilter, fetchMovies]);
 
   // Infinite scroll observer
   useEffect(() => {
