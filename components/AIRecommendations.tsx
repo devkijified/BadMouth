@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Sparkles, Star, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
+import { Sparkles, Star, ChevronRight, Loader2, RefreshCw, Heart } from 'lucide-react';  // ← ADD Heart here
 import { supabase } from '@/lib/supabase/client';
 import { ContentItem } from '@/types/content';
 import toast from 'react-hot-toast';
@@ -122,9 +122,9 @@ export default function AIRecommendations({
     );
   }
 
-  // ✅ REMOVED: "No recommendations found" box - now returns null if no recs
+  // No recommendations - return null (don't show anything)
   if (recommendations.length === 0) {
-    return null; // Don't show anything
+    return null;
   }
 
   // Show recommendations
