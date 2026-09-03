@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   X, Star, Heart, Play, Users, Calendar, Clock, Film, 
   ExternalLink, Sparkles, Loader2, Share2,
-  Globe, Tag, ChevronDown, Clapperboard
+  Globe, Tag, ChevronDown, Clapperboard, Info
 } from 'lucide-react';
 import { ContentItem } from '@/types/content';
 import { supabase } from '@/lib/supabase/client';
@@ -49,7 +49,6 @@ interface Platform {
   provider_name: string;
   logo_path: string;
   display_priority: number;
-  link?: string;
 }
 
 interface MovieDetails {
@@ -62,22 +61,6 @@ interface MovieDetails {
   production_companies: { id: number; name: string; logo_path: string }[];
   certification?: string;
 }
-
-// Platform mapping to direct URLs
-const PLATFORM_URLS: Record<string, string> = {
-  'Netflix': 'https://www.netflix.com/search?q=',
-  'Prime Video': 'https://www.amazon.com/s?k=',
-  'Disney+': 'https://www.disneyplus.com/search/',
-  'HBO Max': 'https://www.max.com/search?q=',
-  'Max': 'https://www.max.com/search?q=',
-  'Hulu': 'https://www.hulu.com/search?q=',
-  'Apple TV+': 'https://tv.apple.com/search/',
-  'Peacock': 'https://www.peacocktv.com/search?q=',
-  'Paramount+': 'https://www.paramountplus.com/search/',
-  'MGM+': 'https://www.mgmplus.com/search?q=',
-  'Starz': 'https://www.starz.com/search?q=',
-  'Showtime': 'https://www.sho.com/search?q=',
-};
 
 // Platform display names with icons
 const PLATFORM_DISPLAY: Record<string, { icon: string; color: string }> = {
@@ -111,8 +94,11 @@ export default function MovieDetailsModal({
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>([]);
+  const [aiReview, setAiReview] = useState<string | null>(null);
+  const [aiRating, setAiRating] = useState<number | null>(null);
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
   const [loadingAI, setLoadingAI] = useState(false);
+  const [loadingRecs, setLoadingRecs] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'cast' | 'trailers' | 'platforms'>('details');
   const [expandedDescription, setExpandedDescription] = useState(false);
   
@@ -122,6 +108,7 @@ export default function MovieDetailsModal({
   useEffect(() => {
     if (content && isOpen) {
       fetchFullMovieDetails();
+      generateAIReview();
       fetchAIRecommendations();
     }
   }, [content, isOpen]);
@@ -191,7 +178,7 @@ export default function MovieDetailsModal({
         setVideos(trailers);
       }
 
-      // Process platforms with direct links
+      // Process platforms
       if (providersRes.ok) {
         const data = await providersRes.json();
         if (data.results?.US) {
@@ -207,16 +194,7 @@ export default function MovieDetailsModal({
             }
             return acc;
           }, []);
-          
-          // Add direct links to platforms
-          const platformsWithLinks = unique.slice(0, 10).map((p: any) => {
-            const baseUrl = PLATFORM_URLS[p.provider_name] || 'https://www.themoviedb.org/search?q=';
-            return {
-              ...p,
-              link: `${baseUrl}${encodeURIComponent(content.title)}`,
-            };
-          });
-          setPlatforms(platformsWithLinks);
+          setPlatforms(unique.slice(0, 10));
         }
       }
 
@@ -228,12 +206,40 @@ export default function MovieDetailsModal({
     }
   };
 
-  const fetchAIRecommendations = async () => {
+  const generateAIReview = async () => {
     if (!content) return;
     setLoadingAI(true);
 
     try {
-      // Get AI recommendations for similar movies
+      const response = await fetch('/api/ai/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: content.title,
+          description: content.description,
+          year: content.year,
+          genre: content.genre,
+          rating: content.rating,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.review) setAiReview(data.review);
+        if (data.rating) setAiRating(data.rating);
+      }
+    } catch (error) {
+      console.error('Error generating AI review:', error);
+    } finally {
+      setLoadingAI(false);
+    }
+  };
+
+  const fetchAIRecommendations = async () => {
+    if (!content) return;
+    setLoadingRecs(true);
+
+    try {
       const response = await fetch('/api/ai/similar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -253,7 +259,7 @@ export default function MovieDetailsModal({
     } catch (error) {
       console.error('Error fetching AI recommendations:', error);
     } finally {
-      setLoadingAI(false);
+      setLoadingRecs(false);
     }
   };
 
@@ -267,13 +273,9 @@ export default function MovieDetailsModal({
     return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   };
 
-  const handlePlatformClick = (platform: Platform) => {
-    if (platform.link) {
-      window.open(platform.link, '_blank');
-    } else {
-      // Fallback to TMDB watch page
-      window.open(`https://www.themoviedb.org/movie/${content?.id}/watch`, '_blank');
-    }
+  const handlePlatformClick = (platformName: string) => {
+    // Open TMDB watch page - this is the most reliable way
+    window.open(`https://www.themoviedb.org/movie/${content?.id}/watch`, '_blank');
   };
 
   if (!isOpen || !content) return null;
@@ -391,6 +393,13 @@ export default function MovieDetailsModal({
                         <span className="text-white font-bold">{content.rating?.toFixed(1) || 'N/A'}</span>
                         <span className="text-gray-400 text-xs">({content.rating_count || 0} ratings)</span>
                       </div>
+                      {aiRating && (
+                        <div className="flex items-center gap-1">
+                          <Sparkles className="w-4 h-4 text-teal-400" />
+                          <span className="text-teal-400 font-bold">{aiRating.toFixed(1)}</span>
+                          <span className="text-gray-400 text-xs">AI</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -424,6 +433,37 @@ export default function MovieDetailsModal({
               {/* Details Tab */}
               {activeTab === 'details' && (
                 <div className="space-y-4">
+                  {/* ✅ BADMOUTH AI Review (Restored) */}
+                  <div className="p-4 bg-gradient-to-r from-teal-600/20 to-blue-600/20 rounded-xl border border-teal-500/20">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-5 h-5 text-teal-500" />
+                        <h3 className="font-semibold text-white">BADMOUTH AI Review</h3>
+                        <span className="text-xs bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded-full">Powered by Gemini</span>
+                      </div>
+                      {loadingAI && <Loader2 className="w-4 h-4 animate-spin text-teal-500" />}
+                    </div>
+                    {loadingAI ? (
+                      <p className="text-gray-400 text-sm">Generating AI review...</p>
+                    ) : aiReview ? (
+                      <>
+                        {aiRating && (
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="flex items-center gap-1">
+                              <Sparkles className="w-4 h-4 text-teal-400" />
+                              <span className="text-lg font-bold text-teal-400">{aiRating.toFixed(1)}</span>
+                              <span className="text-gray-400 text-sm">/10</span>
+                            </div>
+                            <span className="text-xs text-gray-500">• BADMOUTH AI Rating</span>
+                          </div>
+                        )}
+                        <p className="text-gray-300 text-sm leading-relaxed">{aiReview}</p>
+                      </>
+                    ) : (
+                      <p className="text-gray-400 text-sm">AI review not available for this title.</p>
+                    )}
+                  </div>
+
                   {/* Description */}
                   <div>
                     <p className={`text-gray-300 text-sm leading-relaxed ${!expandedDescription ? 'line-clamp-4' : ''}`}>
@@ -460,7 +500,7 @@ export default function MovieDetailsModal({
                               {genre.name}
                             </span>
                           ))}
-                          </div>
+                        </div>
                       </div>
                     )}
                     {details?.production_companies && details.production_companies.length > 0 && (
@@ -510,16 +550,16 @@ export default function MovieDetailsModal({
                     </button>
                   </div>
 
-                  {/* ✅ AI Recommendations Section */}
+                  {/* ✅ AI "You might also like" Section */}
                   <div className="mt-6 pt-4 border-t border-gray-800">
                     <div className="flex items-center gap-2 mb-3">
                       <Sparkles className="w-5 h-5 text-teal-500" />
                       <h3 className="text-sm font-semibold text-white">You might also like</h3>
                       <span className="text-xs bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded-full">AI Powered</span>
-                      {loadingAI && <Loader2 className="w-4 h-4 animate-spin text-teal-500 ml-2" />}
+                      {loadingRecs && <Loader2 className="w-4 h-4 animate-spin text-teal-500 ml-2" />}
                     </div>
                     
-                    {loadingAI ? (
+                    {loadingRecs ? (
                       <div className="flex justify-center py-4">
                         <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
                       </div>
@@ -531,7 +571,6 @@ export default function MovieDetailsModal({
                             className="group cursor-pointer"
                             onClick={() => {
                               onClose();
-                              // Navigate to movie details
                               window.location.href = `/?details=${movie.id}`;
                             }}
                           >
@@ -664,7 +703,7 @@ export default function MovieDetailsModal({
                           return (
                             <button
                               key={platform.provider_id}
-                              onClick={() => handlePlatformClick(platform)}
+                              onClick={() => handlePlatformClick(platform.provider_name)}
                               className="flex items-center gap-3 p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition group text-left"
                             >
                               {platform.logo_path ? (
@@ -680,15 +719,16 @@ export default function MovieDetailsModal({
                                 <p className="text-sm text-white group-hover:text-teal-400 transition truncate">
                                   {platform.provider_name}
                                 </p>
-                                <p className="text-[10px] text-gray-400">
-                                  {platform.link ? 'Click to watch' : 'Check availability'}
-                                </p>
+                                <p className="text-[10px] text-gray-400">Click to find on TMDB</p>
                               </div>
                               <ExternalLink size={14} className="text-gray-500 group-hover:text-teal-400 flex-shrink-0" />
                             </button>
                           );
                         })}
                       </div>
+                      <p className="text-xs text-gray-500 mt-3 text-center">
+                        Click any platform to see availability on TMDB
+                      </p>
                     </div>
                   ) : (
                     <div className="text-center py-8">
@@ -704,7 +744,7 @@ export default function MovieDetailsModal({
             {/* TMDB Attribution */}
             <div className="px-6 pb-4 pt-2 border-t border-gray-800 flex justify-between items-center">
               <p className="text-[10px] text-gray-500">
-                Data provided by TMDB • AI Recommendations by Gemini
+                Data provided by TMDB • BADMOUTH AI Review by Gemini
               </p>
               <button
                 onClick={() => {
