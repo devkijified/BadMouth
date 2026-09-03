@@ -1,8 +1,22 @@
 // services/ai/types.ts
+
 export interface AIProvider {
-  generateRecommendations(params: RecommendationParams): Promise<AIRecommendationResponse>;
-  explainRecommendation(content: any, userProfile: any): Promise<string>;
-  generateTasteProfile(history: any[]): Promise<TasteProfile>;
+  generateRecommendations(
+    params: RecommendationParams
+  ): Promise<AIRecommendationResponse>;
+
+  explainRecommendation(
+    content: any,
+    userProfile: any
+  ): Promise<string>;
+
+  generateTasteProfile(
+    history: any[]
+  ): Promise<TasteProfile>;
+
+  generateReview(
+    params: ReviewParams
+  ): Promise<AIReviewResponse>;
 }
 
 export interface RecommendationParams {
@@ -32,11 +46,27 @@ export interface AIRecommendationResponse {
   };
 }
 
+export interface ReviewParams {
+  title: string;
+  description?: string;
+  year?: string | number;
+  genre?: string;
+  rating?: string | number | null;
+}
+
+export interface AIReviewResponse {
+  review: string;
+  rating: number | null;
+}
+
 export interface TasteProfile {
   genreAffinities: Record<string, number>;
   preferredMoods: string[];
   preferredLanguages: string[];
-  preferredRuntime: { min: number; max: number };
+  preferredRuntime: {
+    min: number;
+    max: number;
+  };
   favoriteActors: string[];
   favoriteDirectors: string[];
 }
