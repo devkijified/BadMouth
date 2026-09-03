@@ -111,7 +111,6 @@ export async function GET(request: NextRequest) {
       console.log('📊 Gemini response:', result.recommendations?.length || 0, 'recommendations');
 
       if (result.recommendations && result.recommendations.length > 0) {
-        // Fetch TMDB data for each recommendation
         const merged = await Promise.all(
           result.recommendations.map(async (rec: any) => {
             try {
@@ -144,14 +143,16 @@ export async function GET(request: NextRequest) {
       const trendingMovies = await getTrendingMovies();
       
       if (trendingMovies.length > 0) {
-        // Get top genres from taste profile for personalized reasons
-        const topGenres = tasteProfile?.genre_affinities 
-          ? Object.entries(tasteProfile.genre_affinities)
-              .sort((a, b) => b[1] - a[1])
-              .slice(0, 3)
-              .map(([genre]) => genre)
-              .join(', ')
-          : 'various genres';
+        // ✅ FIX: Cast entries to [string, number][] to fix type error
+        let topGenres = 'various genres';
+        if (tasteProfile?.genre_affinities) {
+          const entries = Object.entries(tasteProfile.genre_affinities) as [string, number][];
+          topGenres = entries
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([genre]) => genre)
+            .join(', ');
+        }
 
         recommendations = trendingMovies.slice(0, 10).map((movie: any) => ({
           contentId: movie.id.toString(),
