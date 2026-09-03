@@ -548,7 +548,7 @@ return (
       <div className="p-6">
         {activeTab === 'details' && (
           <div className="space-y-4">
-            {/* AI Review — now shows a real error state instead of hanging forever */}
+            {/* AI Review */}
             <div className="p-4 bg-gradient-to-r from-teal-600/20 to-blue-600/20 rounded-xl border border-teal-500/20">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
@@ -850,7 +850,7 @@ return (
                     };
 
                     return (
-                      
+                      <a
                         key={idx}
                         href={link.link}
                         target="_blank"
