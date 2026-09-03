@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase/client';
-import { Search, Loader2, Heart, Star, Filter, X } from 'lucide-react';
+import { Search, Loader2, Heart, Star, Filter, X, Calendar, TrendingUp, Award, Tv } from 'lucide-react';
 import { ContentItem } from '@/types/content';
 import toast from 'react-hot-toast';
 
@@ -48,6 +48,15 @@ const GENRE_TO_ID: Record<string, number> = {
   'Thriller': 53, 'War': 10752, 'Western': 37
 };
 
+// Platform to genre mapping (for "What people are watching on X")
+const PLATFORM_GENRES: Record<string, number[]> = {
+  'netflix': [28, 12, 18, 10749, 35, 80, 53],
+  'prime': [28, 878, 12, 53, 18],
+  'disney': [16, 10751, 12, 28, 878],
+  'hbo': [18, 53, 80, 10749, 35],
+  'apple': [878, 18, 53, 10749],
+};
+
 // Mood to genre mapping
 const MOOD_TO_GENRES: Record<string, number[]> = {
   'action-packed': [28, 53, 878],
@@ -63,6 +72,16 @@ const MOOD_TO_GENRES: Record<string, number[]> = {
   'thoughtful': [18, 99, 36],
   'family': [10751, 16, 12],
 };
+
+// ✅ NEW: Filter presets for quick access
+const FILTER_PRESETS = [
+  { id: 'trending', label: '🔥 Trending', icon: TrendingUp },
+  { id: 'top-rated', label: '⭐ Top Rated', icon: Award },
+  { id: '2026', label: '📅 2026 Movies', icon: Calendar },
+  { id: 'netflix', label: '📺 Netflix', icon: Tv },
+  { id: 'prime', label: '📦 Prime Video', icon: Tv },
+  { id: 'disney', label: '✨ Disney+', icon: Tv },
+];
 
 // Mood options
 const MOOD_OPTIONS = [
@@ -80,6 +99,9 @@ const MOOD_OPTIONS = [
   { id: 'thoughtful', label: '☕ Thoughtful' },
   { id: 'family', label: '👨‍👩‍👧‍👦 Family' },
 ];
+
+// Year options
+const YEAR_OPTIONS = ['all', '2026', '2025', '2024', '2023', '2022'];
 
 const GENRE_OPTIONS = [
   'all',
@@ -102,12 +124,18 @@ export default function MovieFeed({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGenre, setSelectedGenre] = useState<string>('all');
   const [selectedMood, setSelectedMood] = useState<string>('all');
+  const [selectedYear, setSelectedYear] = useState<string>('all');
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
+  const [activePreset, setActivePreset] = useState<string>('trending');
   const [showFilters, setShowFilters] = useState(false);
   const [userTaste, setUserTaste] = useState<any>(null);
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
+  const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   
+  // Debounce timer for search
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
-  const lastMovieRef = useRef<HTMLDivElement | null>(null);
   const loaderRef = useRef<HTMLDivElement | null>(null);
 
   // Fetch user taste profile
@@ -129,7 +157,6 @@ export default function MovieFeed({
 
         if (data) {
           setUserTaste(data);
-          console.log('🎯 User taste loaded:', data);
         }
       } catch (error) {
         console.error('Error:', error);
@@ -162,23 +189,46 @@ export default function MovieFeed({
     fetchWatchlist();
   }, [userId]);
 
-  // Main fetch function
+  // Main fetch function with all filters
   const fetchMovies = useCallback(async (pageNum: number, append: boolean = true) => {
     try {
       if (pageNum === 1) setLoading(true);
       else setLoadingMore(true);
 
-      let url = `https://api.themoviedb.org/3/discover/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&page=${pageNum}&sort_by=popularity.desc`;
+      let url = `https://api.themoviedb.org/3/discover/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&page=${pageNum}`;
 
+      // Sort by
+      if (activePreset === 'trending') {
+        url += '&sort_by=popularity.desc';
+      } else if (activePreset === 'top-rated') {
+        url += '&sort_by=vote_average.desc&vote_count.gte=100';
+      } else if (activePreset === '2026') {
+        url += '&sort_by=popularity.desc&primary_release_year=2026';
+      }
+
+      // Genre filter
       if (selectedGenre !== 'all' && GENRE_TO_ID[selectedGenre]) {
         url += `&with_genres=${GENRE_TO_ID[selectedGenre]}`;
       }
 
+      // Mood filter (maps to genres)
       if (selectedMood !== 'all' && MOOD_TO_GENRES[selectedMood]) {
         const moodGenres = MOOD_TO_GENRES[selectedMood].join(',');
         url += `&with_genres=${moodGenres}`;
       }
 
+      // Year filter
+      if (selectedYear !== 'all' && activePreset !== '2026') {
+        url += `&primary_release_year=${selectedYear}`;
+      }
+
+      // Platform filter (maps to genres)
+      if (selectedPlatform !== 'all' && PLATFORM_GENRES[selectedPlatform]) {
+        const platformGenres = PLATFORM_GENRES[selectedPlatform].join(',');
+        url += `&with_genres=${platformGenres}`;
+      }
+
+      // Search
       if (searchQuery.trim()) {
         url = `https://api.themoviedb.org/3/search/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&page=${pageNum}&query=${encodeURIComponent(searchQuery)}`;
       }
@@ -229,7 +279,57 @@ export default function MovieFeed({
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [selectedGenre, selectedMood, searchQuery, watchlistIds]);
+  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, searchQuery, activePreset, watchlistIds]);
+
+  // ✅ Debounced search handler
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setShowSuggestions(value.length > 0);
+    
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    // Set new timeout (500ms delay)
+    searchTimeoutRef.current = setTimeout(() => {
+      setPage(1);
+      setMovies([]);
+      setHasMore(true);
+      fetchMovies(1, false);
+    }, 500);
+  };
+
+  // ✅ Fetch search suggestions
+  const fetchSuggestions = async (query: string) => {
+    if (query.length < 2) {
+      setSearchSuggestions([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://api.themoviedb.org/3/search/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&query=${encodeURIComponent(query)}&page=1`
+      );
+      const data = await response.json();
+      const suggestions = (data.results || []).slice(0, 5).map((m: any) => m.title);
+      setSearchSuggestions(suggestions);
+    } catch (error) {
+      console.error('Error fetching suggestions:', error);
+    }
+  };
+
+  // Trigger suggestion fetch on input
+  useEffect(() => {
+    if (searchQuery.length > 1) {
+      const delayDebounce = setTimeout(() => {
+        fetchSuggestions(searchQuery);
+      }, 300);
+      return () => clearTimeout(delayDebounce);
+    } else {
+      setSearchSuggestions([]);
+    }
+  }, [searchQuery]);
 
   // Initial load and filter changes
   useEffect(() => {
@@ -237,7 +337,7 @@ export default function MovieFeed({
     setMovies([]);
     setHasMore(true);
     fetchMovies(1, false);
-  }, [selectedGenre, selectedMood, searchQuery, fetchMovies]);
+  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, activePreset, fetchMovies]);
 
   // Infinite scroll observer
   useEffect(() => {
@@ -278,7 +378,6 @@ export default function MovieFeed({
     return `https://image.tmdb.org/t/p/original${path}`;
   };
 
-  // ✅ FIXED: Complete ContentItem conversion matching your interface
   const handleMovieClick = (movie: Movie) => {
     const contentItem: ContentItem = {
       id: movie.id,
@@ -307,7 +406,6 @@ export default function MovieFeed({
     onViewDetails(contentItem);
   };
 
-  // ✅ FIXED: Complete ContentItem conversion for watchlist
   const handleAddToWatchlist = async (movie: Movie, e: React.MouseEvent) => {
     e.stopPropagation();
     
@@ -349,15 +447,31 @@ export default function MovieFeed({
     });
   };
 
-  // ✅ FIXED: Properly typed getTopGenres function
   const getTopGenres = () => {
     if (!userTaste?.genre_affinities) return [];
-    // Cast the entries to [string, number][] to fix the type error
     const entries = Object.entries(userTaste.genre_affinities) as [string, number][];
     return entries
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
       .map(([genre]) => genre);
+  };
+
+  // Handle preset click
+  const handlePresetClick = (presetId: string) => {
+    setActivePreset(presetId);
+    // Reset other filters when preset is selected
+    if (presetId === '2026') {
+      setSelectedYear('2026');
+    } else if (presetId === 'netflix') {
+      setSelectedPlatform('netflix');
+    } else if (presetId === 'prime') {
+      setSelectedPlatform('prime');
+    } else if (presetId === 'disney') {
+      setSelectedPlatform('disney');
+    } else {
+      setSelectedYear('all');
+      setSelectedPlatform('all');
+    }
   };
 
   if (loading && page === 1) {
@@ -389,26 +503,83 @@ export default function MovieFeed({
         </div>
       )}
 
-      {/* Search and Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex-1 min-w-[200px] relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-          <input
-            type="text"
-            placeholder="Search movies..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2 pl-10 pr-4 text-white placeholder-gray-400 focus:outline-none focus:border-teal-500"
-          />
+      {/* ✅ NEW: Filter Presets */}
+      <div className="flex flex-wrap gap-2">
+        {FILTER_PRESETS.map(preset => {
+          const Icon = preset.icon;
+          const isActive = activePreset === preset.id;
+          return (
+            <button
+              key={preset.id}
+              onClick={() => handlePresetClick(preset.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                isActive
+                  ? 'bg-teal-500 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              <Icon size={14} />
+              {preset.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Search with suggestions */}
+      <div className="relative">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex-1 min-w-[200px] relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              type="text"
+              placeholder="Search movies..."
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2 pl-10 pr-4 text-white placeholder-gray-400 focus:outline-none focus:border-teal-500"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setShowSuggestions(false);
+                  fetchMovies(1, false);
+                }}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="px-4 py-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition flex items-center gap-2"
+          >
+            <Filter size={18} />
+            Filters
+          </button>
         </div>
 
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          className="px-4 py-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition flex items-center gap-2"
-        >
-          <Filter size={18} />
-          Filters
-        </button>
+        {/* Search Suggestions */}
+        {showSuggestions && searchSuggestions.length > 0 && (
+          <div className="absolute z-50 w-full mt-1 bg-gray-800 rounded-lg shadow-xl border border-gray-700 overflow-hidden">
+            {searchSuggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                onClick={() => {
+                  setSearchQuery(suggestion);
+                  setShowSuggestions(false);
+                  fetchMovies(1, false);
+                }}
+                className="w-full text-left px-4 py-2 hover:bg-gray-700 transition text-sm text-white"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Filter Panel */}
@@ -420,7 +591,10 @@ export default function MovieFeed({
               onClick={() => {
                 setSelectedGenre('all');
                 setSelectedMood('all');
+                setSelectedYear('all');
+                setSelectedPlatform('all');
                 setSearchQuery('');
+                setActivePreset('trending');
               }}
               className="text-sm text-teal-400 hover:text-teal-300"
             >
@@ -467,6 +641,93 @@ export default function MovieFeed({
               ))}
             </div>
           </div>
+
+          {/* Year Filter */}
+          <div>
+            <label className="text-xs text-gray-400 block mb-2">Year</label>
+            <div className="flex flex-wrap gap-2">
+              {YEAR_OPTIONS.map(year => (
+                <button
+                  key={year}
+                  onClick={() => setSelectedYear(year)}
+                  className={`px-3 py-1 rounded-full text-xs transition ${
+                    selectedYear === year
+                      ? 'bg-teal-500 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  {year === 'all' ? 'All Years' : year}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Platform Filter */}
+          <div>
+            <label className="text-xs text-gray-400 block mb-2">Platform</label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setSelectedPlatform('all')}
+                className={`px-3 py-1 rounded-full text-xs transition ${
+                  selectedPlatform === 'all'
+                    ? 'bg-teal-500 text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setSelectedPlatform('netflix')}
+                className={`px-3 py-1 rounded-full text-xs transition ${
+                  selectedPlatform === 'netflix'
+                    ? 'bg-teal-500 text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                Netflix
+              </button>
+              <button
+                onClick={() => setSelectedPlatform('prime')}
+                className={`px-3 py-1 rounded-full text-xs transition ${
+                  selectedPlatform === 'prime'
+                    ? 'bg-teal-500 text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                Prime Video
+              </button>
+              <button
+                onClick={() => setSelectedPlatform('disney')}
+                className={`px-3 py-1 rounded-full text-xs transition ${
+                  selectedPlatform === 'disney'
+                    ? 'bg-teal-500 text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                Disney+
+              </button>
+              <button
+                onClick={() => setSelectedPlatform('hbo')}
+                className={`px-3 py-1 rounded-full text-xs transition ${
+                  selectedPlatform === 'hbo'
+                    ? 'bg-teal-500 text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                HBO/Max
+              </button>
+              <button
+                onClick={() => setSelectedPlatform('apple')}
+                className={`px-3 py-1 rounded-full text-xs transition ${
+                  selectedPlatform === 'apple'
+                    ? 'bg-teal-500 text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                Apple TV+
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -479,7 +740,7 @@ export default function MovieFeed({
           return (
             <div
               key={`${movie.id}-${index}`}
-              ref={index === movies.length - 1 ? lastMovieRef : null}
+              ref={index === movies.length - 1 ? loaderRef : null}
               className="bg-gray-800 rounded-lg overflow-hidden cursor-pointer hover:transform hover:scale-105 transition-all duration-200 group"
               onClick={() => handleMovieClick(movie)}
             >
@@ -504,6 +765,13 @@ export default function MovieFeed({
                   <div className="absolute top-2 right-2 bg-black/70 px-1.5 py-0.5 rounded flex items-center gap-0.5">
                     <Star size={10} className="text-yellow-400 fill-yellow-400" />
                     <span className="text-xs font-bold text-white">{movie.vote_average.toFixed(1)}</span>
+                  </div>
+                )}
+
+                {/* Year Badge */}
+                {movie.release_date && (
+                  <div className="absolute top-2 left-2 bg-black/70 px-1.5 py-0.5 rounded text-[10px] text-gray-300">
+                    {new Date(movie.release_date).getFullYear()}
                   </div>
                 )}
 
