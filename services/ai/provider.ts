@@ -10,6 +10,7 @@ export function getAIProvider(): AIProvider {
     const apiKey = process.env.GEMINI_API_KEY || '';
     
     console.log(`🔧 Initializing AI provider: ${provider}`);
+    console.log(`🔑 API Key present: ${apiKey ? 'Yes' : 'No'}`);
     
     switch (provider.toLowerCase()) {
       case 'gemini':
