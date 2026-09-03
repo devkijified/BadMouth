@@ -18,6 +18,7 @@ import QuickStats from '@/components/QuickStats'
 import WatchlistBasedRecommendations from '@/components/WatchlistBasedRecommendations'
 import TrailerReels from '@/components/TrailerReels'
 import AIRecommendations from '@/components/AIRecommendations'
+import MovieFeed from '@/components/MovieFeed'
 import { ContentItem, Category } from '@/types/content'
 import toast from 'react-hot-toast'
 
@@ -64,7 +65,7 @@ export default function HomePage() {
 
   const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller', 'Hip Hop', 'R&B', 'Electronic', 'Jazz']
 
-  // ✅ CHECK ONBOARDING STATUS
+  // Check onboarding status
   useEffect(() => {
     const checkOnboarding = async () => {
       if (!user) {
@@ -79,14 +80,12 @@ export default function HomePage() {
           .eq('user_id', user.id)
           .single()
 
-        // If no data or onboarding not completed, redirect to onboarding
         if (!data?.onboarding_completed) {
           console.log('🔒 User needs onboarding, redirecting...')
           router.push('/onboarding')
           return
         }
       } catch (error) {
-        // Table might not exist yet, redirect to onboarding
         console.warn('⚠️ No taste profile found, redirecting to onboarding')
         router.push('/onboarding')
         return
@@ -937,6 +936,21 @@ export default function HomePage() {
                   onViewDetails={handleViewDetails}
                   onAddToWatchlist={addToWatchlist}
                   isInWatchlist={isInWatchlist}
+                />
+              </div>
+              
+              {/* Movie Feed with Infinite Scroll */}
+              <div className="mb-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold">🎬 Discover Movies</h2>
+                  <span className="text-xs text-gray-400">Based on your taste</span>
+                </div>
+                <MovieFeed 
+                  onViewDetails={handleViewDetails}
+                  onAddToWatchlist={addToWatchlist}
+                  onRemoveFromWatchlist={removeFromWatchlist}
+                  isInWatchlist={isInWatchlist}
+                  userId={user.id}
                 />
               </div>
               
