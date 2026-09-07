@@ -163,6 +163,9 @@ export default function MovieFeed({
   // ✅ PAGE SIZE (load 20 at a time)
   const PAGE_SIZE = 20;
 
+  // ✅ Track if we've hit the public limit
+  const hasReachedPublicLimit = isPublicUser && movies.length >= MAX_PUBLIC_MOVIES;
+
   // Fetch user taste profile (only for logged-in users)
   useEffect(() => {
     if (isPublicUser) return;
@@ -225,7 +228,7 @@ export default function MovieFeed({
       else setLoadingMore(true);
 
       // ✅ Check if we've reached the public limit
-      if (isPublicUser && movies.length >= MAX_PUBLIC_MOVIES) {
+      if (hasReachedPublicLimit) {
         setHasMore(false);
         setLoading(false);
         setLoadingMore(false);
@@ -349,7 +352,7 @@ export default function MovieFeed({
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, searchQuery, activePreset, watchlistIds, experienceFilter, isPublicUser, movies.length]);
+  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, searchQuery, activePreset, watchlistIds, experienceFilter, isPublicUser, movies.length, hasReachedPublicLimit]);
 
   // Debounced search handler
   const handleSearchChange = (value: string) => {
@@ -407,31 +410,30 @@ export default function MovieFeed({
     fetchMovies(1, false);
   }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, activePreset, experienceFilter, fetchMovies]);
 
-  // ✅ Fixed: Infinite scroll observer with better cleanup
+  // ✅ Fixed: Infinite scroll observer - properly stops at public limit
   useEffect(() => {
-    // Don't set up observer if loading or no more content
-    if (loading || loadingMore || !hasMore) return;
-
-    // ✅ Don't observe if public user and reached limit
-    if (isPublicUser && movies.length >= MAX_PUBLIC_MOVIES) {
-      setHasMore(false);
-      return;
-    }
-
-    // Clean up previous observer
+    // ✅ Always clean up previous observer first
     if (observerRef.current) {
       observerRef.current.disconnect();
       observerRef.current = null;
     }
 
-    // Only create observer if loader element exists and we have more to load
-    if (loaderRef.current && hasMore && !(isPublicUser && movies.length >= MAX_PUBLIC_MOVIES)) {
+    // ✅ Don't set up observer if:
+    // - Loading
+    // - No more content
+    // - Public user has reached limit
+    if (loading || loadingMore || !hasMore || hasReachedPublicLimit) {
+      return;
+    }
+
+    // Only create observer if loader element exists
+    if (loaderRef.current) {
       observerRef.current = new IntersectionObserver(
         (entries) => {
           const entry = entries[0];
           if (entry.isIntersecting && hasMore && !loadingMore && !loading) {
-            // ✅ Check public limit before loading more
-            if (isPublicUser && movies.length >= MAX_PUBLIC_MOVIES) {
+            // ✅ Double-check public limit before loading more
+            if (hasReachedPublicLimit) {
               setHasMore(false);
               return;
             }
@@ -440,7 +442,7 @@ export default function MovieFeed({
         },
         { 
           threshold: 0.1, 
-          rootMargin: '50px'  // ✅ Reduced to prevent premature triggers
+          rootMargin: '50px'
         }
       );
 
@@ -453,7 +455,7 @@ export default function MovieFeed({
         observerRef.current = null;
       }
     };
-  }, [loading, loadingMore, hasMore, isPublicUser, movies.length]);
+  }, [loading, loadingMore, hasMore, hasReachedPublicLimit]);
 
   // Trigger fetch when page changes
   useEffect(() => {
@@ -916,7 +918,7 @@ export default function MovieFeed({
         {!hasMore && movies.length > 0 && (
           <p className="text-gray-500 text-sm">
             {isPublicUser && movies.length >= MAX_PUBLIC_MOVIES 
-              ? '🎬 Showing 40 movies — sign in for more' 
+              ? '🎬 Showing 40 movies — sign in for unlimited access' 
               : 'No more movies to load'}
           </p>
         )}
@@ -925,7 +927,7 @@ export default function MovieFeed({
             <p className="text-gray-400">No movies found. Try adjusting your filters.</p>
           </div>
         )}
-        {hasMore && !loadingMore && movies.length > 0 && (
+        {hasMore && !loadingMore && movies.length > 0 && !hasReachedPublicLimit && (
           <p className="text-gray-500 text-xs animate-pulse">Scroll for more</p>
         )}
       </div>
