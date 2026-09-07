@@ -18,6 +18,8 @@ const REVERSE_GENRE_MAP: Record<string, number> = Object.fromEntries(
   Object.entries(GENRE_MAP).map(([id, name]) => [name.toLowerCase(), Number(id)])
 );
 
+const SORT_OPTIONS = ['vote_average.desc', 'popularity.desc', 'vote_count.desc'];
+
 async function getMovieDetails(tmdbId: string) {
   try {
     const response = await fetch(
@@ -55,6 +57,56 @@ async function getMovieDetails(tmdbId: string) {
   }
 }
 
+async function fetchDiscover(params: Record<string, string>) {
+  const query = new URLSearchParams({ api_key: TMDB_API_KEY, language: 'en-US', ...params });
+  try {
+    const res = await fetch(`${TMDB_BASE_URL}/discover/movie?${query.toString()}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.results || [];
+  } catch {
+    return [];
+  }
+}
+
+// Fetches a genre's movie pool at a randomized page for variety, but GUARANTEES
+// a non-empty attempt by retrying at page 1 (with relaxed vote_count) if the
+// randomized page comes back empty — this is what was causing refreshes to
+// silently starve and fall through to trending.
+async function fetchGenrePool(genreId: number, page: number, minRating: number, decadeParam: Record<string, string>, sortBy: string) {
+  let results = await fetchDiscover({
+    with_genres: String(genreId),
+    sort_by: sortBy,
+    'vote_count.gte': '75',
+    'vote_average.gte': String(minRating),
+    page: String(page),
+    ...decadeParam,
+  });
+
+  if (results.length === 0 && page !== 1) {
+    results = await fetchDiscover({
+      with_genres: String(genreId),
+      sort_by: sortBy,
+      'vote_count.gte': '75',
+      'vote_average.gte': String(minRating),
+      page: '1',
+      ...decadeParam,
+    });
+  }
+
+  if (results.length === 0) {
+    results = await fetchDiscover({
+      with_genres: String(genreId),
+      sort_by: sortBy,
+      'vote_count.gte': '25',
+      page: '1',
+      ...decadeParam,
+    });
+  }
+
+  return results;
+}
+
 async function getMoviesForTasteProfile(tasteProfile: any, shuffleOffset: number = 1) {
   const affinities: Record<string, number> = tasteProfile?.genre_affinities || {};
   const affinityEntries = Object.entries(affinities)
@@ -82,31 +134,20 @@ async function getMoviesForTasteProfile(tasteProfile: any, shuffleOffset: number
       }))
     : [{}];
 
+  const sortBy = SORT_OPTIONS[(shuffleOffset - 1) % SORT_OPTIONS.length];
+
   const requests: Promise<any[]>[] = [];
 
   for (const entry of affinityEntries) {
     const relativeStrength = entry.score / maxScore;
-    const basePages = relativeStrength >= 0.75 ? 3 : relativeStrength >= 0.4 ? 2 : 1;
-    const targetPage = ((shuffleOffset - 1) % 2) + basePages;
+    // Cap at page 3 max — deeper pages under strict filters run dry, which was
+    // the root cause of the empty-pool bug. Strong affinities still get more
+    // coverage via multiple pages, just kept inside a safe range.
+    const maxPage = relativeStrength >= 0.75 ? 3 : relativeStrength >= 0.4 ? 2 : 1;
+    const targetPage = ((shuffleOffset - 1) % maxPage) + 1;
 
     for (const decadeParam of decadeParams) {
-      const params = new URLSearchParams({
-        api_key: TMDB_API_KEY,
-        language: 'en-US',
-        with_genres: String(entry.genreId),
-        sort_by: 'vote_average.desc',
-        'vote_count.gte': '75',
-        'vote_average.gte': String(minRating),
-        page: String(targetPage),
-        ...decadeParam,
-      });
-
-      requests.push(
-        fetch(`${TMDB_BASE_URL}/discover/movie?${params.toString()}`)
-          .then((res) => (res.ok ? res.json() : { results: [] }))
-          .then((data) => data.results || [])
-          .catch(() => [])
-      );
+      requests.push(fetchGenrePool(entry.genreId, targetPage, minRating, decadeParam, sortBy));
     }
   }
 
@@ -140,21 +181,13 @@ async function getTrendingMovies(shufflePage: number = 1) {
 }
 
 async function getTopRatedMovies(shufflePage: number = 1) {
-  try {
-    const response = await fetch(
-      `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&language=en-US&sort_by=vote_average.desc&vote_count.gte=100&page=${shufflePage}`
-    );
-    if (!response.ok) return [];
-    const data = await response.json();
-    return data.results || [];
-  } catch (error) {
-    console.error('Error fetching top rated:', error);
-    return [];
-  }
+  return fetchDiscover({
+    sort_by: 'vote_average.desc',
+    'vote_count.gte': '100',
+    page: String(shufflePage),
+  });
 }
 
-// minMatchThreshold is relaxed automatically if it would otherwise yield zero
-// results, so the block never disappears just because nothing cleared 0.35.
 function getPersonalizedFallback(
   movies: any[],
   tasteProfile: any,
@@ -183,7 +216,7 @@ function getPersonalizedFallback(
       return { ...movie, personalizedScore: -1, _movieGenres: movieGenres };
     }
 
-    let genreScore = hasAffinities ? 0 : 0.5; // neutral baseline when no profile exists yet
+    let genreScore = hasAffinities ? 0 : 0.5;
     if (hasAffinities && movieGenres.length > 0) {
       const matchedAffinities = movieGenres
         .map((g) => Number(affinities[g] ?? 0))
@@ -213,9 +246,6 @@ function getPersonalizedFallback(
   });
 
   let filtered = scored.filter((m) => m.personalizedScore >= minMatchThreshold);
-
-  // Never let a strict threshold zero-out the whole list — relax progressively
-  // instead of returning nothing (this was why the block was disappearing).
   if (filtered.length === 0) {
     filtered = scored.filter((m) => m.personalizedScore >= 0.15);
   }
@@ -277,8 +307,6 @@ function getPersonalizedFallback(
   });
 }
 
-// Absolute last-resort mapper — no scoring, no filtering — guarantees the
-// recommendations block always has content even if every other path failed.
 function mapMoviesDirectly(movies: any[], limit: number = 10): any[] {
   return movies.slice(0, limit).map((movie: any) => {
     const genres = (movie.genre_ids || []).map((id: number) => GENRE_MAP[id]).filter(Boolean);
@@ -331,7 +359,8 @@ export async function GET(request: NextRequest) {
     let recommendations: any[] = [];
     let source = 'none';
 
-    // 1. Check Cache in Supabase (12-hour expiration)
+    // 1. Cache check — skipped entirely when forceRefresh=true (manual refresh button),
+    // and naturally bypassed once it's older than 12h (auto-refresh on next load).
     if (!forceRefresh) {
       try {
         const { data: cachedData, error: cacheError } = await supabase
@@ -395,10 +424,7 @@ export async function GET(request: NextRequest) {
               try {
                 const tmdbData = await getMovieDetails(rec.contentId);
                 if (tmdbData) {
-                  return {
-                    ...rec,
-                    content: tmdbData
-                  };
+                  return { ...rec, content: tmdbData };
                 }
                 return null;
               } catch (error) {
@@ -416,7 +442,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. Fallback to Deep Taste Match Pool (ALWAYS try this if Gemini fails or returns 0)
+    // 4. Deep taste-match fallback — now retries page 1 per-genre before ever
+    // touching trending, so a bad random page can't blank out the pool.
     if (recommendations.length === 0) {
       console.log('⚠️ Building deep taste-matched TMDB pool...');
       let candidateMovies: any[] = [];
@@ -432,7 +459,6 @@ export async function GET(request: NextRequest) {
         console.log('⚠️ No taste-matched movies, falling back to trending...');
         try {
           candidateMovies = await getTrendingMovies(randomShuffleOffset);
-          console.log(`📊 Found ${candidateMovies.length} trending movies`);
         } catch (error) {
           console.error('Error getting trending movies:', error);
         }
@@ -453,15 +479,13 @@ export async function GET(request: NextRequest) {
         if (topRated.length > 0) {
           recommendations = getPersonalizedFallback(topRated, tasteProfile, 10);
           source = 'tmdb-top-rated-personalized';
-          console.log(`✅ Top rated returned ${recommendations.length} recommendations`);
         }
       } catch (error) {
         console.error('Error getting top rated movies:', error);
       }
     }
 
-    // 6. Absolute last resort: unfiltered trending/top-rated, unscored, so the
-    // recommendation block is NEVER empty even if every upstream call failed.
+    // 6. Absolute last resort — guarantees the block is never empty
     if (recommendations.length === 0) {
       console.log('🆘 All personalized paths returned nothing — using raw fallback...');
       try {
@@ -472,14 +496,13 @@ export async function GET(request: NextRequest) {
         if (rawMovies.length > 0) {
           recommendations = mapMoviesDirectly(rawMovies, 10);
           source = 'tmdb-raw-fallback';
-          console.log(`✅ Raw fallback returned ${recommendations.length} recommendations`);
         }
       } catch (error) {
         console.error('Raw fallback also failed:', error);
       }
     }
 
-    // 7. Save/Upsert Cache to Supabase (only if table exists, and only if non-empty)
+    // 7. Cache
     if (recommendations.length > 0) {
       try {
         await supabase
@@ -498,12 +521,12 @@ export async function GET(request: NextRequest) {
 
     console.log(`✅ Returning ${recommendations.length} recommendations from source: ${source}`);
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       recommendations,
       metadata: { source, cached: false }
     });
-    
+
   } catch (error: any) {
     console.error('❌ Recommendation error:', error);
     return NextResponse.json(
