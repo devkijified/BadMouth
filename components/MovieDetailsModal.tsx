@@ -1,1242 +1,494 @@
-// components/MovieDetailsModal.tsx
+// components/MovieFeed.tsx
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  X,
-  Star,
-  Heart,
-  Play,
-  Calendar,
-  Clock,
-  ExternalLink,
-  Sparkles,
-  Loader2,
-  Share2,
-  Globe,
-  Tag,
-  ChevronDown,
-  Clapperboard,
-  AlertCircle,
-  RefreshCw,
-} from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase/client';
+import { Search, Loader2, Heart, Star, Filter, X, Calendar, TrendingUp, Award, Tv } from 'lucide-react';
 import { ContentItem } from '@/types/content';
+import { EXPERIENCE_CATEGORIES } from '@/constants/experienceCategories';
 import toast from 'react-hot-toast';
 
-// ✅ PROPS INTERFACE - Matches app/page.tsx
-interface MovieDetailsModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  content: ContentItem | null;
-  onRecommend: (item: ContentItem) => void;
+interface Movie {
+  id: string;
+  title: string;
+  poster_path: string;
+  backdrop_path: string;
+  overview: string;
+  release_date: string;
+  vote_average: number;
+  vote_count: number;
+  genre_ids: number[];
+  genres?: string[];
+  popularity: number;
+}
+
+interface MovieFeedProps {
+  onViewDetails: (item: ContentItem) => void;
   onAddToWatchlist: (item: ContentItem) => Promise<void>;
   onRemoveFromWatchlist: (id: string) => Promise<void>;
   isInWatchlist: (id: string) => boolean;
   userId: string;
+  experienceFilter?: string | null;
 }
 
-interface CastMember {
-  id: string;
-  name: string;
-  character: string;
-  profile_path: string | null;
-}
-
-interface CrewMember {
-  id: string;
-  name: string;
-  job: string;
-  profile_path: string | null;
-}
-
-interface Video {
-  key: string;
-  name: string;
-  site: string;
-  type: string;
-  official: boolean;
-}
-
-interface Platform {
-  provider_id: number;
-  provider_name: string;
-  logo_path: string;
-  display_priority: number;
-}
-
-interface MovieDetails {
-  title: string;
-  overview: string;
-  tagline: string;
-  release_date: string;
-  runtime: number;
-  genres: { id: number; name: string }[];
-  production_companies: {
-    id: number;
-    name: string;
-    logo_path: string;
-  }[];
-  certification?: string;
-}
-
-interface TMDBResponse {
-  movie?: any;
-  credits?: any;
-  videos?: any;
-  providers?: any;
-}
-
-const PLATFORM_DISPLAY: Record<
-  string,
-  { icon: string; color: string }
-> = {
-  Netflix: { icon: '📺', color: 'bg-red-700' },
-  'Prime Video': { icon: '📦', color: 'bg-blue-600' },
-  'Disney+': { icon: '✨', color: 'bg-blue-700' },
-  'HBO Max': { icon: '🔷', color: 'bg-blue-500' },
-  Max: { icon: '🔷', color: 'bg-blue-500' },
-  Hulu: { icon: '🟢', color: 'bg-green-500' },
-  'Apple TV+': { icon: '🍎', color: 'bg-gray-600' },
-  Peacock: { icon: '🦚', color: 'bg-blue-600' },
-  'Paramount+': { icon: '⛰️', color: 'bg-blue-600' },
-  'MGM+': { icon: '🎬', color: 'bg-red-600' },
-  Starz: { icon: '⭐', color: 'bg-purple-600' },
-  Showtime: { icon: '📺', color: 'bg-yellow-600' },
+const GENRE_MAP: Record<number, string> = {
+  28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy',
+  80: 'Crime', 99: 'Documentary', 18: 'Drama', 10751: 'Family',
+  14: 'Fantasy', 36: 'History', 27: 'Horror', 10402: 'Music',
+  9648: 'Mystery', 10749: 'Romance', 878: 'Sci-Fi', 10770: 'TV Movie',
+  53: 'Thriller', 10752: 'War', 37: 'Western'
 };
 
-// In-memory caches
-const detailsCache = new Map<
-  string,
-  {
-    details: MovieDetails;
-    cast: CastMember[];
-    crew: CrewMember[];
-    videos: Video[];
-    platforms: Platform[];
-  }
->();
+const GENRE_TO_ID: Record<string, number> = {
+  'Action': 28, 'Adventure': 12, 'Animation': 16, 'Comedy': 35,
+  'Crime': 80, 'Documentary': 99, 'Drama': 18, 'Family': 10751,
+  'Fantasy': 14, 'History': 36, 'Horror': 27, 'Music': 10402,
+  'Mystery': 9648, 'Romance': 10749, 'Sci-Fi': 878, 'TV Movie': 10770,
+  'Thriller': 53, 'War': 10752, 'Western': 37
+};
 
-const aiReviewCache = new Map<
-  string,
-  {
-    review: string;
-    rating: number | null;
-  }
->();
+const PLATFORM_IDS: Record<string, number> = {
+  'netflix': 8, 'prime': 9, 'disney': 337, 'hbo': 384,
+  'apple': 350, 'hulu': 15, 'peacock': 386, 'paramount': 531,
+};
 
-const aiRecsCache = new Map<string, any[]>();
-const streamingCache = new Map<string, any[]>();
+const MOOD_TO_GENRES: Record<string, number[]> = {
+  'action-packed': [28, 53, 878], 'feel-good': [35, 10751, 10749],
+  'mind-bending': [878, 53, 9648], 'comedy': [35], 'dark': [18, 80, 53],
+  'romantic': [10749, 18], 'scary': [27, 53], 'epic': [12, 28, 878],
+  'quirky': [35, 80, 18], 'musical': [10402, 10749], 'thoughtful': [18, 99, 36],
+  'family': [10751, 16, 12],
+};
 
-async function fetchWithTimeout(
-  input: RequestInfo,
-  init: RequestInit = {},
-  timeoutMs = 12000
-) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(input, {
-      ...init,
-      signal: controller.signal,
-    });
-    return res;
-  } finally {
-    clearTimeout(id);
-  }
-}
+const FILTER_PRESETS = [
+  { id: 'trending', label: '🔥 Trending', icon: TrendingUp },
+  { id: 'top-rated', label: '⭐ Top Rated', icon: Award },
+  { id: '2026', label: '📅 2026 Movies', icon: Calendar },
+  { id: 'netflix', label: '📺 Netflix', icon: Tv },
+  { id: 'prime', label: '📦 Prime Video', icon: Tv },
+  { id: 'disney', label: '✨ Disney+', icon: Tv },
+];
 
-export default function MovieDetailsModal({
-  isOpen,
-  onClose,
-  content,
-  onRecommend,
-  onAddToWatchlist,
-  onRemoveFromWatchlist,
-  isInWatchlist,
-  userId,
-}: MovieDetailsModalProps) {
-  const [loading, setLoading] = useState(false);
-  const [details, setDetails] = useState<MovieDetails | null>(null);
-  const [cast, setCast] = useState<CastMember[]>([]);
-  const [crew, setCrew] = useState<CrewMember[]>([]);
-  const [videos, setVideos] = useState<Video[]>([]);
-  const [platforms, setPlatforms] = useState<Platform[]>([]);
-  const [streamingLinks, setStreamingLinks] = useState<any[]>([]);
-  const [loadingStreaming, setLoadingStreaming] = useState(false);
-  const [streamingError, setStreamingError] = useState<string | null>(null);
-  const [aiReview, setAiReview] = useState<string | null>(null);
-  const [aiRating, setAiRating] = useState<number | null>(null);
-  const [loadingAI, setLoadingAI] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
-  const [aiReviewVisible, setAiReviewVisible] = useState(true);
-  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
-  const [loadingRecs, setLoadingRecs] = useState(false);
-  const [activeTab, setActiveTab] = useState<
-    'details' | 'cast' | 'trailers' | 'platforms'
-  >('details');
-  const [expandedDescription, setExpandedDescription] = useState(false);
-  const requestIdRef = useRef<string | null>(null);
+const MOOD_OPTIONS = [
+  { id: 'all', label: 'All Moods' }, { id: 'action-packed', label: '⚡ Action-Packed' },
+  { id: 'feel-good', label: '😊 Feel Good' }, { id: 'mind-bending', label: '🧠 Mind-Bending' },
+  { id: 'comedy', label: '😂 Funny' }, { id: 'dark', label: '🌙 Dark & Gritty' },
+  { id: 'romantic', label: '💕 Romantic' }, { id: 'scary', label: '👻 Scary' },
+  { id: 'epic', label: '🔥 Epic' }, { id: 'quirky', label: '🎉 Quirky' },
+  { id: 'musical', label: '🎵 Musical' }, { id: 'thoughtful', label: '☕ Thoughtful' },
+  { id: 'family', label: '👨‍👩‍👧‍👦 Family' },
+];
 
-  const isStale = useCallback((id: string) => {
-    return requestIdRef.current !== id;
-  }, []);
+const YEAR_OPTIONS = ['all', '2026', '2025', '2024', '2023', '2022'];
 
-  const fetchFullMovieDetails = useCallback(
-    async (movieId: string) => {
-      const cached = detailsCache.get(movieId);
-      if (cached) {
-        setDetails(cached.details);
-        setCast(cached.cast);
-        setCrew(cached.crew);
-        setVideos(cached.videos);
-        setPlatforms(cached.platforms);
-        setLoading(false);
-        return;
-      }
+const GENRE_OPTIONS = ['all', ...Object.values(GENRE_MAP).filter((v, i, a) => a.indexOf(v) === i)];
 
-      setLoading(true);
-      try {
-        const response = await fetchWithTimeout(
-          `/api/tmdb/movie/${encodeURIComponent(movieId)}`,
-          {},
-          15000
-        );
+export default function MovieFeed({
+  onViewDetails, onAddToWatchlist, onRemoveFromWatchlist, isInWatchlist,
+  userId, experienceFilter
+}: MovieFeedProps) {
+  const { user } = useAuth();
+  const [movies, setMovies] = useState<Movie[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedGenre, setSelectedGenre] = useState<string>('all');
+  const [selectedMood, setSelectedMood] = useState<string>('all');
+  const [selectedYear, setSelectedYear] = useState<string>('all');
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
+  const [activePreset, setActivePreset] = useState<string>('trending');
+  const [showFilters, setShowFilters] = useState(false);
+  const [userTaste, setUserTaste] = useState<any>(null);
+  const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
+  const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const loaderRef = useRef<HTMLDivElement | null>(null);
 
-        if (isStale(movieId)) return;
-
-        if (!response.ok) {
-          console.error('TMDB request failed:', response.status);
-          if (response.status === 404) {
-            toast.error('Movie not found on TMDB.');
-          } else if (response.status === 429) {
-            toast.error('TMDB rate limit. Please try again.');
-          } else {
-            toast.error(`Failed to load movie details (${response.status})`);
-          }
-          setLoading(false);
-          return;
-        }
-
-        const data: TMDBResponse = await response.json();
-        if (isStale(movieId)) return;
-
-        let newDetails: MovieDetails | null = null;
-        let newCast: CastMember[] = [];
-        let newCrew: CrewMember[] = [];
-        let newVideos: Video[] = [];
-        let newPlatforms: Platform[] = [];
-
-        if (data.movie) {
-          const movie = data.movie;
-          newDetails = {
-            title: movie.title || '',
-            overview: movie.overview || '',
-            tagline: movie.tagline || '',
-            release_date: movie.release_date || '',
-            runtime: movie.runtime || 0,
-            genres: movie.genres || [],
-            production_companies: movie.production_companies || [],
-            certification: movie.release_dates?.results?.find(
-              (r: any) => r.iso_3166_1 === 'US'
-            )?.release_dates?.[0]?.certification || 'NR',
-          };
-        }
-
-        if (data.credits) {
-          const credits = data.credits;
-          if (credits.cast) {
-            newCast = credits.cast.slice(0, 20).map((c: any) => ({
-              id: c.id?.toString() || '',
-              name: c.name || 'Unknown',
-              character: c.character || 'Unknown',
-              profile_path: c.profile_path || null,
-            }));
-          }
-          if (credits.crew) {
-            const keyRoles = [
-              'Director', 'Writer', 'Producer', 'Cinematography',
-              'Editor', 'Music', 'Production Design'
-            ];
-            newCrew = credits.crew
-              .filter((c: any) => keyRoles.includes(c.job))
-              .slice(0, 15)
-              .map((c: any) => ({
-                id: c.id?.toString() || '',
-                name: c.name || 'Unknown',
-                job: c.job || 'Unknown',
-                profile_path: c.profile_path || null,
-              }));
-          }
-        }
-
-        if (data.videos) {
-          const videoResults = data.videos.results || [];
-          newVideos = videoResults
-            .filter(
-              (v: any) =>
-                v.site === 'YouTube' &&
-                (v.type === 'Trailer' || v.type === 'Teaser')
-            )
-            .slice(0, 3)
-            .map((v: any) => ({
-              key: v.key,
-              name: v.name || 'Trailer',
-              site: v.site,
-              type: v.type,
-              official: Boolean(v.official),
-            }));
-        }
-
-        if (data.providers) {
-          const results = data.providers.results;
-          if (results?.US) {
-            const us = results.US;
-            const allProviders = [
-              ...(us.flatrate || []),
-              ...(us.rent || []),
-              ...(us.buy || []),
-            ];
-            const unique = allProviders.reduce(
-              (acc: Platform[], current: Platform) => {
-                if (!acc.find((p) => p.provider_id === current.provider_id)) {
-                  acc.push(current);
-                }
-                return acc;
-              },
-              []
-            );
-            newPlatforms = unique.slice(0, 10);
-          }
-        }
-
-        if (newDetails) {
-          detailsCache.set(movieId, {
-            details: newDetails,
-            cast: newCast,
-            crew: newCrew,
-            videos: newVideos,
-            platforms: newPlatforms,
-          });
-        }
-
-        if (isStale(movieId)) return;
-        setDetails(newDetails);
-        setCast(newCast);
-        setCrew(newCrew);
-        setVideos(newVideos);
-        setPlatforms(newPlatforms);
-      } catch (error: any) {
-        console.error('Error fetching movie details:', error);
-        if (!isStale(movieId)) {
-          toast.error('Failed to load movie details.');
-        }
-      } finally {
-        if (!isStale(movieId)) {
-          setLoading(false);
-        }
-      }
-    },
-    [isStale]
-  );
-
-  const generateAIReview = useCallback(
-    async (movieId: string) => {
-      if (!content) return;
-
-      const cached = aiReviewCache.get(movieId);
-      if (cached) {
-        setAiReview(cached.review);
-        setAiRating(cached.rating);
-        setAiReviewVisible(true);
-        return;
-      }
-
-      setLoadingAI(true);
-      setAiError(null);
-      setAiReviewVisible(true);
-
-      try {
-        const response = await fetchWithTimeout(
-          '/api/ai/review',
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              title: content.title,
-              description: content.long_description || content.description,
-              year: content.year,
-              genre: content.genre,
-              rating: content.rating,
-            }),
-          },
-          20000
-        );
-
-        if (isStale(movieId)) return;
-
-        if (!response.ok) {
-          console.warn('AI review failed with status:', response.status);
-          setAiReviewVisible(false);
-          setLoadingAI(false);
-          return;
-        }
-
-        const data = await response.json();
-        if (data.fallback || !data.review) {
-          setAiReviewVisible(false);
-          setLoadingAI(false);
-          return;
-        }
-
-        aiReviewCache.set(movieId, {
-          review: data.review,
-          rating: data.rating ?? null,
-        });
-
-        setAiReview(data.review);
-        setAiRating(data.rating ?? null);
-        setAiReviewVisible(true);
-      } catch (error: any) {
-        console.warn('AI review error:', error.message);
-        setAiReviewVisible(false);
-      } finally {
-        if (!isStale(movieId)) {
-          setLoadingAI(false);
-        }
-      }
-    },
-    [content, isStale]
-  );
-
-  const fetchAIRecommendations = useCallback(
-    async (movieId: string) => {
-      if (!content) return;
-
-      const cached = aiRecsCache.get(movieId);
-      if (cached) {
-        setAiRecommendations(cached);
-        return;
-      }
-
-      setLoadingRecs(true);
-
-      try {
-        const response = await fetchWithTimeout(
-          '/api/ai/similar',
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              title: content.title,
-              genre: content.genre,
-              year: content.year,
-            }),
-          },
-          20000
-        );
-
-        if (isStale(movieId)) return;
-
-        if (response.ok) {
-          const data = await response.json();
-          const recs = data.recommendations || [];
-          if (recs.length > 0) {
-            aiRecsCache.set(movieId, recs);
-            setAiRecommendations(recs);
-            setLoadingRecs(false);
-            return;
-          }
-        }
-
-        // Fallback to TMDB similar
-        console.log('⚠️ AI recommendations failed, using TMDB similar fallback...');
-        const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f';
-        const similarRes = await fetch(
-          `https://api.themoviedb.org/3/movie/${movieId}/similar?api_key=${TMDB_API_KEY}&language=en-US&page=1`
-        );
-
-        if (similarRes.ok) {
-          const similarData = await similarRes.json();
-          const fallbackRecs = (similarData.results || []).slice(0, 6).map((movie: any) => ({
-            id: movie.id,
-            title: movie.title,
-            poster_path: movie.poster_path,
-            release_date: movie.release_date,
-            vote_average: movie.vote_average,
-            overview: movie.overview,
-          }));
-          if (fallbackRecs.length > 0) {
-            aiRecsCache.set(movieId, fallbackRecs);
-            setAiRecommendations(fallbackRecs);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching recommendations:', error);
-      } finally {
-        if (!isStale(movieId)) {
-          setLoadingRecs(false);
-        }
-      }
-    },
-    [content, isStale]
-  );
-
-  const fetchStreamingLinks = useCallback(
-    async (movieId: string) => {
-      const cached = streamingCache.get(movieId);
-      if (cached) {
-        setStreamingLinks(cached);
-        return;
-      }
-
-      setLoadingStreaming(true);
-      setStreamingError(null);
-
-      try {
-        const response = await fetchWithTimeout(
-          `/api/streaming/${encodeURIComponent(movieId)}`,
-          {},
-          15000
-        );
-
-        if (isStale(movieId)) return;
-
-        if (!response.ok) {
-          const body = await response.text().catch(() => '');
-          console.error('Streaming links request failed:', response.status, body);
-          setStreamingError(`Streaming lookup failed (${response.status})`);
-          return;
-        }
-
-        const data = await response.json();
-        if (data.success && data.links?.length > 0) {
-          streamingCache.set(movieId, data.links);
-          setStreamingLinks(data.links);
-        } else if (!data.success) {
-          setStreamingError(data.error || 'Streaming lookup returned an error');
-        }
-      } catch (error: any) {
-        console.error('Error fetching streaming links:', error);
-        if (!isStale(movieId)) {
-          setStreamingError(error?.name === 'AbortError' ? 'Streaming lookup timed out' : 'Streaming lookup failed');
-        }
-      } finally {
-        if (!isStale(movieId)) {
-          setLoadingStreaming(false);
-        }
-      }
-    },
-    [isStale]
-  );
+  const isPublicUser = userId === 'public-user' || !user;
+  const MAX_PUBLIC_MOVIES = 40;
 
   useEffect(() => {
-    if (!content || !isOpen) return;
+    if (isPublicUser) return;
+    const fetchUserTaste = async () => {
+      if (!userId) return;
+      try {
+        const { data } = await supabase.from('user_taste_profiles').select('*').eq('user_id', userId).maybeSingle();
+        if (data) setUserTaste(data);
+      } catch (error) { console.error('Error:', error); }
+    };
+    fetchUserTaste();
+  }, [userId, isPublicUser]);
 
-    const id = content.id;
-    requestIdRef.current = id;
+  useEffect(() => {
+    if (isPublicUser) return;
+    const fetchWatchlist = async () => {
+      if (!userId) return;
+      try {
+        const { data } = await supabase.from('watchlist').select('content_id').eq('user_id', userId);
+        setWatchlistIds(new Set(data?.map(item => item.content_id) || []));
+      } catch (error) { console.error('Error:', error); }
+    };
+    fetchWatchlist();
+  }, [userId, isPublicUser]);
 
-    setDetails(null);
-    setCast([]);
-    setCrew([]);
-    setVideos([]);
-    setPlatforms([]);
-    setStreamingLinks([]);
-    setStreamingError(null);
-    setAiReview(null);
-    setAiRating(null);
-    setAiError(null);
-    setAiReviewVisible(true);
-    setAiRecommendations([]);
-    setActiveTab('details');
-    setExpandedDescription(false);
+  const fetchMovies = useCallback(async (pageNum: number, append: boolean = true) => {
+    try {
+      if (pageNum === 1) setLoading(true);
+      else setLoadingMore(true);
 
-    fetchFullMovieDetails(id);
-    generateAIReview(id);
-    fetchAIRecommendations(id);
-    fetchStreamingLinks(id);
-  }, [
-    content?.id,
-    isOpen,
-    fetchFullMovieDetails,
-    generateAIReview,
-    fetchAIRecommendations,
-    fetchStreamingLinks,
-  ]);
+      let url = `https://api.themoviedb.org/3/discover/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&page=${pageNum}`;
 
-  const handleCastClick = (actorName: string) => {
-    onClose();
-    window.location.href = `/actor/${encodeURIComponent(actorName)}`;
+      if (activePreset === 'trending') url += '&sort_by=popularity.desc';
+      else if (activePreset === 'top-rated') url += '&sort_by=vote_average.desc&vote_count.gte=100';
+      else if (activePreset === '2026') url += '&sort_by=popularity.desc&primary_release_year=2026';
+
+      if (selectedGenre !== 'all' && GENRE_TO_ID[selectedGenre]) url += `&with_genres=${GENRE_TO_ID[selectedGenre]}`;
+      if (selectedMood !== 'all' && MOOD_TO_GENRES[selectedMood]) url += `&with_genres=${MOOD_TO_GENRES[selectedMood].join(',')}`;
+      if (selectedYear !== 'all' && activePreset !== '2026') url += `&primary_release_year=${selectedYear}`;
+      if (selectedPlatform !== 'all' && PLATFORM_IDS[selectedPlatform]) url += `&with_watch_providers=${PLATFORM_IDS[selectedPlatform]}&watch_region=US`;
+
+      if (experienceFilter) {
+        const experience = EXPERIENCE_CATEGORIES.find(c => c.id === experienceFilter);
+        if (experience?.tags.length) {
+          const genreIds = experience.tags.map(tag => GENRE_TO_ID[tag]).filter(id => id !== undefined);
+          if (genreIds.length) url += `&with_genres=${genreIds.join(',')}`;
+        }
+      }
+
+      if (searchQuery.trim()) {
+        url = `https://api.themoviedb.org/3/search/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&page=${pageNum}&query=${encodeURIComponent(searchQuery)}`;
+      }
+
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to fetch movies');
+
+      const data = await response.json();
+      if (!data.results?.length) { setHasMore(false); return; }
+
+      const formattedMovies = data.results.map((movie: any) => ({
+        id: movie.id.toString(), title: movie.title, poster_path: movie.poster_path,
+        backdrop_path: movie.backdrop_path, overview: movie.overview, release_date: movie.release_date,
+        vote_average: movie.vote_average, vote_count: movie.vote_count, genre_ids: movie.genre_ids || [],
+        genres: (movie.genre_ids || []).map((id: number) => GENRE_MAP[id] || 'Unknown'), popularity: movie.popularity,
+      }));
+
+      let filteredMovies = formattedMovies;
+      if (!isPublicUser) filteredMovies = formattedMovies.filter((m: Movie) => !watchlistIds.has(m.id));
+
+      if (isPublicUser) {
+        const currentTotal = append ? movies.length : 0;
+        const remainingSlots = MAX_PUBLIC_MOVIES - currentTotal;
+        filteredMovies = filteredMovies.slice(0, remainingSlots);
+        setHasMore(false);
+      } else {
+        setHasMore(data.total_pages > pageNum && filteredMovies.length > 0);
+      }
+
+      setMovies(prev => append ? [...prev, ...filteredMovies] : filteredMovies);
+    } catch (error) {
+      console.error('Error:', error);
+      toast.error('Failed to load movies');
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, searchQuery, activePreset, watchlistIds, experienceFilter, isPublicUser, movies.length]);
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setShowSuggestions(value.length > 0);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      setPage(1); setMovies([]); setHasMore(true);
+      fetchMovies(1, false);
+    }, 500);
   };
 
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return 'N/A';
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
+  const fetchSuggestions = async (query: string) => {
+    if (query.length < 2) { setSearchSuggestions([]); return; }
+    try {
+      const response = await fetch(`https://api.themoviedb.org/3/search/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&query=${encodeURIComponent(query)}&page=1`);
+      const data = await response.json();
+      setSearchSuggestions((data.results || []).slice(0, 5).map((m: any) => m.title));
+    } catch (error) { console.error('Error:', error); }
+  };
+
+  useEffect(() => {
+    if (searchQuery.length > 1) {
+      const delayDebounce = setTimeout(() => fetchSuggestions(searchQuery), 300);
+      return () => clearTimeout(delayDebounce);
+    } else { setSearchSuggestions([]); }
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setPage(1); setMovies([]); setHasMore(true);
+    fetchMovies(1, false);
+  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, activePreset, experienceFilter, fetchMovies]);
+
+  useEffect(() => {
+    if (isPublicUser) return;
+
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+
+    if (loading || loadingMore || !hasMore) return;
+
+    if (loaderRef.current) {
+      observerRef.current = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+          setPage(p => p + 1);
+        }
+      }, { threshold: 0.1, rootMargin: '100px' });
+
+      observerRef.current.observe(loaderRef.current);
+    }
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+    };
+  }, [loading, loadingMore, hasMore, isPublicUser]);
+
+  useEffect(() => {
+    if (page > 1) fetchMovies(page, true);
+  }, [page, fetchMovies]);
+
+  const getImageUrl = (path: string) => path ? (path.startsWith('http') ? path : `https://image.tmdb.org/t/p/w500${path}`) : null;
+  const getBackdropUrl = (path: string) => path ? (path.startsWith('http') ? path : `https://image.tmdb.org/t/p/original${path}`) : null;
+
+  const handleMovieClick = (movie: Movie) => {
+    onViewDetails({
+      id: movie.id, title: movie.title, description: movie.overview || '', long_description: movie.overview || null,
+      image_url: getImageUrl(movie.poster_path) || '', backdrop_url: getBackdropUrl(movie.backdrop_path) || null,
+      type: 'movie', year: movie.release_date ? parseInt(movie.release_date.split('-')[0]) : 0,
+      director: null, artist: null, actors: [], platforms: [], trailer_url: null, runtime: null, duration: null,
+      genre: movie.genres?.join(', ') || '', stats_highly: 0, stats_recommended: 0, stats_not: 0,
+      rating: movie.vote_average || 0, rating_count: movie.vote_count || 0, is_tv_show: false,
     });
   };
 
-  if (!isOpen || !content) return null;
+  const handleAddToWatchlist = async (movie: Movie, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await onAddToWatchlist({
+      id: movie.id, title: movie.title, description: movie.overview || '', long_description: movie.overview || null,
+      image_url: getImageUrl(movie.poster_path) || '', backdrop_url: getBackdropUrl(movie.backdrop_path) || null,
+      type: 'movie', year: movie.release_date ? parseInt(movie.release_date.split('-')[0]) : 0,
+      director: null, artist: null, actors: [], platforms: [], trailer_url: null, runtime: null, duration: null,
+      genre: movie.genres?.join(', ') || '', stats_highly: 0, stats_recommended: 0, stats_not: 0,
+      rating: movie.vote_average || 0, rating_count: movie.vote_count || 0, is_tv_show: false,
+    });
+    setWatchlistIds(prev => {
+      const newSet = new Set(prev);
+      newSet.has(movie.id) ? newSet.delete(movie.id) : newSet.add(movie.id);
+      return newSet;
+    });
+  };
 
-  const isLiked = isInWatchlist(content.id);
-  const hasTrailer = videos.length > 0;
+  const getTopGenres = () => {
+    if (!userTaste?.genre_affinities) return [];
+    return Object.entries(userTaste.genre_affinities as Record<string, number>)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([genre]) => genre);
+  };
+
+  const handlePresetClick = (presetId: string) => {
+    setActivePreset(presetId);
+    if (presetId === '2026') { setSelectedYear('2026'); setSelectedPlatform('all'); }
+    else if (['netflix', 'prime', 'disney'].includes(presetId)) { setSelectedPlatform(presetId); setSelectedYear('all'); }
+    else { setSelectedYear('all'); setSelectedPlatform('all'); }
+  };
+
+  if (loading && page === 1) {
+    return <div className="flex items-center justify-center py-20"><Loader2 className="w-12 h-12 animate-spin text-teal-500" /></div>;
+  }
 
   return (
-    <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="bg-gray-900 rounded-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto relative"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 z-40 p-2 bg-black/70 hover:bg-black/90 rounded-full transition"
-        >
-          <X size={20} />
-        </button>
-
-        <div className="relative w-full h-[40vh] md:h-[50vh] bg-gray-800">
-          <img
-            src={content.backdrop_url || content.image_url}
-            alt={content.title}
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.src = content.image_url || '';
-            }}
-          />
-
-          {hasTrailer && (
-            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-              <button
-                onClick={() => {
-                  const trailerKey = videos[0].key;
-                  const iframe = document.getElementById('trailer-iframe') as HTMLIFrameElement;
-                  if (iframe) {
-                    iframe.src = `https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=0&rel=0`;
-                  }
-                }}
-                className="w-20 h-20 rounded-full bg-teal-500/80 hover:bg-teal-500 transition flex items-center justify-center group"
-              >
-                <Play className="w-10 h-10 text-white fill-white ml-1 group-hover:scale-110 transition" />
-              </button>
-              <div className="absolute bottom-4 left-4 text-white text-sm bg-black/60 px-3 py-1 rounded-full">
-                ▶️ Watch Trailer
+    <div className="space-y-6">
+      {!isPublicUser && userTaste?.onboarding_completed && (
+        <div className="bg-gradient-to-r from-teal-500/10 to-blue-500/10 rounded-lg p-4 border border-teal-500/20">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🎯</span>
+            <div>
+              <p className="text-sm text-gray-400">Based on your taste</p>
+              <div className="flex gap-2 mt-1">
+                {getTopGenres().map(genre => (
+                  <span key={genre} className="text-xs px-2 py-0.5 bg-teal-500/20 text-teal-400 rounded-full">{genre}</span>
+                ))}
               </div>
             </div>
-          )}
+          </div>
+        </div>
+      )}
 
-          {hasTrailer && (
-            <iframe
-              id="trailer-iframe"
-              src={`https://www.youtube.com/embed/${videos[0].key}?autoplay=0&mute=1&rel=0&modestbranding=1`}
-              className="hidden"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      <div className="flex flex-wrap gap-2">
+        {FILTER_PRESETS.map(preset => {
+          const Icon = preset.icon;
+          return (
+            <button key={preset.id} onClick={() => handlePresetClick(preset.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition ${activePreset === preset.id ? 'bg-teal-500 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}>
+              <Icon size={14} />{preset.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="relative">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex-1 min-w-[200px] relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+            <input type="text" placeholder="Search movies..." value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2 pl-10 pr-4 text-white placeholder-gray-400 focus:outline-none focus:border-teal-500"
             />
-          )}
-
-          <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent" />
-
-          <div className="absolute bottom-0 left-0 right-0 p-6">
-            <div className="flex flex-wrap items-start gap-4">
-              <img
-                src={content.image_url}
-                alt={content.title}
-                className="w-24 h-36 object-cover rounded-lg shadow-lg hidden md:block"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.src = `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=200&name=${encodeURIComponent(
-                    content.title
-                  )}`;
-                }}
-              />
-
-              <div className="flex-1">
-                <h2 className="text-2xl md:text-3xl font-bold text-white">
-                  {content.title}
-                </h2>
-
-                {details?.tagline && (
-                  <p className="text-gray-300 text-sm italic mt-1">
-                    "{details.tagline}"
-                  </p>
-                )}
-
-                <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-300">
-                  {details?.release_date && (
-                    <span className="flex items-center gap-1">
-                      <Calendar size={14} />
-                      {formatDate(details.release_date)}
-                    </span>
-                  )}
-
-                  {details?.runtime && (
-                    <span className="flex items-center gap-1">
-                      <Clock size={14} />
-                      {details.runtime} min
-                    </span>
-                  )}
-
-                  {details?.certification &&
-                    details.certification !== 'NR' && (
-                      <span className="px-2 py-0.5 bg-gray-700 rounded text-xs">
-                        {details.certification}
-                      </span>
-                    )}
-
-                  {content.genre && (
-                    <span className="flex items-center gap-1">
-                      <Tag size={14} />
-                      {content.genre.split(',').slice(0, 3).join(', ')}
-                    </span>
-                  )}
-
-                  {loading && (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
-                  )}
-                </div>
-
-                <div className="flex items-center gap-4 mt-2">
-                  <div className="flex items-center gap-1">
-                    <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                    <span className="text-white font-bold">
-                      {content.rating?.toFixed(1) || 'N/A'}
-                    </span>
-                    <span className="text-gray-400 text-xs">
-                      ({content.rating_count || 0} ratings)
-                    </span>
-                  </div>
-
-                  {aiReviewVisible && aiRating && (
-                    <div className="flex items-center gap-1">
-                      <Sparkles className="w-4 h-4 text-teal-400" />
-                      <span className="text-teal-400 font-bold">
-                        {aiRating.toFixed(1)}
-                      </span>
-                      <span className="text-gray-400 text-xs">AI</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            {searchQuery && (
+              <button onClick={() => { setSearchQuery(''); setShowSuggestions(false); fetchMovies(1, false); }}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"><X size={16} /></button>
+            )}
           </div>
-        </div>
-
-        <div className="border-b border-gray-800 px-6 pt-2">
-          <div className="flex gap-4 overflow-x-auto">
-            {['details', 'cast', 'trailers', 'platforms'].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab as any)}
-                className={`px-3 py-2 text-sm font-medium transition border-b-2 whitespace-nowrap ${
-                  activeTab === tab
-                    ? 'border-teal-500 text-teal-400'
-                    : 'border-transparent text-gray-400 hover:text-white'
-                }`}
-              >
-                {tab === 'details' && 'Details'}
-                {tab === 'cast' && 'Cast & Crew'}
-                {tab === 'trailers' && 'Trailers'}
-                {tab === 'platforms' && 'Where to Watch'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="p-6">
-          {activeTab === 'details' && (
-            <div className="space-y-4">
-              {aiReviewVisible && (
-                <div className="p-4 bg-gradient-to-r from-teal-600/20 to-blue-600/20 rounded-xl border border-teal-500/20">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-5 h-5 text-teal-500" />
-                      <h3 className="font-semibold text-white">
-                        BADMOUTH AI Review
-                      </h3>
-                      <span className="text-xs bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded-full">
-                        Powered by Gemini
-                      </span>
-                    </div>
-                    {loadingAI && (
-                      <Loader2 className="w-4 h-4 animate-spin text-teal-500" />
-                    )}
-                  </div>
-
-                  {loadingAI ? (
-                    <p className="text-gray-400 text-sm">
-                      Generating AI review...
-                    </p>
-                  ) : aiReview ? (
-                    <>
-                      {aiRating && (
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="flex items-center gap-1">
-                            <Sparkles className="w-4 h-4 text-teal-400" />
-                            <span className="text-lg font-bold text-teal-400">
-                              {aiRating.toFixed(1)}
-                            </span>
-                            <span className="text-gray-400 text-sm">
-                              /10
-                            </span>
-                          </div>
-                          <span className="text-xs text-gray-500">
-                            • BADMOUTH AI Rating
-                          </span>
-                        </div>
-                      )}
-                      <p className="text-gray-300 text-sm leading-relaxed">
-                        {aiReview}
-                      </p>
-                    </>
-                  ) : null}
-                </div>
-              )}
-
-              <div>
-                <p
-                  className={`text-gray-300 text-sm leading-relaxed ${
-                    !expandedDescription ? 'line-clamp-4' : ''
-                  }`}
-                >
-                  {details?.overview || content.long_description || content.description}
-                </p>
-                <button
-                  onClick={() => setExpandedDescription(!expandedDescription)}
-                  className="text-teal-400 text-sm hover:text-teal-300 transition mt-1"
-                >
-                  {expandedDescription ? 'Show less' : 'Read more'}
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 p-4 bg-gray-800/50 rounded-lg">
-                {details?.release_date && (
-                  <div>
-                    <p className="text-xs text-gray-400">Release Date</p>
-                    <p className="text-sm text-white">{formatDate(details.release_date)}</p>
-                  </div>
-                )}
-
-                {details?.runtime && (
-                  <div>
-                    <p className="text-xs text-gray-400">Runtime</p>
-                    <p className="text-sm text-white">{details.runtime} minutes</p>
-                  </div>
-                )}
-
-                {details?.genres && details.genres.length > 0 && (
-                  <div className="col-span-2">
-                    <p className="text-xs text-gray-400">Genres</p>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {details.genres.map((genre) => (
-                        <span
-                          key={genre.id}
-                          className="px-2 py-0.5 bg-gray-700 rounded text-xs text-gray-300"
-                        >
-                          {genre.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {details?.production_companies &&
-                  details.production_companies.length > 0 && (
-                    <div className="col-span-2">
-                      <p className="text-xs text-gray-400">Production</p>
-                      <p className="text-sm text-white">
-                        {details.production_companies
-                          .slice(0, 3)
-                          .map((c) => c.name)
-                          .join(', ')}
-                      </p>
-                    </div>
-                  )}
-              </div>
-
-              <div className="flex flex-wrap gap-3 pt-2">
-                <button
-                  onClick={() => {
-                    onClose();
-                    onRecommend(content);
-                  }}
-                  className="px-4 py-2 bg-gradient-to-r from-teal-600 to-blue-600 rounded-lg font-semibold hover:opacity-90 transition flex items-center gap-2 text-sm"
-                >
-                  <Star size={16} className="fill-white" />
-                  Rate This
-                </button>
-
-                <button
-                  onClick={async () => {
-                    if (isLiked) {
-                      await onRemoveFromWatchlist(content.id);
-                    } else {
-                      await onAddToWatchlist(content);
-                    }
-                  }}
-                  className={`px-4 py-2 rounded-lg font-semibold transition flex items-center gap-2 text-sm ${
-                    isLiked
-                      ? 'bg-teal-500 text-white'
-                      : 'bg-gray-700 hover:bg-gray-600 text-white'
-                  }`}
-                >
-                  <Heart size={16} className={isLiked ? 'fill-white' : ''} />
-                  {isLiked ? 'Saved' : 'Save'}
-                </button>
-
-                <button
-                  onClick={() => {
-                    navigator.share
-                      ?.({
-                        title: content.title,
-                        text: `Check out ${content.title} on BADMOUTH!`,
-                        url: window.location.href,
-                      })
-                      .catch(() =>
-                        navigator.clipboard.writeText(window.location.href)
-                      );
-                  }}
-                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition flex items-center gap-2 text-sm"
-                >
-                  <Share2 size={16} />
-                  Share
-                </button>
-              </div>
-
-              <div className="mt-6 pt-4 border-t border-gray-800">
-                <div className="flex items-center gap-2 mb-3">
-                  <Sparkles className="w-5 h-5 text-teal-500" />
-                  <h3 className="text-sm font-semibold text-white">
-                    You might also like
-                  </h3>
-                  <span className="text-xs bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded-full">
-                    {loadingRecs ? 'Loading...' : 'AI Powered'}
-                  </span>
-                  {loadingRecs && (
-                    <Loader2 className="w-4 h-4 animate-spin text-teal-500 ml-2" />
-                  )}
-                </div>
-
-                {loadingRecs ? (
-                  <div className="flex justify-center py-4">
-                    <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
-                  </div>
-                ) : aiRecommendations.length > 0 ? (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-                    {aiRecommendations.slice(0, 6).map((movie: any) => (
-                      <div
-                        key={movie.id}
-                        className="group cursor-pointer"
-                        onClick={() => {
-                          onClose();
-                          window.location.href = `/?details=${movie.id}`;
-                        }}
-                      >
-                        <img
-                          src={
-                            movie.poster_path
-                              ? `https://image.tmdb.org/t/p/w185${movie.poster_path}`
-                              : ''
-                          }
-                          alt={movie.title}
-                          className="w-full aspect-[2/3] object-cover rounded-lg group-hover:scale-105 transition"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src =
-                              `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=200&name=${encodeURIComponent(
-                                movie.title
-                              )}`;
-                          }}
-                        />
-                        <p className="text-xs text-gray-400 mt-1 truncate group-hover:text-white transition">
-                          {movie.title}
-                        </p>
-                        {movie.release_date && (
-                          <p className="text-[10px] text-gray-500">
-                            {new Date(movie.release_date).getFullYear()}
-                          </p>
-                        )}
-                        {movie.vote_average && (
-                          <p className="text-[10px] text-yellow-400">
-                            ⭐ {movie.vote_average.toFixed(1)}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-400">
-                    No similar recommendations available.
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'cast' && (
-            <div className="space-y-4">
-              {loading ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
-                </div>
-              ) : cast.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {cast.map((actor) => (
-                    <button
-                      key={actor.id}
-                      onClick={() => handleCastClick(actor.name)}
-                      className="flex items-center gap-3 p-2 bg-gray-800 hover:bg-teal-600/20 rounded-lg transition group"
-                    >
-                      {actor.profile_path ? (
-                        <img
-                          src={`https://image.tmdb.org/t/p/w92${actor.profile_path}`}
-                          alt={actor.name}
-                          className="w-10 h-10 rounded-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-sm text-gray-400">
-                          {actor.name.charAt(0)}
-                        </div>
-                      )}
-
-                      <div className="text-left flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white group-hover:text-teal-400 transition truncate">
-                          {actor.name}
-                        </p>
-                        <p className="text-xs text-gray-400 truncate">
-                          {actor.character}
-                        </p>
-                      </div>
-
-                      <ChevronDown className="w-4 h-4 text-gray-500 group-hover:text-teal-400 rotate-[-90deg]" />
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-gray-400 text-sm">Cast information not available.</p>
-              )}
-
-              {crew.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="text-sm font-semibold text-gray-400 mb-2">Crew</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {crew.map((person) => (
-                      <button
-                        key={person.id}
-                        onClick={() => handleCastClick(person.name)}
-                        className="px-3 py-1 bg-gray-800 hover:bg-teal-600/20 rounded-lg transition group"
-                      >
-                        <span className="text-xs text-white group-hover:text-teal-400 transition">
-                          {person.name}
-                        </span>
-                        <span className="text-[10px] text-gray-400 ml-1">
-                          ({person.job})
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'trailers' && (
-            <div className="space-y-4">
-              {loading ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
-                </div>
-              ) : videos.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {videos.map((video, index) => (
-                    <div key={index} className="bg-gray-800 rounded-lg overflow-hidden">
-                      <div className="relative aspect-video">
-                        <iframe
-                          src={`https://www.youtube.com/embed/${video.key}?rel=0&modestbranding=1`}
-                          title={video.name}
-                          className="w-full h-full"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        />
-                      </div>
-                      <div className="p-3">
-                        <p className="text-sm text-white font-medium">{video.name}</p>
-                        <p className="text-xs text-gray-400">
-                          {video.type} • {video.official ? 'Official' : 'Fan-made'}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Clapperboard className="w-12 h-12 text-gray-600 mx-auto mb-2" />
-                  <p className="text-gray-400">No trailers available for this movie.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'platforms' && (
-            <div className="space-y-4">
-              {loadingStreaming ? (
-                <div className="flex flex-col items-center justify-center py-8">
-                  <Loader2 className="w-8 h-8 animate-spin text-teal-500" />
-                  <p className="text-gray-400 mt-2 text-sm">
-                    Loading streaming options...
-                  </p>
-                </div>
-              ) : streamingLinks.length > 0 ? (
-                <div>
-                  <p className="text-sm text-gray-400 mb-3">Watch {content.title} on:</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {streamingLinks.map((link, idx) => {
-                      const getProviderIcon = (name: string) => {
-                        const icons: Record<string, string> = {
-                          Netflix: '📺',
-                          'Prime Video': '📦',
-                          'Disney+': '✨',
-                          'HBO Max': '🔷',
-                          Max: '🔷',
-                          Hulu: '🟢',
-                          'Apple TV+': '🍎',
-                          Peacock: '🦚',
-                          'Paramount+': '⛰️',
-                          'MGM+': '🎬',
-                          Starz: '⭐',
-                          Showtime: '📺',
-                          iTunes: '🍏',
-                          'Google Play': '▶️',
-                          Vudu: '🎥',
-                          YouTube: '▶️',
-                        };
-                        return icons[name] || '🎬';
-                      };
-
-                      const getTypeLabel = (type: string) => {
-                        const labels: Record<string, string> = {
-                          flatrate: '📺 Streaming',
-                          sub: '📺 Streaming',
-                          rent: '💰 Rent',
-                          buy: '💵 Buy',
-                          free: '🆓 Free',
-                        };
-                        return labels[type] || type;
-                      };
-
-                      return (
-                        <a
-                          key={idx}
-                          href={link.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-3 p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition group"
-                        >
-                          <span className="text-2xl">{getProviderIcon(link.provider)}</span>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-white group-hover:text-teal-400 transition truncate">
-                              {link.provider}
-                            </p>
-                            <p className="text-[10px] text-gray-400">
-                              {getTypeLabel(link.type)}
-                              {link.quality && ` • ${link.quality}`}
-                              {link.price && ` • $${link.price}`}
-                            </p>
-                          </div>
-                          <ExternalLink size={14} className="text-gray-500 group-hover:text-teal-400 flex-shrink-0" />
-                        </a>
-                      );
-                    })}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-3 text-center">
-                    Direct links to streaming services • Powered by Watchmode
-                  </p>
-                </div>
-              ) : platforms.length > 0 ? (
-                <div>
-                  <p className="text-sm text-gray-400 mb-3">Available on (via TMDB):</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {platforms.map((platform) => {
-                      const display = PLATFORM_DISPLAY[platform.provider_name] || {
-                        icon: '🎬',
-                        color: 'bg-gray-600',
-                      };
-                      return (
-                        <button
-                          key={platform.provider_id}
-                          onClick={() =>
-                            window.open(
-                              `https://www.themoviedb.org/movie/${content.id}/watch`,
-                              '_blank'
-                            )
-                          }
-                          className="flex items-center gap-3 p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition group text-left"
-                        >
-                          {platform.logo_path ? (
-                            <img
-                              src={`https://image.tmdb.org/t/p/w92${platform.logo_path}`}
-                              alt={platform.provider_name}
-                              className="w-8 h-8 rounded object-contain"
-                            />
-                          ) : (
-                            <span className="text-2xl">{display.icon}</span>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-white group-hover:text-teal-400 transition truncate">
-                              {platform.provider_name}
-                            </p>
-                            <p className="text-[10px] text-gray-400">Check TMDB</p>
-                          </div>
-                          <ExternalLink size={14} className="text-gray-500 group-hover:text-teal-400 flex-shrink-0" />
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-3 text-center">
-                    Streaming links not available • Check TMDB for availability
-                  </p>
-                </div>
-              ) : streamingError ? (
-                <div className="text-center py-8">
-                  <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-2" />
-                  <p className="text-red-400">{streamingError}</p>
-                  <button
-                    onClick={() => fetchStreamingLinks(content.id)}
-                    className="mt-3 text-teal-400 text-sm hover:text-teal-300 flex items-center gap-1 mx-auto"
-                  >
-                    <RefreshCw size={14} /> Retry
-                  </button>
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Globe className="w-12 h-12 text-gray-600 mx-auto mb-2" />
-                  <p className="text-gray-400">No streaming information available.</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Check your local streaming services.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="px-6 pb-4 pt-2 border-t border-gray-800 flex justify-between items-center">
-          <p className="text-[10px] text-gray-500">
-            Data provided by TMDB • BADMOUTH AI Review by Gemini • Streaming by Watchmode
-          </p>
-          <button
-            onClick={() => window.open(`https://www.themoviedb.org/movie/${content.id}`, '_blank')}
-            className="text-[10px] text-gray-500 hover:text-teal-400 transition"
-          >
-            View on TMDB →
+          <button onClick={() => setShowFilters(!showFilters)} className="px-4 py-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition flex items-center gap-2">
+            <Filter size={18} />Filters
           </button>
         </div>
+        {showSuggestions && searchSuggestions.length > 0 && (
+          <div className="absolute z-50 w-full mt-1 bg-gray-800 rounded-lg shadow-xl border border-gray-700 overflow-hidden">
+            {searchSuggestions.map(s => (
+              <button key={s} onClick={() => { setSearchQuery(s); setShowSuggestions(false); fetchMovies(1, false); }}
+                className="w-full text-left px-4 py-2 hover:bg-gray-700 transition text-sm text-white">{s}</button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showFilters && (
+        <div className="bg-gray-800/50 rounded-xl p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold">Filters</h3>
+            <button onClick={() => { setSelectedGenre('all'); setSelectedMood('all'); setSelectedYear('all'); setSelectedPlatform('all'); setSearchQuery(''); setActivePreset('trending'); }}
+              className="text-sm text-teal-400 hover:text-teal-300">Clear All</button>
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-2">Genre</label>
+            <div className="flex flex-wrap gap-2">
+              {GENRE_OPTIONS.map(g => (
+                <button key={g} onClick={() => setSelectedGenre(g)}
+                  className={`px-3 py-1 rounded-full text-xs transition ${selectedGenre === g ? 'bg-teal-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                  {g === 'all' ? 'All' : g}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-2">Mood</label>
+            <div className="flex flex-wrap gap-2">
+              {MOOD_OPTIONS.map(m => (
+                <button key={m.id} onClick={() => setSelectedMood(m.id)}
+                  className={`px-3 py-1 rounded-full text-xs transition ${selectedMood === m.id ? 'bg-teal-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-2">Year</label>
+            <div className="flex flex-wrap gap-2">
+              {YEAR_OPTIONS.map(y => (
+                <button key={y} onClick={() => setSelectedYear(y)}
+                  className={`px-3 py-1 rounded-full text-xs transition ${selectedYear === y ? 'bg-teal-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                  {y === 'all' ? 'All Years' : y}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-2">Platform</label>
+            <div className="flex flex-wrap gap-2">
+              {['all', 'netflix', 'prime', 'disney', 'hbo', 'apple'].map(p => (
+                <button key={p} onClick={() => setSelectedPlatform(p)}
+                  className={`px-3 py-1 rounded-full text-xs transition ${selectedPlatform === p ? 'bg-teal-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                  {p === 'all' ? 'All' : p === 'netflix' ? 'Netflix' : p === 'prime' ? 'Prime Video' : p === 'disney' ? 'Disney+' : p === 'hbo' ? 'HBO Max' : 'Apple TV+'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        {movies.map((movie, index) => {
+          const isLiked = isInWatchlist(movie.id);
+          const imageUrl = getImageUrl(movie.poster_path);
+          return (
+            <div key={`${movie.id}-${index}`} className="bg-gray-800 rounded-lg overflow-hidden cursor-pointer hover:transform hover:scale-105 transition-all duration-200 group" onClick={() => handleMovieClick(movie)}>
+              <div className="relative">
+                {imageUrl ? (
+                  <img src={imageUrl} alt={movie.title} className="w-full aspect-[2/3] object-cover bg-gray-800"
+                    onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=200&name=${encodeURIComponent(movie.title)}`; }}
+                  />
+                ) : (
+                  <div className="w-full aspect-[2/3] bg-gray-800 flex items-center justify-center text-gray-500 text-xs">{movie.title}</div>
+                )}
+                {movie.vote_average > 0 && (
+                  <div className="absolute top-2 right-2 bg-black/70 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                    <Star size={10} className="text-yellow-400 fill-yellow-400" />
+                    <span className="text-xs font-bold text-white">{movie.vote_average.toFixed(1)}</span>
+                  </div>
+                )}
+                {movie.release_date && (
+                  <div className="absolute top-2 left-2 bg-black/70 px-1.5 py-0.5 rounded text-[10px] text-gray-300">
+                    {new Date(movie.release_date).getFullYear()}
+                  </div>
+                )}
+                <button onClick={(e) => handleAddToWatchlist(movie, e)} className="absolute bottom-2 right-2 p-1.5 bg-black/70 rounded-full hover:bg-teal-600 transition">
+                  <Heart size={14} className={isLiked ? 'fill-teal-500 text-teal-500' : 'text-gray-400'} />
+                </button>
+                {movie.genres && movie.genres.length > 0 && (
+                  <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">
+                    {movie.genres.slice(0, 2).map(g => (
+                      <span key={g} className="text-[8px] px-1.5 py-0.5 bg-black/70 rounded text-white/80">{g}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="p-2">
+                <h3 className="font-semibold text-sm truncate">{movie.title}</h3>
+                <p className="text-xs text-gray-400 truncate">{movie.release_date ? new Date(movie.release_date).getFullYear() : 'N/A'}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div ref={loaderRef} className="flex justify-center py-4">
+        {loadingMore && (
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-5 h-5 animate-spin text-teal-500" />
+            <span className="text-gray-400 text-sm">Loading more...</span>
+          </div>
+        )}
+        {!hasMore && movies.length > 0 && (
+          <p className="text-gray-500 text-sm">
+            {isPublicUser ? '🎬 Showing 40 movies — sign in for unlimited access' : 'No more movies to load'}
+          </p>
+        )}
+        {!hasMore && movies.length === 0 && !loading && !loadingMore && (
+          <div className="text-center py-12"><p className="text-gray-400">No movies found. Try adjusting your filters.</p></div>
+        )}
+        {hasMore && !loadingMore && movies.length > 0 && !isPublicUser && (
+          <p className="text-gray-500 text-xs animate-pulse">Scroll for more</p>
+        )}
       </div>
     </div>
   );
