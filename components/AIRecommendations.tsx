@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Sparkles, Star, ChevronRight, Loader2, RefreshCw, Heart } from 'lucide-react';  // ← ADD Heart here
+import { Sparkles, Star, ChevronRight, Loader2, RefreshCw, Heart } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { ContentItem } from '@/types/content';
 import toast from 'react-hot-toast';
@@ -22,6 +22,7 @@ export default function AIRecommendations({
 }: AIRecommendationsProps) {
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [hasProfile, setHasProfile] = useState(false);
 
   useEffect(() => {
@@ -52,7 +53,7 @@ export default function AIRecommendations({
       
       if (profileExists && onboardingCompleted) {
         console.log('✅ User has taste profile, fetching recommendations');
-        await fetchRecommendations();
+        await fetchRecommendations(false);
       } else {
         setLoading(false);
       }
@@ -62,11 +63,19 @@ export default function AIRecommendations({
     }
   };
 
-  const fetchRecommendations = async () => {
-    setLoading(true);
-    
+  const fetchRecommendations = async (forceRefresh: boolean = false) => {
+    if (forceRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
     try {
-      const response = await fetch('/api/recommendations', {
+      const url = forceRefresh
+        ? '/api/recommendations?refresh=true'
+        : '/api/recommendations';
+
+      const response = await fetch(url, {
         headers: { 'x-user-id': userId },
       });
       const data = await response.json();
@@ -74,12 +83,26 @@ export default function AIRecommendations({
       if (data.success && data.recommendations) {
         const validRecs = data.recommendations.filter((rec: any) => rec.content !== null);
         setRecommendations(validRecs);
+        if (forceRefresh) {
+          toast.success('Got you fresh picks!');
+        }
+      } else if (forceRefresh) {
+        toast.error('Could not refresh recommendations');
       }
     } catch (error) {
       console.error('Error fetching AI recommendations:', error);
+      if (forceRefresh) {
+        toast.error('Could not refresh recommendations');
+      }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const handleRefresh = () => {
+    if (refreshing) return;
+    fetchRecommendations(true);
   };
 
   const handleGetStarted = () => {
@@ -122,9 +145,22 @@ export default function AIRecommendations({
     );
   }
 
-  // No recommendations - return null (don't show anything)
+  // No recommendations - show a retry state instead of vanishing silently
   if (recommendations.length === 0) {
-    return null;
+    return (
+      <div className="bg-gray-900/50 rounded-xl p-6 text-center">
+        <Sparkles className="w-8 h-8 text-teal-500 mx-auto mb-2" />
+        <p className="text-gray-400 text-sm mb-3">No picks loaded yet.</p>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800 rounded-lg text-sm hover:bg-gray-700 transition disabled:opacity-50"
+        >
+          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+          {refreshing ? 'Refreshing...' : 'Try Again'}
+        </button>
+      </div>
+    );
   }
 
   // Show recommendations
@@ -136,9 +172,19 @@ export default function AIRecommendations({
           <h2 className="text-xl font-semibold text-white">AI Picks for You</h2>
           <span className="text-xs bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded-full">Powered by Gemini</span>
         </div>
+
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 rounded-full text-xs text-gray-300 hover:bg-gray-700 transition disabled:opacity-50"
+          aria-label="Refresh recommendations"
+        >
+          <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+          {refreshing ? 'Refreshing...' : 'Refresh'}
+        </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+      <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 transition-opacity ${refreshing ? 'opacity-50' : 'opacity-100'}`}>
         {recommendations.slice(0, 10).map((rec: any) => {
           const item = rec.content;
           if (!item) return null;
