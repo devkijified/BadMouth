@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase/client';
-import { Search, Loader2, Heart, Star, Filter, X, Calendar, TrendingUp, Award, Tv, Target } from 'lucide-react';
+import { Search, Loader2, Heart, Star, Filter, X, Calendar, TrendingUp, Award, Tv } from 'lucide-react';
 import { ContentItem } from '@/types/content';
 import { EXPERIENCE_CATEGORIES } from '@/constants/experienceCategories';
 import toast from 'react-hot-toast';
@@ -50,15 +50,6 @@ const GENRE_TO_ID: Record<string, number> = {
   'Thriller': 53, 'War': 10752, 'Western': 37
 };
 
-// Case-insensitive lookup so taste-profile keys like "action" match "Action"
-const GENRE_KEY_LOOKUP: Record<string, string> = Object.keys(GENRE_TO_ID).reduce(
-  (acc, key) => {
-    acc[key.toLowerCase()] = key;
-    return acc;
-  },
-  {} as Record<string, string>
-);
-
 // TMDB Platform Provider IDs
 const PLATFORM_IDS: Record<string, number> = {
   'netflix': 8,
@@ -99,9 +90,8 @@ const MOOD_TO_GENRES: Record<string, number[]> = {
   'family': [10751, 16, 12],
 };
 
-// Filter presets — "For You" is first and drives the taste-profile narrowing
+// Filter presets
 const FILTER_PRESETS = [
-  { id: 'for-you', label: '🎯 For You', icon: Target },
   { id: 'trending', label: '🔥 Trending', icon: TrendingUp },
   { id: 'top-rated', label: '⭐ Top Rated', icon: Award },
   { id: '2026', label: '📅 2026 Movies', icon: Calendar },
@@ -154,21 +144,29 @@ export default function MovieFeed({
   const [selectedMood, setSelectedMood] = useState<string>('all');
   const [selectedYear, setSelectedYear] = useState<string>('all');
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
-  const [activePreset, setActivePreset] = useState<string>('for-you');
+  const [activePreset, setActivePreset] = useState<string>('trending');
   const [showFilters, setShowFilters] = useState(false);
   const [userTaste, setUserTaste] = useState<any>(null);
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  // Tracks which top-taste genre is active while in "For You" mode
-  const [activeTasteGenre, setActiveTasteGenre] = useState<string | null>(null);
   
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loaderRef = useRef<HTMLDivElement | null>(null);
 
-  // Fetch user taste profile
+  // ✅ Check if user is public (not logged in)
+  const isPublicUser = userId === 'public-user' || !user;
+
+  // ✅ MAX LIMIT for public users (40 total)
+  const MAX_PUBLIC_MOVIES = 40;
+  // ✅ PAGE SIZE (load 20 at a time)
+  const PAGE_SIZE = 20;
+
+  // Fetch user taste profile (only for logged-in users)
   useEffect(() => {
+    if (isPublicUser) return;
+    
     const fetchUserTaste = async () => {
       if (!userId) return;
       
@@ -193,10 +191,12 @@ export default function MovieFeed({
     };
 
     fetchUserTaste();
-  }, [userId]);
+  }, [userId, isPublicUser]);
 
-  // Fetch watchlist IDs
+  // Fetch watchlist IDs (only for logged-in users)
   useEffect(() => {
+    if (isPublicUser) return;
+    
     const fetchWatchlist = async () => {
       if (!userId) return;
       
@@ -216,65 +216,73 @@ export default function MovieFeed({
     };
 
     fetchWatchlist();
-  }, [userId]);
+  }, [userId, isPublicUser]);
 
-  // Returns the user's genre affinities sorted strongest-first, mapped to
-  // the exact casing GENRE_TO_ID expects (e.g. "action" -> "Action").
-  const getRankedTasteGenres = useCallback((): string[] => {
-    if (!userTaste?.genre_affinities) return [];
-    const entries = Object.entries(userTaste.genre_affinities) as [string, number][];
-    return entries
-      .sort((a, b) => (b[1] || 0) - (a[1] || 0))
-      .map(([genre]) => GENRE_KEY_LOOKUP[genre.toLowerCase()])
-      .filter((g): g is string => Boolean(g));
-  }, [userTaste]);
-
-  // Once the taste profile loads, default the feed into "For You" mode
-  // narrowed to the user's single strongest genre — this is what makes the
-  // grid beneath AI Picks show e.g. Action movies because Action is in the UTP.
-  useEffect(() => {
-    if (!userTaste) return;
-    if (activePreset !== 'for-you') return;
-    if (activeTasteGenre) return; // already set
-
-    const ranked = getRankedTasteGenres();
-    if (ranked.length > 0) {
-      setActiveTasteGenre(ranked[0]);
-      setSelectedGenre(ranked[0]);
-    }
-  }, [userTaste, activePreset, activeTasteGenre, getRankedTasteGenres]);
-
-  // ✅ Fetch movies using server API route
+  // Main fetch function with all filters
   const fetchMovies = useCallback(async (pageNum: number, append: boolean = true) => {
     try {
       if (pageNum === 1) setLoading(true);
       else setLoadingMore(true);
 
-      // Build query params
-      const params = new URLSearchParams();
-      params.set('page', pageNum.toString());
-      
-      if (selectedGenre !== 'all') params.set('genre', selectedGenre);
-      if (selectedMood !== 'all') params.set('mood', selectedMood);
-      if (selectedYear !== 'all') params.set('year', selectedYear);
-      if (selectedPlatform !== 'all') params.set('platform', selectedPlatform);
-      if (activePreset && activePreset !== 'for-you') params.set('preset', activePreset);
-      if (searchQuery.trim()) params.set('query', searchQuery);
-      
-      // For You mode: sort by rating so the narrowed genre pool surfaces its
-      // best matches first instead of an arbitrary trending order.
-      if (activePreset === 'for-you') {
-        params.set('sort', 'vote_average.desc');
-        params.set('minVoteCount', '75');
+      // ✅ Check if we've reached the public limit
+      if (isPublicUser && movies.length >= MAX_PUBLIC_MOVIES) {
+        setHasMore(false);
+        setLoading(false);
+        setLoadingMore(false);
+        return;
+      }
+
+      let url = `https://api.themoviedb.org/3/discover/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&page=${pageNum}`;
+
+      // Sort by
+      if (activePreset === 'trending') {
+        url += '&sort_by=popularity.desc';
+      } else if (activePreset === 'top-rated') {
+        url += '&sort_by=vote_average.desc&vote_count.gte=100';
+      } else if (activePreset === '2026') {
+        url += '&sort_by=popularity.desc&primary_release_year=2026';
+      }
+
+      // Genre filter
+      if (selectedGenre !== 'all' && GENRE_TO_ID[selectedGenre]) {
+        url += `&with_genres=${GENRE_TO_ID[selectedGenre]}`;
+      }
+
+      // Mood filter
+      if (selectedMood !== 'all' && MOOD_TO_GENRES[selectedMood]) {
+        const moodGenres = MOOD_TO_GENRES[selectedMood].join(',');
+        url += `&with_genres=${moodGenres}`;
+      }
+
+      // Year filter
+      if (selectedYear !== 'all' && activePreset !== '2026') {
+        url += `&primary_release_year=${selectedYear}`;
+      }
+
+      // Platform filter using TMDB watch providers
+      if (selectedPlatform !== 'all' && PLATFORM_IDS[selectedPlatform]) {
+        const providerId = PLATFORM_IDS[selectedPlatform];
+        url += `&with_watch_providers=${providerId}&watch_region=US`;
       }
 
       // Experience filter
       if (experienceFilter) {
-        params.set('experience', experienceFilter);
+        const experience = EXPERIENCE_CATEGORIES.find(c => c.id === experienceFilter);
+        if (experience && experience.tags.length > 0) {
+          const genreIds = experience.tags
+            .map(tag => GENRE_TO_ID[tag])
+            .filter(id => id !== undefined);
+          if (genreIds.length > 0) {
+            url += `&with_genres=${genreIds.join(',')}`;
+          }
+        }
       }
 
-      const url = `/api/tmdb/discover?${params.toString()}`;
-      
+      // Search
+      if (searchQuery.trim()) {
+        url = `https://api.themoviedb.org/3/search/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&page=${pageNum}&query=${encodeURIComponent(searchQuery)}`;
+      }
+
       const response = await fetch(url);
       
       if (!response.ok) {
@@ -302,17 +310,37 @@ export default function MovieFeed({
         popularity: movie.popularity,
       }));
 
-      const filteredMovies = formattedMovies.filter(
-        (movie: Movie) => !watchlistIds.has(movie.id)
-      );
-
-      if (append) {
-        setMovies(prev => [...prev, ...filteredMovies]);
-      } else {
-        setMovies(filteredMovies);
+      // Filter out watched movies (only for logged-in users)
+      let filteredMovies = formattedMovies;
+      if (!isPublicUser) {
+        filteredMovies = formattedMovies.filter(
+          (movie: Movie) => !watchlistIds.has(movie.id)
+        );
       }
 
-      setHasMore(data.total_pages > pageNum && filteredMovies.length > 0);
+      // ✅ For public users, limit total to MAX_PUBLIC_MOVIES
+      let finalMovies = filteredMovies;
+      if (isPublicUser) {
+        const currentTotal = append ? movies.length : 0;
+        const remainingSlots = MAX_PUBLIC_MOVIES - currentTotal;
+        finalMovies = filteredMovies.slice(0, remainingSlots);
+        
+        // Check if we've reached the limit
+        if (currentTotal + finalMovies.length >= MAX_PUBLIC_MOVIES) {
+          setHasMore(false);
+        } else {
+          // Check if TMDB has more pages
+          setHasMore(data.total_pages > pageNum && filteredMovies.length > 0);
+        }
+      } else {
+        setHasMore(data.total_pages > pageNum && filteredMovies.length > 0);
+      }
+
+      if (append) {
+        setMovies(prev => [...prev, ...finalMovies]);
+      } else {
+        setMovies(finalMovies);
+      }
       
     } catch (error) {
       console.error('Error fetching movies:', error);
@@ -321,7 +349,7 @@ export default function MovieFeed({
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, searchQuery, activePreset, watchlistIds, experienceFilter]);
+  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, searchQuery, activePreset, watchlistIds, experienceFilter, isPublicUser, movies.length]);
 
   // Debounced search handler
   const handleSearchChange = (value: string) => {
@@ -340,7 +368,7 @@ export default function MovieFeed({
     }, 500);
   };
 
-  // ✅ Fetch search suggestions using server API route
+  // Fetch search suggestions
   const fetchSuggestions = async (query: string) => {
     if (query.length < 2) {
       setSearchSuggestions([]);
@@ -349,7 +377,7 @@ export default function MovieFeed({
 
     try {
       const response = await fetch(
-        `/api/tmdb/search?query=${encodeURIComponent(query)}&page=1`
+        `https://api.themoviedb.org/3/search/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&query=${encodeURIComponent(query)}&page=1`
       );
       const data = await response.json();
       const suggestions = (data.results || []).slice(0, 5).map((m: any) => m.title);
@@ -383,9 +411,20 @@ export default function MovieFeed({
   useEffect(() => {
     if (loading || loadingMore || !hasMore) return;
 
+    // ✅ Don't observe if public user and reached limit
+    if (isPublicUser && movies.length >= MAX_PUBLIC_MOVIES) {
+      setHasMore(false);
+      return;
+    }
+
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          // ✅ Check public limit before loading more
+          if (isPublicUser && movies.length >= MAX_PUBLIC_MOVIES) {
+            setHasMore(false);
+            return;
+          }
           setPage(prev => prev + 1);
         }
       },
@@ -397,7 +436,7 @@ export default function MovieFeed({
     }
 
     return () => observer.disconnect();
-  }, [loading, loadingMore, hasMore]);
+  }, [loading, loadingMore, hasMore, isPublicUser, movies.length]);
 
   // Trigger fetch when page changes
   useEffect(() => {
@@ -487,49 +526,30 @@ export default function MovieFeed({
     });
   };
 
-  const getTopGenres = () => getRankedTasteGenres().slice(0, 3);
-
-  // Switch which top-taste genre the "For You" grid is narrowed to
-  const handleTasteGenreClick = (genre: string) => {
-    setActivePreset('for-you');
-    setActiveTasteGenre(genre);
-    setSelectedGenre(genre);
+  const getTopGenres = () => {
+    if (!userTaste?.genre_affinities) return [];
+    const entries = Object.entries(userTaste.genre_affinities) as [string, number][];
+    return entries
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([genre]) => genre);
   };
 
   const handlePresetClick = (presetId: string) => {
     setActivePreset(presetId);
-
-    if (presetId === 'for-you') {
-      const ranked = getRankedTasteGenres();
-      const genreToUse = activeTasteGenre || ranked[0] || 'all';
-      setActiveTasteGenre(genreToUse !== 'all' ? genreToUse : null);
-      setSelectedGenre(genreToUse);
-      setSelectedYear('all');
-      setSelectedPlatform('all');
-      return;
-    }
-
-    // Leaving "For You" mode clears the taste-genre narrowing
-    setActiveTasteGenre(null);
-
     if (presetId === '2026') {
-      setSelectedGenre('all');
       setSelectedYear('2026');
       setSelectedPlatform('all');
     } else if (presetId === 'netflix') {
-      setSelectedGenre('all');
       setSelectedPlatform('netflix');
       setSelectedYear('all');
     } else if (presetId === 'prime') {
-      setSelectedGenre('all');
       setSelectedPlatform('prime');
       setSelectedYear('all');
     } else if (presetId === 'disney') {
-      setSelectedGenre('all');
       setSelectedPlatform('disney');
       setSelectedYear('all');
     } else {
-      setSelectedGenre('all');
       setSelectedYear('all');
       setSelectedPlatform('all');
     }
@@ -543,34 +563,20 @@ export default function MovieFeed({
     );
   }
 
-  const topGenres = getTopGenres();
-
   return (
     <div className="space-y-6">
-      {/* Header with taste profile — genres are now clickable to switch the "For You" filter */}
-      {userTaste?.onboarding_completed && topGenres.length > 0 && (
+      {/* Header with taste profile (only for logged-in users) */}
+      {!isPublicUser && userTaste?.onboarding_completed && (
         <div className="bg-gradient-to-r from-teal-500/10 to-blue-500/10 rounded-lg p-4 border border-teal-500/20">
           <div className="flex items-center gap-3">
             <span className="text-2xl">🎯</span>
             <div>
-              <p className="text-sm text-gray-400">
-                {activePreset === 'for-you' && activeTasteGenre
-                  ? `Showing ${activeTasteGenre} — based on your taste`
-                  : 'Based on your taste'}
-              </p>
+              <p className="text-sm text-gray-400">Based on your taste</p>
               <div className="flex gap-2 mt-1">
-                {topGenres.map(genre => (
-                  <button
-                    key={genre}
-                    onClick={() => handleTasteGenreClick(genre)}
-                    className={`text-xs px-2 py-0.5 rounded-full transition ${
-                      activePreset === 'for-you' && activeTasteGenre === genre
-                        ? 'bg-teal-500 text-white'
-                        : 'bg-teal-500/20 text-teal-400 hover:bg-teal-500/40'
-                    }`}
-                  >
+                {getTopGenres().map(genre => (
+                  <span key={genre} className="text-xs px-2 py-0.5 bg-teal-500/20 text-teal-400 rounded-full">
                     {genre}
-                  </button>
+                  </span>
                 ))}
               </div>
             </div>
@@ -581,9 +587,6 @@ export default function MovieFeed({
       {/* Filter Presets */}
       <div className="flex flex-wrap gap-2">
         {FILTER_PRESETS.map(preset => {
-          // Hide "For You" chip if the user has no genre affinities yet
-          if (preset.id === 'for-you' && topGenres.length === 0) return null;
-
           const Icon = preset.icon;
           const isActive = activePreset === preset.id;
           return (
@@ -673,7 +676,6 @@ export default function MovieFeed({
                 setSelectedPlatform('all');
                 setSearchQuery('');
                 setActivePreset('trending');
-                setActiveTasteGenre(null);
               }}
               className="text-sm text-teal-400 hover:text-teal-300"
             >
@@ -688,11 +690,7 @@ export default function MovieFeed({
               {GENRE_OPTIONS.map(genre => (
                 <button
                   key={genre}
-                  onClick={() => {
-                    setSelectedGenre(genre);
-                    setActiveTasteGenre(null);
-                    if (activePreset === 'for-you') setActivePreset('trending');
-                  }}
+                  onClick={() => setSelectedGenre(genre)}
                   className={`px-3 py-1 rounded-full text-xs transition ${
                     selectedGenre === genre
                       ? 'bg-teal-500 text-white'
@@ -817,7 +815,7 @@ export default function MovieFeed({
       {/* Movie Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
         {movies.map((movie, index) => {
-          const isLiked = watchlistIds.has(movie.id);
+          const isLiked = isInWatchlist(movie.id);
           const imageUrl = getImageUrl(movie.poster_path);
           
           return (
@@ -897,7 +895,11 @@ export default function MovieFeed({
           <Loader2 className="w-8 h-8 animate-spin text-teal-500" />
         )}
         {!hasMore && movies.length > 0 && (
-          <p className="text-gray-500 text-sm">No more movies to load</p>
+          <p className="text-gray-500 text-sm">
+            {isPublicUser && movies.length >= MAX_PUBLIC_MOVIES 
+              ? 'Showing 40 movies — sign in for more' 
+              : 'No more movies to load'}
+          </p>
         )}
         {!hasMore && movies.length === 0 && !loading && (
           <div className="text-center py-12">
