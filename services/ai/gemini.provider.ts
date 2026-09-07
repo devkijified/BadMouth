@@ -169,7 +169,13 @@ Description: ${params.description || 'No description available'}
     try {
       const prompt = this.buildTasteProfilePrompt(history);
       const text = await this.generateText(prompt);
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      
+      const cleanedText = text
+        .replace(/```json/g, '')
+        .replace(/```/g, '')
+        .trim();
+        
+      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
 
       if (!jsonMatch) {
         return this.getDefaultTasteProfile();
@@ -216,7 +222,13 @@ Year: ${params.year || 'Unknown'}
 Return only valid JSON listing similar movie titles, reasons, or relevant data format expected by your application.
 `;
       const text = await this.generateText(prompt);
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      
+      const cleanedText = text
+        .replace(/```json/g, '')
+        .replace(/```/g, '')
+        .trim();
+        
+      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
 
       if (!jsonMatch) {
         return { similar: [] };
@@ -257,6 +269,7 @@ Return only valid JSON listing similar movie titles, reasons, or relevant data f
 
     return `
 You are BADMOUTH, an expert movie recommender AI.
+CRITICAL INSTRUCTION: Return ONLY raw, valid JSON. Do not wrap the response in markdown code blocks (like \`\`\`json) and do not include any conversational intro text.
 
 User taste profile:
 ${JSON.stringify(userTasteProfile || {}, null, 2)}
@@ -276,7 +289,7 @@ ${genres?.length ? `Genres: ${genres.join(', ')}` : ''}
 
 Recommend ${limit} movies.
 
-Return only valid JSON:
+Format strictly as:
 {
   "recommendations": [
     {
@@ -350,7 +363,12 @@ Return only JSON:
 
   private parseRecommendationResponse(text: string): any {
     try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const cleanedText = text
+        .replace(/```json/g, '')
+        .replace(/```/g, '')
+        .trim();
+
+      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
 
       if (!jsonMatch) {
         return { recommendations: [] };
