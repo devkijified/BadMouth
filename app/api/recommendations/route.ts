@@ -153,10 +153,13 @@ async function getTopRatedMovies(shufflePage: number = 1) {
   }
 }
 
+// minMatchThreshold is relaxed automatically if it would otherwise yield zero
+// results, so the block never disappears just because nothing cleared 0.35.
 function getPersonalizedFallback(
   movies: any[],
   tasteProfile: any,
-  limit: number = 10
+  limit: number = 10,
+  minMatchThreshold: number = 0.35
 ): any[] {
   if (!movies || movies.length === 0) return [];
 
@@ -167,7 +170,8 @@ function getPersonalizedFallback(
     : [];
 
   const affinityValues = Object.values(affinities).map((v: any) => Number(v) || 0);
-  const maxAffinity = affinityValues.length > 0 ? Math.max(...affinityValues) : 1;
+  const hasAffinities = affinityValues.length > 0;
+  const maxAffinity = hasAffinities ? Math.max(...affinityValues) : 1;
 
   const scored = movies.map((movie: any) => {
     const movieGenres: string[] = (movie.genre_ids || [])
@@ -179,8 +183,8 @@ function getPersonalizedFallback(
       return { ...movie, personalizedScore: -1, _movieGenres: movieGenres };
     }
 
-    let genreScore = 0;
-    if (movieGenres.length > 0) {
+    let genreScore = hasAffinities ? 0 : 0.5; // neutral baseline when no profile exists yet
+    if (hasAffinities && movieGenres.length > 0) {
       const matchedAffinities = movieGenres
         .map((g) => Number(affinities[g] ?? 0))
         .filter((v) => v > 0);
@@ -208,7 +212,17 @@ function getPersonalizedFallback(
     return { ...movie, personalizedScore: Math.min(score, 1.0), _movieGenres: movieGenres };
   });
 
-  const filtered = scored.filter((m) => m.personalizedScore >= 0.35);
+  let filtered = scored.filter((m) => m.personalizedScore >= minMatchThreshold);
+
+  // Never let a strict threshold zero-out the whole list — relax progressively
+  // instead of returning nothing (this was why the block was disappearing).
+  if (filtered.length === 0) {
+    filtered = scored.filter((m) => m.personalizedScore >= 0.15);
+  }
+  if (filtered.length === 0) {
+    filtered = scored.filter((m) => m.personalizedScore >= 0);
+  }
+
   const sorted = filtered.sort((a, b) => b.personalizedScore - a.personalizedScore);
 
   return sorted.slice(0, limit).map((movie: any) => {
@@ -263,6 +277,47 @@ function getPersonalizedFallback(
   });
 }
 
+// Absolute last-resort mapper — no scoring, no filtering — guarantees the
+// recommendations block always has content even if every other path failed.
+function mapMoviesDirectly(movies: any[], limit: number = 10): any[] {
+  return movies.slice(0, limit).map((movie: any) => {
+    const genres = (movie.genre_ids || []).map((id: number) => GENRE_MAP[id]).filter(Boolean);
+    let reason = 'Popular pick right now.';
+    if (movie.vote_average && movie.vote_average > 7) {
+      reason += ` ⭐ ${movie.vote_average.toFixed(1)}/10`;
+    }
+    return {
+      contentId: movie.id.toString(),
+      score: (movie.vote_average || 0) / 10,
+      reason,
+      content: {
+        id: movie.id.toString(),
+        title: movie.title,
+        description: movie.overview || '',
+        long_description: movie.overview || null,
+        image_url: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null,
+        backdrop_url: movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : null,
+        type: 'movie' as const,
+        year: movie.release_date ? new Date(movie.release_date).getFullYear() : 0,
+        director: null,
+        artist: null,
+        actors: [],
+        platforms: [],
+        trailer_url: null,
+        runtime: null,
+        duration: null,
+        genre: genres.join(', '),
+        stats_highly: 0,
+        stats_recommended: 0,
+        stats_not: 0,
+        rating: movie.vote_average || 0,
+        rating_count: movie.vote_count || 0,
+        is_tv_show: false,
+      }
+    };
+  });
+}
+
 export async function GET(request: NextRequest) {
   try {
     const userId = request.headers.get('x-user-id');
@@ -273,7 +328,7 @@ export async function GET(request: NextRequest) {
     const forceRefresh = request.nextUrl.searchParams.get('refresh') === 'true';
     console.log('🎯 Fetching recommendations for user:', userId, { forceRefresh });
 
-    let recommendations = [];
+    let recommendations: any[] = [];
     let source = 'none';
 
     // 1. Check Cache in Supabase (12-hour expiration)
@@ -301,7 +356,6 @@ export async function GET(request: NextRequest) {
         }
       } catch (cacheError) {
         console.log('Cache check skipped (table may not exist):', cacheError);
-        // Continue to generate new recommendations
       }
     }
 
@@ -316,7 +370,6 @@ export async function GET(request: NextRequest) {
       console.error('Error fetching taste profile:', tasteError);
     }
 
-    // Log taste profile for debugging
     console.log('📊 Taste profile found:', tasteProfile ? 'Yes' : 'No');
 
     const randomShuffleOffset = Math.floor(Math.random() * 3) + 1;
@@ -377,8 +430,12 @@ export async function GET(request: NextRequest) {
 
       if (candidateMovies.length === 0) {
         console.log('⚠️ No taste-matched movies, falling back to trending...');
-        candidateMovies = await getTrendingMovies(randomShuffleOffset);
-        console.log(`📊 Found ${candidateMovies.length} trending movies`);
+        try {
+          candidateMovies = await getTrendingMovies(randomShuffleOffset);
+          console.log(`📊 Found ${candidateMovies.length} trending movies`);
+        } catch (error) {
+          console.error('Error getting trending movies:', error);
+        }
       }
 
       if (candidateMovies.length > 0) {
@@ -388,18 +445,41 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 5. Ultimate Fallback to Top Rated
+    // 5. Fallback to Top Rated (scored)
     if (recommendations.length === 0) {
-      console.log('⚠️ Final fallback to top rated...');
-      const topRated = await getTopRatedMovies(randomShuffleOffset);
-      if (topRated.length > 0) {
-        recommendations = getPersonalizedFallback(topRated, tasteProfile, 10);
-        source = 'tmdb-top-rated-personalized';
-        console.log(`✅ Top rated returned ${recommendations.length} recommendations`);
+      console.log('⚠️ Falling back to top rated...');
+      try {
+        const topRated = await getTopRatedMovies(randomShuffleOffset);
+        if (topRated.length > 0) {
+          recommendations = getPersonalizedFallback(topRated, tasteProfile, 10);
+          source = 'tmdb-top-rated-personalized';
+          console.log(`✅ Top rated returned ${recommendations.length} recommendations`);
+        }
+      } catch (error) {
+        console.error('Error getting top rated movies:', error);
       }
     }
 
-    // 6. Save/Upsert Cache to Supabase (only if table exists)
+    // 6. Absolute last resort: unfiltered trending/top-rated, unscored, so the
+    // recommendation block is NEVER empty even if every upstream call failed.
+    if (recommendations.length === 0) {
+      console.log('🆘 All personalized paths returned nothing — using raw fallback...');
+      try {
+        let rawMovies = await getTrendingMovies(1);
+        if (rawMovies.length === 0) {
+          rawMovies = await getTopRatedMovies(1);
+        }
+        if (rawMovies.length > 0) {
+          recommendations = mapMoviesDirectly(rawMovies, 10);
+          source = 'tmdb-raw-fallback';
+          console.log(`✅ Raw fallback returned ${recommendations.length} recommendations`);
+        }
+      } catch (error) {
+        console.error('Raw fallback also failed:', error);
+      }
+    }
+
+    // 7. Save/Upsert Cache to Supabase (only if table exists, and only if non-empty)
     if (recommendations.length > 0) {
       try {
         await supabase
