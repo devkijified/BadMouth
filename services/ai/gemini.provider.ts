@@ -47,29 +47,38 @@ export class GeminiProvider implements AIProvider {
     }
   }
 
-  private async generateText(prompt: string): Promise<string> {
+  private async generateText(prompt: string, retries = 2, delay = 1000): Promise<string> {
     if (!this.isInitialized || !this.ai) {
       throw new Error('Gemini provider is not initialized');
     }
 
-    const response = await this.ai.models.generateContent({
-      model: this.modelName,
-      contents: prompt,
-      config: {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 1200,
-      },
-    });
+    try {
+      const response = await this.ai.models.generateContent({
+        model: this.modelName,
+        contents: prompt,
+        config: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 1200,
+        },
+      });
 
-    const text = response.text?.trim();
+      const text = response.text?.trim();
 
-    if (!text) {
-      throw new Error('Gemini returned an empty response');
+      if (!text) {
+        throw new Error('Gemini returned an empty response');
+      }
+
+      return text;
+    } catch (error) {
+      if (retries > 0) {
+        console.warn(`⚠️ Gemini request failed, retrying in ${delay}ms... (${retries} retries left)`, error);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return this.generateText(prompt, retries - 1, delay * 2);
+      }
+      throw error;
     }
-
-    return text;
   }
 
   async generateRecommendations(
@@ -376,7 +385,6 @@ Return only JSON:
         return { recommendations: [] };
       }
 
-      // Sanitize common LLM JSON syntax issues (like trailing commas)
       const jsonString = jsonMatch[0].replace(/,\s*([\]}])/g, '$1');
 
       const parsed = JSON.parse(jsonString);
