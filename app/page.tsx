@@ -719,6 +719,26 @@ export default function HomePage() {
                 activeTab="movie" 
               />
 
+              {/* ✅ Experience Categories - Immediately under slider */}
+              <div className="container mx-auto px-4 py-4">
+                <div className="mb-2">
+                  <h2 className="text-lg font-semibold text-white">How do you want to feel?</h2>
+                  <p className="text-xs text-gray-400">Pick a vibe and discover movies that match your mood</p>
+                </div>
+                <ExperienceCategories 
+                  onOpenModal={() => setIsExperienceModalOpen(true)}
+                  selectedCategory={selectedExperience ? EXPERIENCE_CATEGORIES.find(c => c.id === selectedExperience)?.name || null : null}
+                />
+              </div>
+
+              {/* Experience Modal (Public) */}
+              <ExperienceModal 
+                isOpen={isExperienceModalOpen}
+                onClose={() => setIsExperienceModalOpen(false)}
+                onSelectCategory={handleExperienceSelect}
+                selectedCategory={selectedExperience}
+              />
+
               {/* Public Trending - Limit to 20 */}
               <ContentRow 
                 title="🔥 Trending Now"
@@ -745,27 +765,7 @@ export default function HomePage() {
                 maxItems={20}
               />
 
-              {/* ✅ Experience Categories - Immediately under slider */}
-              <div className="container mx-auto px-4 py-4">
-                <div className="mb-2">
-                  <h2 className="text-lg font-semibold text-white">How do you want to feel?</h2>
-                  <p className="text-xs text-gray-400">Pick a vibe and discover movies that match your mood</p>
-                </div>
-                <ExperienceCategories 
-                  onOpenModal={() => setIsExperienceModalOpen(true)}
-                  selectedCategory={selectedExperience ? EXPERIENCE_CATEGORIES.find(c => c.id === selectedExperience)?.name || null : null}
-                />
-              </div>
-
-              {/* Experience Modal (Public) */}
-              <ExperienceModal 
-                isOpen={isExperienceModalOpen}
-                onClose={() => setIsExperienceModalOpen(false)}
-                onSelectCategory={handleExperienceSelect}
-                selectedCategory={selectedExperience}
-              />
-
-              {/* ✅ Public Movie Feed - Limit to 60, with debounced search */}
+              {/* ✅ Public Movie Feed - Limited to 40 total */}
               <div className="container mx-auto px-4">
                 <div className="mb-8">
                   <div className="flex items-center justify-between mb-4">
