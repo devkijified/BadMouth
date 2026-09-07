@@ -37,11 +37,14 @@ export default function RecommendModal({
     if (!item || !userId) return
     
     try {
+      // Force string conversion for safety against UUID/text/number mismatches
+      const contentIdStr = String(item.id)
+
       const { data, error } = await supabase
         .from('recommendations')
         .select('rating, comment')
         .eq('user_id', userId)
-        .eq('content_id', item.id)  // content_id is TEXT, item.id is string
+        .eq('content_id', contentIdStr)
         .maybeSingle()
 
       if (error && error.code !== 'PGRST116') {
@@ -74,12 +77,14 @@ export default function RecommendModal({
     setIsLoading(true)
 
     try {
+      const contentIdStr = String(item.id)
+
       // Check if user already rated this
       const { data: existing, error: checkError } = await supabase
         .from('recommendations')
         .select('id')
         .eq('user_id', userId)
-        .eq('content_id', item.id)  // content_id is TEXT
+        .eq('content_id', contentIdStr)
         .maybeSingle()
 
       if (checkError && checkError.code !== 'PGRST116') {
@@ -106,7 +111,7 @@ export default function RecommendModal({
           .from('recommendations')
           .insert({
             user_id: userId,
-            content_id: item.id,  // content_id is TEXT
+            content_id: contentIdStr,
             content_type: item.type,
             rating: rating,
             comment: comment || null
@@ -115,15 +120,15 @@ export default function RecommendModal({
       }
 
       if (error) {
-        console.error('Save error:', error)
-        throw new Error(error.message)
+        console.error('Save error details:', error)
+        throw new Error(error.message || 'Database write failed')
       }
 
-      // Update content rating
+      // Update aggregate content rating safely
       const { data: allRatings, error: ratingsError } = await supabase
         .from('recommendations')
         .select('rating')
-        .eq('content_id', item.id)  // content_id is TEXT
+        .eq('content_id', contentIdStr)
 
       if (ratingsError) {
         console.error('Ratings fetch error:', ratingsError)
@@ -137,11 +142,10 @@ export default function RecommendModal({
             rating: Math.round(avgRating * 10) / 10,
             rating_count: totalRatings
           })
-          .eq('id', item.id)  // item.id is string (UUID)
-          .select()
+          .eq('id', item.id)
 
         if (updateContentError) {
-          console.error('Content update error:', updateContentError)
+          console.error('Content aggregate update error:', updateContentError)
         }
       }
 
