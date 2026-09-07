@@ -55,36 +55,29 @@ async function getMovieDetails(tmdbId: string) {
   }
 }
 
-// Fetch a broad, deep candidate pool matched tightly to the user's taste profile.
-// Pulls multiple genre combinations across multiple pages instead of one shallow call.
+// Builds candidate pool dynamically from EVERY genre the user has an affinity score for,
+// weighted by how strong that affinity is — no fixed/hardcoded genre list, no arbitrary
+// top-N cutoff. Genres with near-zero affinity contribute near-zero query weight.
 async function getMoviesForTasteProfile(tasteProfile: any) {
   const affinities: Record<string, number> = tasteProfile?.genre_affinities || {};
+  const affinityEntries = Object.entries(affinities)
+    .map(([genre, score]) => ({
+      genreId: REVERSE_GENRE_MAP[genre.toLowerCase()],
+      genre: genre.toLowerCase(),
+      score: Number(score) || 0,
+    }))
+    .filter((e) => e.genreId !== undefined && e.score > 0)
+    .sort((a, b) => b.score - a.score);
 
-  const rankedGenres = Object.entries(affinities)
-    .sort((a: any, b: any) => b[1] - a[1])
-    .map(([genre]) => genre.toLowerCase())
-    .map((g) => REVERSE_GENRE_MAP[g])
-    .filter((id): id is number => id !== undefined);
-
-  if (rankedGenres.length === 0) {
+  if (affinityEntries.length === 0) {
     return [];
   }
 
+  const maxScore = affinityEntries[0].score;
   const minRating = typeof tasteProfile?.min_rating === 'number' ? tasteProfile.min_rating : 6.0;
   const preferredDecades: number[] = Array.isArray(tasteProfile?.preferred_decades)
     ? tasteProfile.preferred_decades
     : [];
-
-  // Build several genre-combo queries: top genre alone, then top pairs/triples,
-  // so the pool is dense in genres the user actually cares about instead of one blended query.
-  const genreQueries = new Set<string>();
-  for (let i = 0; i < Math.min(rankedGenres.length, 5); i++) {
-    genreQueries.add(String(rankedGenres[i]));
-    for (let j = i + 1; j < Math.min(rankedGenres.length, 5); j++) {
-      genreQueries.add(`${rankedGenres[i]},${rankedGenres[j]}`);
-    }
-  }
-
   const decadeParams = preferredDecades.length > 0
     ? preferredDecades.map((decade) => ({
         'primary_release_date.gte': `${decade}-01-01`,
@@ -92,15 +85,20 @@ async function getMoviesForTasteProfile(tasteProfile: any) {
       }))
     : [{}];
 
+  // Pages per genre scale with the user's affinity strength for that genre
+  // relative to their strongest one — strong affinities get searched deeper.
   const requests: Promise<any[]>[] = [];
 
-  for (const genreQuery of genreQueries) {
+  for (const entry of affinityEntries) {
+    const relativeStrength = entry.score / maxScore;
+    const pagesToFetch = relativeStrength >= 0.75 ? 3 : relativeStrength >= 0.4 ? 2 : 1;
+
     for (const decadeParam of decadeParams) {
-      for (const page of [1, 2]) {
+      for (let page = 1; page <= pagesToFetch; page++) {
         const params = new URLSearchParams({
           api_key: TMDB_API_KEY,
           language: 'en-US',
-          with_genres: genreQuery,
+          with_genres: String(entry.genreId),
           sort_by: 'vote_average.desc',
           'vote_count.gte': '75',
           'vote_average.gte': String(minRating),
@@ -118,10 +116,30 @@ async function getMoviesForTasteProfile(tasteProfile: any) {
     }
   }
 
+  // Also pull cross-genre combos for the strongest pair(s), so films matching
+  // multiple high-affinity genres at once are represented in the pool too.
+  if (affinityEntries.length >= 2) {
+    const [first, second] = affinityEntries;
+    const params = new URLSearchParams({
+      api_key: TMDB_API_KEY,
+      language: 'en-US',
+      with_genres: `${first.genreId},${second.genreId}`,
+      sort_by: 'vote_average.desc',
+      'vote_count.gte': '75',
+      'vote_average.gte': String(minRating),
+      page: '1',
+    });
+    requests.push(
+      fetch(`${TMDB_BASE_URL}/discover/movie?${params.toString()}`)
+        .then((res) => (res.ok ? res.json() : { results: [] }))
+        .then((data) => data.results || [])
+        .catch(() => [])
+    );
+  }
+
   const results = await Promise.all(requests);
   const combined = results.flat();
 
-  // Dedupe by id
   const seen = new Set<number>();
   const deduped: any[] = [];
   for (const movie of combined) {
@@ -162,9 +180,8 @@ async function getTopRatedMovies() {
   }
 }
 
-// Scores each candidate against the FULL taste profile (all known genre affinities,
-// not just the top few), plus favorite actors/directors/decades if present, plus
-// quality signals. This produces a much tighter match to the user than a flat blend.
+// Scores every candidate against the FULL affinity map (every genre the user has a
+// score for, not a fixed subset), normalized against the user's own strongest affinity.
 function getPersonalizedFallback(
   movies: any[],
   tasteProfile: any,
@@ -173,24 +190,22 @@ function getPersonalizedFallback(
   if (!movies || movies.length === 0) return [];
 
   const affinities: Record<string, number> = tasteProfile?.genre_affinities || {};
-  const favoriteActors: string[] = (tasteProfile?.favorite_actors || []).map((a: string) => a.toLowerCase());
-  const favoriteDirectors: string[] = (tasteProfile?.favorite_directors || []).map((d: string) => d.toLowerCase());
   const excludedGenres: string[] = (tasteProfile?.excluded_genres || []).map((g: string) => g.toLowerCase());
   const preferredDecades: number[] = Array.isArray(tasteProfile?.preferred_decades)
     ? tasteProfile.preferred_decades
     : [];
 
-  const maxAffinity = Math.max(1, ...Object.values(affinities).map((v: any) => Number(v) || 0));
+  const affinityValues = Object.values(affinities).map((v: any) => Number(v) || 0);
+  const maxAffinity = affinityValues.length > 0 ? Math.max(...affinityValues) : 1;
 
   const scored = movies.map((movie: any) => {
     const movieGenres: string[] = (movie.genre_ids || [])
       .map((id: number) => GENRE_MAP[id]?.toLowerCase())
       .filter(Boolean);
 
-    // Hard exclusion: user explicitly doesn't want this genre
     const isExcluded = movieGenres.some((g) => excludedGenres.includes(g));
     if (isExcluded) {
-      return { ...movie, personalizedScore: -1 };
+      return { ...movie, personalizedScore: -1, _movieGenres: movieGenres };
     }
 
     let genreScore = 0;
@@ -200,7 +215,6 @@ function getPersonalizedFallback(
         .filter((v) => v > 0);
 
       if (matchedAffinities.length > 0) {
-        // Average affinity across matched genres, normalized against the user's strongest affinity
         const avgAffinity = matchedAffinities.reduce((a, b) => a + b, 0) / matchedAffinities.length;
         genreScore = avgAffinity / maxAffinity;
       }
@@ -216,11 +230,10 @@ function getPersonalizedFallback(
     const qualityScore = (movie.vote_average || 0) / 10;
     const popularityScore = Math.min((movie.popularity || 0) / 1000, 1);
 
-    // Weighted composite — genre match to the user's actual profile dominates the score
     const score =
-      genreScore * 0.65 +
+      genreScore * 0.7 +
       decadeScore * 0.1 +
-      qualityScore * 0.2 +
+      qualityScore * 0.15 +
       popularityScore * 0.05;
 
     return { ...movie, personalizedScore: Math.min(score, 1.0), _movieGenres: movieGenres };
@@ -233,11 +246,14 @@ function getPersonalizedFallback(
     const genres = (movie.genre_ids || []).map((id: number) => GENRE_MAP[id]).filter(Boolean);
 
     let reason = 'Matched to your profile.';
-    const topMatchedGenre = movie._movieGenres?.find((g: string) => (affinities[g] ?? 0) > 0);
+    const topMatchedGenre = movie._movieGenres
+      ?.filter((g: string) => (affinities[g] ?? 0) > 0)
+      .sort((a: string, b: string) => (affinities[b] ?? 0) - (affinities[a] ?? 0))[0];
+
     if (topMatchedGenre) {
       const genreLabel = GENRE_MAP[REVERSE_GENRE_MAP[topMatchedGenre]] || topMatchedGenre;
-      const affinityPct = Math.round((affinities[topMatchedGenre] || 0) * 100);
-      reason = `Selected because you love ${genreLabel} (${affinityPct}% affinity match).`;
+      const affinityPct = Math.round(((affinities[topMatchedGenre] || 0) / maxAffinity) * 100);
+      reason = `Selected because you love ${genreLabel} (${affinityPct}% match to your top taste).`;
     } else if (genres.length > 0) {
       reason = `A strong ${genres[0]} pick aligned with your taste.`;
     }
@@ -302,7 +318,6 @@ export async function GET(request: NextRequest) {
     let recommendations = [];
     let source = 'none';
 
-    // Try Gemini first
     try {
       console.log('🧠 Calling Gemini AI with user profile...');
       const aiProvider = getAIProvider();
@@ -342,9 +357,6 @@ export async function GET(request: NextRequest) {
       console.error('❌ Gemini error:', error.message);
     }
 
-    // Deep, taste-driven fallback: builds a wide candidate pool from the user's FULL
-    // genre affinity spread (not just top 2), across multiple genre combos, pages,
-    // and preferred decades — then scores every candidate against the whole profile.
     if (recommendations.length === 0) {
       console.log('⚠️ No Gemini recommendations, building deep taste-matched TMDB pool...');
 
@@ -362,7 +374,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Final fallback to top rated if everything else is empty
     if (recommendations.length === 0) {
       console.log('⚠️ Falling back to top rated movies...');
       const topRated = await getTopRatedMovies();
