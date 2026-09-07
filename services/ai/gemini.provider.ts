@@ -13,7 +13,7 @@ import {
 export class GeminiProvider implements AIProvider {
   private ai: GoogleGenAI | null = null;
   private modelName: string;
-  private fallbackModelName = 'gemini-1.5-flash'; // High-availability fallback model
+  private fallbackModelName = 'gemini-2.5-flash'; // Updated to a valid supported model name
   private isInitialized = false;
 
   constructor(
@@ -48,7 +48,7 @@ export class GeminiProvider implements AIProvider {
     }
   }
 
-  private async generateText(prompt: string, retries = 3, delay = 2000): Promise<string> {
+  private async generateText(prompt: string, retries = 2, delay = 1000): Promise<string> {
     if (!this.isInitialized || !this.ai) {
       throw new Error('Gemini provider is not initialized');
     }
@@ -73,7 +73,7 @@ export class GeminiProvider implements AIProvider {
               temperature: 0.7,
               topK: 40,
               topP: 0.95,
-              maxOutputTokens: 8192, // Expanded headroom to ensure large batches of recommendations never cut off
+              maxOutputTokens: 8192,
             },
           });
 
@@ -91,11 +91,18 @@ export class GeminiProvider implements AIProvider {
         } catch (error: any) {
           lastError = error;
           
+          // If quota is exhausted (HTTP 429), retrying won't help. Break out immediately.
+          const isQuotaExceeded = error?.status === 429 || error?.message?.includes('quota') || error?.message?.includes('RESOURCE_EXHAUSTED');
+          if (isQuotaExceeded) {
+            console.warn(`⚠️ Gemini quota exhausted on model [${currentModel}]. Switching or falling back immediately.`);
+            break; // Exit retry loop for this model and try next model or fallback
+          }
+
           if (currentRetries > 0) {
             console.warn(`⚠️ Gemini request failed on model [${currentModel}], retrying in ${currentDelay}ms... (${currentRetries} left). Error: ${error?.message || error}`);
             await new Promise((resolve) => setTimeout(resolve, currentDelay));
             currentRetries--;
-            currentDelay *= 2; // Exponential backoff
+            currentDelay *= 2;
           } else {
             break;
           }
@@ -128,7 +135,7 @@ export class GeminiProvider implements AIProvider {
         },
       };
     } catch (error) {
-      console.error('❌ Gemini recommendation error after all retries & model failovers:', error);
+      console.error('❌ Gemini recommendation error (Quota or Network): Serving fallback recommendations smoothly.');
 
       return this.getFallbackRecommendations(params);
     }
@@ -427,7 +434,6 @@ Return only JSON:
         }
       }
 
-      // Fallback regex extractor for items containing title or contentId
       const recommendations: any[] = [];
       const itemRegex = /\{[^}]*?(?:["']?title["']?|["']?contentId["']?)[^}]*?\}/g;
       let match;
