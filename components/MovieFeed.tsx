@@ -407,8 +407,9 @@ export default function MovieFeed({
     fetchMovies(1, false);
   }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, activePreset, experienceFilter, fetchMovies]);
 
-  // Infinite scroll observer
+  // ✅ Fixed: Infinite scroll observer with better cleanup
   useEffect(() => {
+    // Don't set up observer if loading or no more content
     if (loading || loadingMore || !hasMore) return;
 
     // ✅ Don't observe if public user and reached limit
@@ -417,25 +418,41 @@ export default function MovieFeed({
       return;
     }
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loadingMore) {
-          // ✅ Check public limit before loading more
-          if (isPublicUser && movies.length >= MAX_PUBLIC_MOVIES) {
-            setHasMore(false);
-            return;
-          }
-          setPage(prev => prev + 1);
-        }
-      },
-      { threshold: 0.1, rootMargin: '100px' }
-    );
-
-    if (loaderRef.current) {
-      observer.observe(loaderRef.current);
+    // Clean up previous observer
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
     }
 
-    return () => observer.disconnect();
+    // Only create observer if loader element exists and we have more to load
+    if (loaderRef.current && hasMore && !(isPublicUser && movies.length >= MAX_PUBLIC_MOVIES)) {
+      observerRef.current = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0];
+          if (entry.isIntersecting && hasMore && !loadingMore && !loading) {
+            // ✅ Check public limit before loading more
+            if (isPublicUser && movies.length >= MAX_PUBLIC_MOVIES) {
+              setHasMore(false);
+              return;
+            }
+            setPage(prev => prev + 1);
+          }
+        },
+        { 
+          threshold: 0.1, 
+          rootMargin: '50px'  // ✅ Reduced to prevent premature triggers
+        }
+      );
+
+      observerRef.current.observe(loaderRef.current);
+    }
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+    };
   }, [loading, loadingMore, hasMore, isPublicUser, movies.length]);
 
   // Trigger fetch when page changes
@@ -821,7 +838,6 @@ export default function MovieFeed({
           return (
             <div
               key={`${movie.id}-${index}`}
-              ref={index === movies.length - 1 ? loaderRef : null}
               className="bg-gray-800 rounded-lg overflow-hidden cursor-pointer hover:transform hover:scale-105 transition-all duration-200 group"
               onClick={() => handleMovieClick(movie)}
             >
@@ -889,22 +905,28 @@ export default function MovieFeed({
         })}
       </div>
 
-      {/* Loading More Indicator */}
+      {/* ✅ Fixed: Loading More Indicator - No flickering */}
       <div ref={loaderRef} className="flex justify-center py-4">
         {loadingMore && (
-          <Loader2 className="w-8 h-8 animate-spin text-teal-500" />
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-5 h-5 animate-spin text-teal-500" />
+            <span className="text-gray-400 text-sm">Loading more...</span>
+          </div>
         )}
         {!hasMore && movies.length > 0 && (
           <p className="text-gray-500 text-sm">
             {isPublicUser && movies.length >= MAX_PUBLIC_MOVIES 
-              ? 'Showing 40 movies — sign in for more' 
+              ? '🎬 Showing 40 movies — sign in for more' 
               : 'No more movies to load'}
           </p>
         )}
-        {!hasMore && movies.length === 0 && !loading && (
+        {!hasMore && movies.length === 0 && !loading && !loadingMore && (
           <div className="text-center py-12">
             <p className="text-gray-400">No movies found. Try adjusting your filters.</p>
           </div>
+        )}
+        {hasMore && !loadingMore && movies.length > 0 && (
+          <p className="text-gray-500 text-xs animate-pulse">Scroll for more</p>
         )}
       </div>
     </div>
