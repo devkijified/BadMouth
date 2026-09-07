@@ -1,6 +1,6 @@
 // app/api/ai/similar/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -49,7 +49,6 @@ export async function POST(request: NextRequest) {
       .filter((m: any) => m.title.toLowerCase() !== title.toLowerCase())
       .slice(0, 10);
 
-    // If no movies found, return empty array
     if (filteredMovies.length === 0) {
       return NextResponse.json({ 
         success: true, 
@@ -58,16 +57,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Use Gemini to rank recommendations if available
     let recommendations = filteredMovies;
     let source = 'tmdb';
 
+    // Use Gemini to rank recommendations if available
     if (GEMINI_API_KEY) {
       try {
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({ 
-          model: 'gemini-2.0-flash-lite-preview-02-05' 
+        const genAI = new GoogleGenAI({ 
+          apiKey: GEMINI_API_KEY 
         });
+
+        const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
         const movieList = filteredMovies.slice(0, 10).map((m: any, i: number) => 
           `${i+1}. ${m.title} (${m.release_date?.split('-')[0] || 'N/A'}) - ${m.overview?.slice(0, 100) || 'No description'}`
@@ -78,9 +78,18 @@ export async function POST(request: NextRequest) {
 Movies:
 ${movieList}`;
 
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
+        const response = await genAI.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            temperature: 0.7,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 1200,
+          },
+        });
+
+        const text = response.text?.trim() || '';
         
         // Parse the ranked titles
         const rankedTitles = text.split('\n')
