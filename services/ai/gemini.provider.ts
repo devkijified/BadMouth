@@ -181,7 +181,8 @@ Description: ${params.description || 'No description available'}
         return this.getDefaultTasteProfile();
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
+      const jsonString = jsonMatch[0].replace(/,\s*([\]}])/g, '$1');
+      const parsed = JSON.parse(jsonString);
 
       return {
         genreAffinities: parsed.genreAffinities || {},
@@ -234,7 +235,8 @@ Return only valid JSON listing similar movie titles, reasons, or relevant data f
         return { similar: [] };
       }
 
-      return JSON.parse(jsonMatch[0]);
+      const jsonString = jsonMatch[0].replace(/,\s*([\]}])/g, '$1');
+      return JSON.parse(jsonString);
     } catch (error) {
       console.error('❌ Gemini similar movies error:', error);
       return { similar: [] };
@@ -374,7 +376,10 @@ Return only JSON:
         return { recommendations: [] };
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
+      // Sanitize common LLM JSON syntax issues (like trailing commas)
+      const jsonString = jsonMatch[0].replace(/,\s*([\]}])/g, '$1');
+
+      const parsed = JSON.parse(jsonString);
 
       if (
         parsed.recommendations &&
