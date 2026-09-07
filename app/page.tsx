@@ -22,6 +22,7 @@ import MovieFeed from '@/components/MovieFeed'
 import ExperienceCategories from '@/components/ExperienceCategories'
 import ExperienceModal from '@/components/ExperienceModal'
 import MovieDetailsModal from '@/components/MovieDetailsModal'
+import BecauseYouLiked from '@/components/BecauseYouLiked'  // ✅ NEW IMPORT
 import { ContentItem, Category } from '@/types/content'
 import { EXPERIENCE_CATEGORIES } from '@/constants/experienceCategories'
 import toast from 'react-hot-toast'
@@ -982,6 +983,17 @@ export default function HomePage() {
                   userId={user.id}
                   onViewDetails={handleViewDetails}
                   onAddToWatchlist={addToWatchlist}
+                  isInWatchlist={isInWatchlist}
+                />
+              </div>
+
+              {/* ✅ NEW: Because You Liked Section */}
+              <div className="mb-8">
+                <BecauseYouLiked 
+                  userId={user.id}
+                  onViewDetails={handleViewDetails}
+                  onAddToWatchlist={addToWatchlist}
+                  onRemoveFromWatchlist={removeFromWatchlist}
                   isInWatchlist={isInWatchlist}
                 />
               </div>
