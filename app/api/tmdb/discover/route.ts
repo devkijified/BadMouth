@@ -1,7 +1,6 @@
 // app/api/tmdb/discover/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 
-// Genre mapping
 const GENRE_TO_ID: Record<string, number> = {
   'Action': 28, 'Adventure': 12, 'Animation': 16, 'Comedy': 35,
   'Crime': 80, 'Documentary': 99, 'Drama': 18, 'Family': 10751,
@@ -10,7 +9,6 @@ const GENRE_TO_ID: Record<string, number> = {
   'Thriller': 53, 'War': 10752, 'Western': 37
 };
 
-// Mood to genre mapping
 const MOOD_TO_GENRES: Record<string, number[]> = {
   'action-packed': [28, 53, 878],
   'feel-good': [35, 10751, 10749],
@@ -26,7 +24,6 @@ const MOOD_TO_GENRES: Record<string, number[]> = {
   'family': [10751, 16, 12],
 };
 
-// Platform provider IDs
 const PLATFORM_IDS: Record<string, number> = {
   'netflix': 8,
   'prime': 9,
@@ -48,6 +45,8 @@ export async function GET(request: NextRequest) {
     const platform = searchParams.get('platform');
     const preset = searchParams.get('preset');
     const query = searchParams.get('query');
+    const sort = searchParams.get('sort');
+    const minVoteCount = searchParams.get('minVoteCount');
 
     const TMDB_API_KEY = process.env.TMDB_API_KEY;
     if (!TMDB_API_KEY) {
@@ -66,6 +65,10 @@ export async function GET(request: NextRequest) {
       url += '&sort_by=vote_average.desc&vote_count.gte=100';
     } else if (preset === '2026') {
       url += '&sort_by=popularity.desc&primary_release_year=2026';
+    } else if (sort) {
+      // Explicit sort override (used by "For You" mode) — only applied
+      // when no preset already set one, so presets still win.
+      url += `&sort_by=${sort}`;
     }
 
     // Genre filter
@@ -90,13 +93,19 @@ export async function GET(request: NextRequest) {
       url += `&with_watch_providers=${providerId}&watch_region=US`;
     }
 
+    // Minimum vote count floor (used by "For You" mode to avoid obscure,
+    // barely-rated titles polluting the sorted-by-rating results)
+    if (minVoteCount && !url.includes('vote_count.gte')) {
+      url += `&vote_count.gte=${minVoteCount}`;
+    }
+
     // Search
     if (query) {
       url = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=en-US&page=${page}&query=${encodeURIComponent(query)}`;
     }
 
     const response = await fetch(url);
-    
+
     if (!response.ok) {
       return NextResponse.json(
         { error: 'Failed to fetch movies' },
