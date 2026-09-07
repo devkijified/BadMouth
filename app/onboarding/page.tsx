@@ -319,6 +319,7 @@ export default function OnboardingPage() {
     );
   };
 
+  // ✅ UPDATED: Save function with watch history
   const handleSave = async () => {
     if (!user) {
       toast.error('Please sign in');
@@ -382,7 +383,6 @@ export default function OnboardingPage() {
 
       if (deleteError) {
         console.error('Delete error:', deleteError);
-        // Continue anyway - if it doesn't exist, that's fine
       } else {
         console.log('✅ Existing profile deleted (if any)');
       }
@@ -411,6 +411,36 @@ export default function OnboardingPage() {
       }
 
       console.log('✅ Profile saved successfully!', data);
+
+      // ✅ NEW: Save selected movies to watch history
+      if (selectedMovies.length > 0) {
+        console.log(`💾 Saving ${selectedMovies.length} selected movies to watch history...`);
+        
+        const watchHistoryEntries = selectedMovies.map(movie => ({
+          user_id: user.id,
+          content_id: movie.id,
+          content_type: 'movie',
+          watch_status: 'watched',
+          rating: 8, // Default positive rating since they selected it
+          completion_percentage: 100,
+          watched_date: new Date().toISOString(),
+        }));
+
+        const { error: watchError } = await supabase
+          .from('user_watch_history')
+          .upsert(watchHistoryEntries, { 
+            onConflict: 'user_id, content_id',
+            ignoreDuplicates: true 
+          });
+
+        if (watchError) {
+          console.error('Error saving watch history:', watchError);
+          // Don't fail onboarding, just log the error
+        } else {
+          console.log(`✅ Saved ${selectedMovies.length} movies to watch history`);
+        }
+      }
+
       toast.success(`🎉 Great choices! We've learned your taste!`);
       router.push('/');
     } catch (error: any) {
