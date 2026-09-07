@@ -109,18 +109,9 @@ export default function MovieFeed({
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loaderRef = useRef<HTMLDivElement | null>(null);
-  const hasReachedLimitRef = useRef(false);
 
   const isPublicUser = userId === 'public-user' || !user;
   const MAX_PUBLIC_MOVIES = 40;
-
-  useEffect(() => {
-    if (isPublicUser) {
-      hasReachedLimitRef.current = movies.length >= MAX_PUBLIC_MOVIES;
-    } else {
-      hasReachedLimitRef.current = false;
-    }
-  }, [isPublicUser, movies.length]);
 
   useEffect(() => {
     if (isPublicUser) return;
@@ -147,8 +138,6 @@ export default function MovieFeed({
   }, [userId, isPublicUser]);
 
   const fetchMovies = useCallback(async (pageNum: number, append: boolean = true) => {
-    if (hasReachedLimitRef.current) return;
-
     try {
       if (pageNum === 1) setLoading(true);
       else setLoadingMore(true);
@@ -192,18 +181,17 @@ export default function MovieFeed({
       let filteredMovies = formattedMovies;
       if (!isPublicUser) filteredMovies = formattedMovies.filter((m: Movie) => !watchlistIds.has(m.id));
 
-      let finalMovies = filteredMovies;
+      // ✅ Public users: limit to 40 movies, no infinite scroll
       if (isPublicUser) {
         const currentTotal = append ? movies.length : 0;
         const remainingSlots = MAX_PUBLIC_MOVIES - currentTotal;
-        finalMovies = filteredMovies.slice(0, remainingSlots);
-        if (currentTotal + finalMovies.length >= MAX_PUBLIC_MOVIES) setHasMore(false);
-        else setHasMore(data.total_pages > pageNum && filteredMovies.length > 0);
+        filteredMovies = filteredMovies.slice(0, remainingSlots);
+        setHasMore(false); // Always stop at 40 for public
       } else {
         setHasMore(data.total_pages > pageNum && filteredMovies.length > 0);
       }
 
-      setMovies(prev => append ? [...prev, ...finalMovies] : finalMovies);
+      setMovies(prev => append ? [...prev, ...filteredMovies] : filteredMovies);
     } catch (error) {
       console.error('Error:', error);
       toast.error('Failed to load movies');
@@ -219,7 +207,6 @@ export default function MovieFeed({
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     searchTimeoutRef.current = setTimeout(() => {
       setPage(1); setMovies([]); setHasMore(true);
-      hasReachedLimitRef.current = false;
       fetchMovies(1, false);
     }, 500);
   };
@@ -242,22 +229,23 @@ export default function MovieFeed({
 
   useEffect(() => {
     setPage(1); setMovies([]); setHasMore(true);
-    hasReachedLimitRef.current = false;
     fetchMovies(1, false);
   }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, activePreset, experienceFilter, fetchMovies]);
 
-  // ✅ SIMPLE FIX: Observer only depends on page trigger, not movies.length
+  // ✅ Infinite scroll ONLY for logged-in users
   useEffect(() => {
+    if (isPublicUser) return; // Skip for public users
+
     if (observerRef.current) {
       observerRef.current.disconnect();
       observerRef.current = null;
     }
 
-    if (loading || loadingMore || !hasMore || hasReachedLimitRef.current) return;
+    if (loading || loadingMore || !hasMore) return;
 
     if (loaderRef.current) {
       observerRef.current = new IntersectionObserver((entries) => {
-        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading && !hasReachedLimitRef.current) {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
           setPage(p => p + 1);
         }
       }, { threshold: 0.1, rootMargin: '100px' });
@@ -271,10 +259,10 @@ export default function MovieFeed({
         observerRef.current = null;
       }
     };
-  }, [loading, loadingMore, hasMore]); // ✅ Removed hasReachedLimitRef, isPublicUser, movies.length
+  }, [loading, loadingMore, hasMore, isPublicUser]);
 
   useEffect(() => {
-    if (page > 1 && !hasReachedLimitRef.current) fetchMovies(page, true);
+    if (page > 1) fetchMovies(page, true);
   }, [page, fetchMovies]);
 
   const getImageUrl = (path: string) => path ? (path.startsWith('http') ? path : `https://image.tmdb.org/t/p/w500${path}`) : null;
@@ -310,7 +298,10 @@ export default function MovieFeed({
 
   const getTopGenres = () => {
     if (!userTaste?.genre_affinities) return [];
-    return Object.entries(userTaste.genre_affinities).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([genre]) => genre);
+    return Object.entries(userTaste.genre_affinities as Record<string, number>)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([genre]) => genre);
   };
 
   const handlePresetClick = (presetId: string) => {
@@ -491,13 +482,13 @@ export default function MovieFeed({
         )}
         {!hasMore && movies.length > 0 && (
           <p className="text-gray-500 text-sm">
-            {isPublicUser && hasReachedLimitRef.current ? '🎬 Showing 40 movies — sign in for unlimited access' : 'No more movies to load'}
+            {isPublicUser ? '🎬 Showing 40 movies — sign in for unlimited access' : 'No more movies to load'}
           </p>
         )}
         {!hasMore && movies.length === 0 && !loading && !loadingMore && (
           <div className="text-center py-12"><p className="text-gray-400">No movies found. Try adjusting your filters.</p></div>
         )}
-        {hasMore && !loadingMore && movies.length > 0 && !hasReachedLimitRef.current && (
+        {hasMore && !loadingMore && movies.length > 0 && !isPublicUser && (
           <p className="text-gray-500 text-xs animate-pulse">Scroll for more</p>
         )}
       </div>
