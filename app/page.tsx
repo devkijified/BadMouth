@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
 import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield, Star, ThumbsUp, Trash2, Loader2, Play, Compass } from 'lucide-react'
@@ -22,7 +22,7 @@ import MovieFeed from '@/components/MovieFeed'
 import ExperienceCategories from '@/components/ExperienceCategories'
 import ExperienceModal from '@/components/ExperienceModal'
 import MovieDetailsModal from '@/components/MovieDetailsModal'
-import BecauseYouLiked from '@/components/BecauseYouLiked'  // ✅ NEW IMPORT
+import BecauseYouLiked from '@/components/BecauseYouLiked'
 import { ContentItem, Category } from '@/types/content'
 import { EXPERIENCE_CATEGORIES } from '@/constants/experienceCategories'
 import toast from 'react-hot-toast'
@@ -68,6 +68,9 @@ export default function HomePage() {
   const [homeMovies, setHomeMovies] = useState<ContentItem[]>([])
   const [homeMusic, setHomeMusic] = useState<ContentItem[]>([])
   const [homeLoading, setHomeLoading] = useState(true)
+  // Guards loadHomeData so it only runs once per session, not every time
+  // the user tabs back to Home — this is what was unmounting AIRecommendations.
+  const homeLoadedRef = useRef(false)
 
   // Onboarding check
   const [checkingOnboarding, setCheckingOnboarding] = useState(true)
@@ -421,7 +424,9 @@ export default function HomePage() {
     }
   }
 
-  // Load data for Home page
+  // Load data for Home page — guarded to run once so switching tabs away
+  // and back never re-triggers homeLoading (which was unmounting Home's
+  // children, including AIRecommendations, via the old full-page loader).
   const loadHomeData = async () => {
     setHomeLoading(true)
     
@@ -459,11 +464,17 @@ export default function HomePage() {
     }
   }
 
-  // Trigger data loading when page changes
+  // Trigger data loading when page changes.
+  // Home now loads ONCE (guarded by homeLoadedRef) instead of on every
+  // tab switch back to 'home' — this is the actual fix. Movies/Music keep
+  // their existing per-switch reload behavior since that wasn't the complaint.
   useEffect(() => {
     if (user && !authLoading) {
       if (currentPage === 'home') {
-        loadHomeData()
+        if (!homeLoadedRef.current) {
+          homeLoadedRef.current = true
+          loadHomeData()
+        }
       } else if (currentPage === 'movies') {
         loadMoviesData()
       } else if (currentPage === 'music') {
@@ -597,17 +608,6 @@ export default function HomePage() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-teal-500 mx-auto mb-4"></div>
           <p className="text-gray-400">Loading {currentPage === 'movies' ? 'movies' : 'music'}...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (currentPage === 'home' && homeLoading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-teal-500 mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading your personalized feed...</p>
         </div>
       </div>
     )
@@ -938,7 +938,104 @@ export default function HomePage() {
       )}
 
       <main className="pt-16">
-        {currentPage === 'reels' ? (
+        {/* HOME — always mounted (display toggled via CSS, never removed from
+            the tree) so AIRecommendations/MovieFeed never remount, keep their
+            internal state, and their own refresh/cache logic stays intact
+            across tab switches. Only the base homeMovies/homeMusic (used by
+            the hero) show an inline loading state on first load. */}
+        <div style={{ display: currentPage === 'home' ? 'block' : 'none' }}>
+          {homeLoading && homeMovies.length === 0 && homeMusic.length === 0 ? (
+            <div className="flex items-center justify-center py-24">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-3"></div>
+                <p className="text-gray-400 text-sm">Loading your personalized feed...</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <HeroCarousel 
+                items={[...homeMovies.slice(0, 2), ...homeMusic.slice(0, 1)]} 
+                onViewDetails={handleViewDetails} 
+                onRecommend={handleRecommend}
+                activeTab={activeTab} 
+              />
+              <TrendingBar onViewDetails={handleViewDetails} />
+              <QuickStats userId={user.id} />
+              
+              {/* Experience Categories - Button that opens modal */}
+              <div className="container mx-auto px-4 py-4">
+                <ExperienceCategories 
+                  onOpenModal={() => setIsExperienceModalOpen(true)}
+                  selectedCategory={selectedExperience ? EXPERIENCE_CATEGORIES.find(c => c.id === selectedExperience)?.name || null : null}
+                />
+              </div>
+              
+              <div className="container mx-auto px-4">
+                {/* AI Recommendations Section */}
+                <div className="mb-8">
+                  <AIRecommendations 
+                    userId={user.id}
+                    onViewDetails={handleViewDetails}
+                    onAddToWatchlist={addToWatchlist}
+                    isInWatchlist={isInWatchlist}
+                  />
+                </div>
+
+                {/* Because You Liked Section */}
+                <div className="mb-8">
+                  <BecauseYouLiked 
+                    userId={user.id}
+                    onViewDetails={handleViewDetails}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                  />
+                </div>
+                
+                {/* Movie Feed with Infinite Scroll */}
+                <div className="mb-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl font-semibold">🎬 Discover Movies</h2>
+                    {selectedExperience && (
+                      <span className="text-xs text-teal-400 bg-teal-500/20 px-2 py-1 rounded-full">
+                        🎯 {EXPERIENCE_CATEGORIES.find(c => c.id === selectedExperience)?.name}
+                      </span>
+                    )}
+                  </div>
+                  <MovieFeed 
+                    onViewDetails={handleViewDetails}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                    userId={user.id}
+                    experienceFilter={selectedExperience}
+                  />
+                </div>
+                
+                <HomeFeed 
+                  onViewDetails={handleViewDetails}
+                  onRecommend={handleRecommend}
+                  onAddToWatchlist={addToWatchlist}
+                  onRemoveFromWatchlist={removeFromWatchlist}
+                  isInWatchlist={isInWatchlist}
+                />
+                <WatchlistBasedRecommendations 
+                  userId={user.id}
+                  watchlist={watchlist}
+                  onViewDetails={handleViewDetails}
+                  onRecommend={handleRecommend}
+                  onAddToWatchlist={addToWatchlist}
+                  onRemoveFromWatchlist={removeFromWatchlist}
+                  isInWatchlist={isInWatchlist}
+                />
+                <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* REELS */}
+        {currentPage === 'reels' && (
           <TrailerReels 
             onViewDetails={handleViewDetails}
             onAddToWatchlist={addToWatchlist}
@@ -946,7 +1043,10 @@ export default function HomePage() {
             isInWatchlist={isInWatchlist}
             userId={user.id}
           />
-        ) : currentPage === 'explore' ? (
+        )}
+
+        {/* EXPLORE */}
+        {currentPage === 'explore' && (
           <div className="min-h-screen bg-black">
             <div className="container mx-auto px-4 py-8">
               <h1 className="text-3xl font-bold text-white mb-4">Explore</h1>
@@ -957,87 +1057,10 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-        ) : currentPage === 'home' ? (
-          <>
-            <HeroCarousel 
-              items={[...homeMovies.slice(0, 2), ...homeMusic.slice(0, 1)]} 
-              onViewDetails={handleViewDetails} 
-              onRecommend={handleRecommend}
-              activeTab={activeTab} 
-            />
-            <TrendingBar onViewDetails={handleViewDetails} />
-            <QuickStats userId={user.id} />
-            
-            {/* Experience Categories - Button that opens modal */}
-            <div className="container mx-auto px-4 py-4">
-              <ExperienceCategories 
-                onOpenModal={() => setIsExperienceModalOpen(true)}
-                selectedCategory={selectedExperience ? EXPERIENCE_CATEGORIES.find(c => c.id === selectedExperience)?.name || null : null}
-              />
-            </div>
-            
-            <div className="container mx-auto px-4">
-              {/* AI Recommendations Section */}
-              <div className="mb-8">
-                <AIRecommendations 
-                  userId={user.id}
-                  onViewDetails={handleViewDetails}
-                  onAddToWatchlist={addToWatchlist}
-                  isInWatchlist={isInWatchlist}
-                />
-              </div>
+        )}
 
-              {/* ✅ NEW: Because You Liked Section */}
-              <div className="mb-8">
-                <BecauseYouLiked 
-                  userId={user.id}
-                  onViewDetails={handleViewDetails}
-                  onAddToWatchlist={addToWatchlist}
-                  onRemoveFromWatchlist={removeFromWatchlist}
-                  isInWatchlist={isInWatchlist}
-                />
-              </div>
-              
-              {/* Movie Feed with Infinite Scroll */}
-              <div className="mb-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold">🎬 Discover Movies</h2>
-                  {selectedExperience && (
-                    <span className="text-xs text-teal-400 bg-teal-500/20 px-2 py-1 rounded-full">
-                      🎯 {EXPERIENCE_CATEGORIES.find(c => c.id === selectedExperience)?.name}
-                    </span>
-                  )}
-                </div>
-                <MovieFeed 
-                  onViewDetails={handleViewDetails}
-                  onAddToWatchlist={addToWatchlist}
-                  onRemoveFromWatchlist={removeFromWatchlist}
-                  isInWatchlist={isInWatchlist}
-                  userId={user.id}
-                  experienceFilter={selectedExperience}
-                />
-              </div>
-              
-              <HomeFeed 
-                onViewDetails={handleViewDetails}
-                onRecommend={handleRecommend}
-                onAddToWatchlist={addToWatchlist}
-                onRemoveFromWatchlist={removeFromWatchlist}
-                isInWatchlist={isInWatchlist}
-              />
-              <WatchlistBasedRecommendations 
-                userId={user.id}
-                watchlist={watchlist}
-                onViewDetails={handleViewDetails}
-                onRecommend={handleRecommend}
-                onAddToWatchlist={addToWatchlist}
-                onRemoveFromWatchlist={removeFromWatchlist}
-                isInWatchlist={isInWatchlist}
-              />
-              <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
-            </div>
-          </>
-        ) : currentPage === 'movies' ? (
+        {/* MOVIES */}
+        {currentPage === 'movies' && (
           <>
             <HeroCarousel 
               items={allContent.slice(0, 3)} 
@@ -1122,7 +1145,10 @@ export default function HomePage() {
               <SocialRecommendations onViewDetails={handleViewDetails} activeTab={activeTab} />
             </div>
           </>
-        ) : (
+        )}
+
+        {/* MUSIC */}
+        {currentPage === 'music' && (
           <>
             <HeroCarousel 
               items={allContent.slice(0, 3)} 
