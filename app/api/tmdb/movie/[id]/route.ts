@@ -1,183 +1,69 @@
-import { NextResponse } from 'next/server';
+// app/api/tmdb/movie/[id]/route.ts
+import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ movieId: string }> }
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { movieId } = await params;
-
-    if (!movieId) {
-      return NextResponse.json(
-        { error: 'Movie ID is required' },
-        { status: 400 }
-      );
-    }
-
+    const movieId = params.id;
     const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
-    /*
-     * IMPORTANT:
-     * TMDB_API_KEY is SERVER-ONLY.
-     *
-     * Do NOT rename this to:
-     * NEXT_PUBLIC_TMDB_API_KEY
-     */
-
     if (!TMDB_API_KEY) {
-      console.error(
-        'TMDB_API_KEY is missing from server environment'
-      );
-
+      console.error('❌ TMDB_API_KEY is not set in environment variables');
       return NextResponse.json(
-        {
-          error: 'TMDB API configuration missing',
-        },
+        { error: 'TMDB API key not configured' },
         { status: 500 }
       );
     }
 
-    const baseUrl =
-      `https://api.themoviedb.org/3/movie/${encodeURIComponent(
-        movieId
-      )}`;
+    console.log(`🎬 Fetching TMDB details for movie: ${movieId}`);
 
-    const apiKey = encodeURIComponent(
-      TMDB_API_KEY
-    );
-
-    /*
-     * Fetch all required TMDB data in parallel.
-     */
-    const [
-      movieRes,
-      creditsRes,
-      videosRes,
-      providersRes,
-    ] = await Promise.all([
-      fetch(
-        `${baseUrl}?api_key=${apiKey}&language=en-US&append_to_response=release_dates`,
-        {
-          cache: 'no-store',
-        }
-      ),
-
-      fetch(
-        `${baseUrl}/credits?api_key=${apiKey}&language=en-US`,
-        {
-          cache: 'no-store',
-        }
-      ),
-
-      fetch(
-        `${baseUrl}/videos?api_key=${apiKey}&language=en-US`,
-        {
-          cache: 'no-store',
-        }
-      ),
-
-      fetch(
-        `${baseUrl}/watch/providers?api_key=${apiKey}`,
-        {
-          cache: 'no-store',
-        }
-      ),
-    ]);
-
-    /*
-     * If TMDB itself rejects the movie request,
-     * return the appropriate error.
-     */
-    if (!movieRes.ok) {
-      const errorBody = await movieRes
-        .text()
-        .catch(() => '');
-
-      console.error(
-        'TMDB movie request failed:',
-        movieRes.status,
-        errorBody
-      );
-
-      return NextResponse.json(
-        {
-          error: 'Failed to fetch movie from TMDB',
-          status: movieRes.status,
+    // Fetch movie details with all required append data
+    const movieRes = await fetch(
+      `https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=release_dates,credits,videos`,
+      {
+        headers: {
+          'Accept': 'application/json',
         },
-        {
-          status: movieRes.status,
-        }
-      );
-    }
-
-    /*
-     * Parse responses.
-     *
-     * Some endpoints can fail independently, so we
-     * still return whatever data is available.
-     */
-    const movie = await movieRes.json();
-
-    let credits = null;
-    let videos = null;
-    let providers = null;
-
-    if (creditsRes.ok) {
-      credits = await creditsRes.json();
-    } else {
-      console.error(
-        'TMDB credits request failed:',
-        creditsRes.status
-      );
-    }
-
-    if (videosRes.ok) {
-      videos = await videosRes.json();
-    } else {
-      console.error(
-        'TMDB videos request failed:',
-        videosRes.status
-      );
-    }
-
-    if (providersRes.ok) {
-      providers = await providersRes.json();
-    } else {
-      console.error(
-        'TMDB providers request failed:',
-        providersRes.status
-      );
-    }
-
-    /*
-     * Return one clean response to the client.
-     *
-     * The API key NEVER appears here.
-     */
-    return NextResponse.json(
-      {
-        movie,
-        credits,
-        videos,
-        providers,
-      },
-      {
-        status: 200,
+        next: { revalidate: 3600 } // Cache for 1 hour
       }
     );
-  } catch (error) {
-    console.error(
-      'Unexpected TMDB API route error:',
-      error
-    );
 
-    return NextResponse.json(
+    if (!movieRes.ok) {
+      console.error(`❌ TMDB API error: ${movieRes.status}`);
+      return NextResponse.json(
+        { error: `TMDB API error: ${movieRes.status}` },
+        { status: movieRes.status }
+      );
+    }
+
+    const movieData = await movieRes.json();
+
+    // Fetch watch providers separately (different endpoint)
+    const providersRes = await fetch(
+      `https://api.themoviedb.org/3/movie/${movieId}/watch/providers?api_key=${TMDB_API_KEY}`,
       {
-        error: 'Internal server error while fetching TMDB data',
-      },
-      {
-        status: 500,
+        headers: {
+          'Accept': 'application/json',
+        },
+        next: { revalidate: 3600 }
       }
+    );
+    const providersData = providersRes.ok ? await providersRes.json() : null;
+
+    return NextResponse.json({
+      movie: movieData,
+      credits: movieData.credits || null,
+      videos: movieData.videos || null,
+      providers: providersData,
+    });
+
+  } catch (error: any) {
+    console.error('❌ TMDB route error:', error.message);
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
     );
   }
 }
