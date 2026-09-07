@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase/client'
-import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield, Star, ThumbsUp, Trash2, Loader2, Play, Compass } from 'lucide-react'
+import { Bell, User, Menu, Film, Music, Home, Heart, Sparkles, X, LogOut, Filter, Shield, Star, ThumbsUp, Trash2, Loader2, Play, Compass, LogIn } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import HeroCarousel from '@/components/HeroCarousel'
@@ -26,6 +26,70 @@ import BecauseYouLiked from '@/components/BecauseYouLiked'
 import { ContentItem, Category } from '@/types/content'
 import { EXPERIENCE_CATEGORIES } from '@/constants/experienceCategories'
 import toast from 'react-hot-toast'
+
+// ✅ Public movie fetching functions (no auth required)
+const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f';
+
+async function fetchPublicMovies() {
+  try {
+    const [trendingRes, topRatedRes, upcomingRes] = await Promise.all([
+      fetch(`https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_API_KEY}&language=en-US&page=1`),
+      fetch(`https://api.themoviedb.org/3/movie/top_rated?api_key=${TMDB_API_KEY}&language=en-US&page=1`),
+      fetch(`https://api.themoviedb.org/3/movie/upcoming?api_key=${TMDB_API_KEY}&language=en-US&page=1`),
+    ]);
+
+    const [trending, topRated, upcoming] = await Promise.all([
+      trendingRes.json(),
+      topRatedRes.json(),
+      upcomingRes.json(),
+    ]);
+
+    return {
+      trending: trending.results || [],
+      topRated: topRated.results || [],
+      upcoming: upcoming.results || [],
+    };
+  } catch (error) {
+    console.error('Error fetching public movies:', error);
+    return { trending: [], topRated: [], upcoming: [] };
+  }
+}
+
+function formatMovieForContent(item: any): ContentItem {
+  return {
+    id: item.id.toString(),
+    title: item.title || 'Unknown',
+    description: item.overview || '',
+    long_description: item.overview || null,
+    image_url: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : '',
+    backdrop_url: item.backdrop_path ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` : null,
+    type: 'movie' as const,
+    year: item.release_date ? new Date(item.release_date).getFullYear() : 0,
+    director: null,
+    artist: null,
+    actors: [],
+    platforms: [],
+    trailer_url: null,
+    runtime: null,
+    duration: null,
+    genre: item.genre_ids?.map((id: number) => {
+      const map: Record<number, string> = {
+        28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy',
+        80: 'Crime', 99: 'Documentary', 18: 'Drama', 10751: 'Family',
+        14: 'Fantasy', 36: 'History', 27: 'Horror', 10402: 'Music',
+        9648: 'Mystery', 10749: 'Romance', 878: 'Sci-Fi', 10770: 'TV Movie',
+        53: 'Thriller', 10752: 'War', 37: 'Western'
+      };
+      return map[id];
+    }).filter(Boolean).join(', ') || '',
+    stats_highly: 0,
+    stats_recommended: 0,
+    stats_not: 0,
+    rating: item.vote_average || 0,
+    rating_count: item.vote_count || 0,
+    is_tv_show: false,
+  };
+}
 
 export default function HomePage() {
   const router = useRouter()
@@ -68,16 +132,39 @@ export default function HomePage() {
   const [homeMovies, setHomeMovies] = useState<ContentItem[]>([])
   const [homeMusic, setHomeMusic] = useState<ContentItem[]>([])
   const [homeLoading, setHomeLoading] = useState(true)
-  // Guards loadHomeData so it only runs once per session, not every time
-  // the user tabs back to Home — this is what was unmounting AIRecommendations.
+  
+  // Public movies for non-logged-in users
+  const [publicMovies, setPublicMovies] = useState<{
+    trending: ContentItem[];
+    topRated: ContentItem[];
+    upcoming: ContentItem[];
+  }>({ trending: [], topRated: [], upcoming: [] });
+  const [publicLoading, setPublicLoading] = useState(true);
+
+  // Guards loadHomeData so it only runs once per session
   const homeLoadedRef = useRef(false)
 
-  // Onboarding check
-  const [checkingOnboarding, setCheckingOnboarding] = useState(true)
+  // Onboarding check (only for logged-in users)
+  const [checkingOnboarding, setCheckingOnboarding] = useState(false)
 
   const genres = ['all', 'Action', 'Drama', 'Sci-Fi', 'Pop', 'Rock', 'Thriller', 'Hip Hop', 'R&B', 'Electronic', 'Jazz']
 
-  // Check onboarding status
+  // Fetch public movies on load (always, for non-logged-in users)
+  useEffect(() => {
+    const loadPublicMovies = async () => {
+      setPublicLoading(true);
+      const movies = await fetchPublicMovies();
+      setPublicMovies({
+        trending: movies.trending.map(formatMovieForContent),
+        topRated: movies.topRated.map(formatMovieForContent),
+        upcoming: movies.upcoming.map(formatMovieForContent),
+      });
+      setPublicLoading(false);
+    };
+    loadPublicMovies();
+  }, []);
+
+  // Check onboarding status (only for logged-in users)
   useEffect(() => {
     const checkOnboarding = async () => {
       if (!user) {
@@ -147,6 +234,11 @@ export default function HomePage() {
   }
 
   const toggleWatchlist = () => {
+    if (!user) {
+      toast.error('Please sign in to view your watchlist')
+      router.push('/auth')
+      return
+    }
     if (showWatchlist) {
       setShowWatchlist(false)
     } else {
@@ -157,6 +249,10 @@ export default function HomePage() {
   }
 
   const toggleProfile = () => {
+    if (!user) {
+      router.push('/auth')
+      return
+    }
     if (showProfile) {
       setShowProfile(false)
     } else {
@@ -168,6 +264,10 @@ export default function HomePage() {
   }
 
   const toggleNotifications = () => {
+    if (!user) {
+      router.push('/auth')
+      return
+    }
     if (showNotifications) {
       setShowNotifications(false)
     } else {
@@ -256,6 +356,7 @@ export default function HomePage() {
   const addToWatchlist = async (item: ContentItem) => {
     if (!user) {
       toast.error('Please sign in to add to watchlist')
+      router.push('/auth')
       return
     }
     
@@ -424,9 +525,7 @@ export default function HomePage() {
     }
   }
 
-  // Load data for Home page — guarded to run once so switching tabs away
-  // and back never re-triggers homeLoading (which was unmounting Home's
-  // children, including AIRecommendations, via the old full-page loader).
+  // Load data for Home page — guarded to run once
   const loadHomeData = async () => {
     setHomeLoading(true)
     
@@ -464,10 +563,7 @@ export default function HomePage() {
     }
   }
 
-  // Trigger data loading when page changes.
-  // Home now loads ONCE (guarded by homeLoadedRef) instead of on every
-  // tab switch back to 'home' — this is the actual fix. Movies/Music keep
-  // their existing per-switch reload behavior since that wasn't the complaint.
+  // Trigger data loading when page changes
   useEffect(() => {
     if (user && !authLoading) {
       if (currentPage === 'home') {
@@ -569,7 +665,10 @@ export default function HomePage() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  // Loading states
+  // ═══════════════════════════════════════════════════════════════
+  // LOADING STATES
+  // ═══════════════════════════════════════════════════════════════
+
   if (authLoading || checkingOnboarding) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -583,24 +682,186 @@ export default function HomePage() {
     )
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // PUBLIC LANDING PAGE (Non-logged-in users)
+  // ═══════════════════════════════════════════════════════════════
   if (!user) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center p-4">
-        <div className="text-center">
-          <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-r from-teal-600 to-blue-600 rounded-full flex items-center justify-center">
-            <Sparkles className="text-white" size={32} />
+      <div className="min-h-screen bg-black">
+        {/* Header */}
+        <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+          isScrolled ? 'bg-black/95 backdrop-blur-md border-b border-gray-800' : 'bg-gradient-to-b from-black/80 to-transparent'
+        }`}>
+          <div className="container mx-auto px-4">
+            <div className="flex items-center justify-between h-16">
+              <div className="flex items-center gap-8">
+                <button onClick={scrollToTop} className="text-xl font-bold bg-gradient-to-r from-teal-500 to-blue-500 bg-clip-text text-transparent">
+                  BADMOUTH
+                </button>
+                <nav className="hidden md:flex gap-6">
+                  <button className="text-gray-300 hover:text-white">Home</button>
+                  <button className="text-gray-300 hover:text-white">Movies</button>
+                  <button className="text-gray-300 hover:text-white">Music</button>
+                  <button className="text-gray-300 hover:text-white">Reels</button>
+                </nav>
+              </div>
+              <div className="flex items-center gap-4">
+                <Link href="/auth" className="px-4 py-2 bg-gradient-to-r from-teal-600 to-blue-600 rounded-lg text-sm font-semibold hover:opacity-90 transition flex items-center gap-2">
+                  <LogIn size={16} /> Sign In
+                </Link>
+              </div>
+            </div>
           </div>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-teal-600 to-blue-600 bg-clip-text text-transparent mb-2">
-            BADMOUTH
-          </h1>
-          <p className="text-gray-400 mb-6">Your AI-powered movie & music recommendation engine</p>
-          <a href="/auth" className="inline-block px-8 py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-lg font-semibold">
-            Get Started
-          </a>
-        </div>
+        </header>
+
+        <main className="pt-16">
+          {publicLoading ? (
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-3"></div>
+                <p className="text-gray-400 text-sm">Loading movies...</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Public Hero */}
+              <HeroCarousel 
+                items={publicMovies.trending.slice(0, 5)} 
+                onViewDetails={handleViewDetails} 
+                onRecommend={handleRecommend}
+                activeTab="movie" 
+              />
+
+              {/* Public Trending */}
+              <ContentRow 
+                title="🔥 Trending Now"
+                items={publicMovies.trending.slice(0, 10)}
+                type="movie"
+                onViewDetails={handleViewDetails}
+                onRecommend={handleRecommend}
+                onAddToWatchlist={addToWatchlist}
+                onRemoveFromWatchlist={removeFromWatchlist}
+                isInWatchlist={isInWatchlist}
+                maxItems={10}
+              />
+
+              {/* Public Top Rated */}
+              <ContentRow 
+                title="⭐ Top Rated"
+                items={publicMovies.topRated.slice(0, 10)}
+                type="movie"
+                onViewDetails={handleViewDetails}
+                onRecommend={handleRecommend}
+                onAddToWatchlist={addToWatchlist}
+                onRemoveFromWatchlist={removeFromWatchlist}
+                isInWatchlist={isInWatchlist}
+                maxItems={10}
+              />
+
+              {/* Public Upcoming */}
+              <ContentRow 
+                title="📅 Coming Soon"
+                items={publicMovies.upcoming.slice(0, 10)}
+                type="movie"
+                onViewDetails={handleViewDetails}
+                onRecommend={handleRecommend}
+                onAddToWatchlist={addToWatchlist}
+                onRemoveFromWatchlist={removeFromWatchlist}
+                isInWatchlist={isInWatchlist}
+                maxItems={10}
+              />
+
+              {/* Experience Categories (Public) */}
+              <div className="container mx-auto px-4 py-4">
+                <ExperienceCategories 
+                  onOpenModal={() => setIsExperienceModalOpen(true)}
+                  selectedCategory={selectedExperience ? EXPERIENCE_CATEGORIES.find(c => c.id === selectedExperience)?.name || null : null}
+                />
+              </div>
+
+              {/* Experience Modal (Public) */}
+              <ExperienceModal 
+                isOpen={isExperienceModalOpen}
+                onClose={() => setIsExperienceModalOpen(false)}
+                onSelectCategory={handleExperienceSelect}
+                selectedCategory={selectedExperience}
+              />
+
+              {/* Public Movie Feed with Filter */}
+              <div className="container mx-auto px-4">
+                <div className="mb-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl font-semibold">🎬 Discover Movies</h2>
+                    {selectedExperience && (
+                      <span className="text-xs text-teal-400 bg-teal-500/20 px-2 py-1 rounded-full">
+                        🎯 {EXPERIENCE_CATEGORIES.find(c => c.id === selectedExperience)?.name}
+                      </span>
+                    )}
+                  </div>
+                  <MovieFeed 
+                    onViewDetails={handleViewDetails}
+                    onAddToWatchlist={addToWatchlist}
+                    onRemoveFromWatchlist={removeFromWatchlist}
+                    isInWatchlist={isInWatchlist}
+                    userId="public-user"
+                    experienceFilter={selectedExperience}
+                  />
+                </div>
+              </div>
+
+              {/* Sign Up CTA */}
+              <div className="container mx-auto px-4 py-12">
+                <div className="bg-gradient-to-r from-teal-600/20 to-blue-600/20 rounded-2xl p-8 text-center border border-teal-500/20">
+                  <Sparkles className="w-12 h-12 text-teal-500 mx-auto mb-4" />
+                  <h2 className="text-2xl font-bold text-white mb-2">Ready for Personalized Recommendations?</h2>
+                  <p className="text-gray-400 mb-6 max-w-md mx-auto">
+                    Sign in to get AI-powered recommendations, save to watchlist, and rate movies you love.
+                  </p>
+                  <Link href="/auth" className="inline-block px-6 py-3 bg-gradient-to-r from-teal-600 to-blue-600 rounded-lg font-semibold hover:opacity-90 transition">
+                    Get Started Free
+                  </Link>
+                </div>
+              </div>
+            </>
+          )}
+        </main>
+
+        {/* Public Mobile Nav */}
+        <MobileNav 
+          activeTab={activeTab} 
+          onTabChange={(tab) => {
+            if (tab === 'movie') handleMoviesClick()
+            else if (tab === 'music') handleMusicClick()
+            else if (tab === 'reels') handleReelsClick()
+            else if (tab === 'explore') router.push('/explore')
+            else handleHomeClick()
+          }} 
+          onViewDetails={handleViewDetails}
+          onHomeClick={handleHomeClick}
+          onProfileClick={() => router.push('/auth')}
+          onWatchlistClick={() => router.push('/auth')}
+          items={[]}
+          currentPage={currentPage}
+        />
+
+        {/* Public Details Modal */}
+        <MovieDetailsModal
+          isOpen={showDetailsModal}
+          onClose={() => setShowDetailsModal(false)}
+          content={selectedContent}
+          onRecommend={handleRecommend}
+          onAddToWatchlist={addToWatchlist}
+          onRemoveFromWatchlist={removeFromWatchlist}
+          isInWatchlist={isInWatchlist}
+          userId="public-user"
+        />
       </div>
     )
   }
+
+  // ═══════════════════════════════════════════════════════════════
+  // LOGGED-IN USER VIEW
+  // ═══════════════════════════════════════════════════════════════
 
   if ((currentPage === 'movies' || currentPage === 'music') && loading) {
     return (
@@ -647,7 +908,6 @@ export default function HomePage() {
         onSuccess={handleRecommendSuccess}
       />
 
-      {/* Experience Modal */}
       <ExperienceModal 
         isOpen={isExperienceModalOpen}
         onClose={() => setIsExperienceModalOpen(false)}
@@ -655,7 +915,6 @@ export default function HomePage() {
         selectedCategory={selectedExperience}
       />
 
-      {/* Movie Details Modal */}
       <MovieDetailsModal
         isOpen={showDetailsModal}
         onClose={() => setShowDetailsModal(false)}
@@ -938,11 +1197,7 @@ export default function HomePage() {
       )}
 
       <main className="pt-16">
-        {/* HOME — always mounted (display toggled via CSS, never removed from
-            the tree) so AIRecommendations/MovieFeed never remount, keep their
-            internal state, and their own refresh/cache logic stays intact
-            across tab switches. Only the base homeMovies/homeMusic (used by
-            the hero) show an inline loading state on first load. */}
+        {/* HOME — Always mounted */}
         <div style={{ display: currentPage === 'home' ? 'block' : 'none' }}>
           {homeLoading && homeMovies.length === 0 && homeMusic.length === 0 ? (
             <div className="flex items-center justify-center py-24">
@@ -962,7 +1217,7 @@ export default function HomePage() {
               <TrendingBar onViewDetails={handleViewDetails} />
               <QuickStats userId={user.id} />
               
-              {/* Experience Categories - Button that opens modal */}
+              {/* Experience Categories */}
               <div className="container mx-auto px-4 py-4">
                 <ExperienceCategories 
                   onOpenModal={() => setIsExperienceModalOpen(true)}
@@ -971,7 +1226,7 @@ export default function HomePage() {
               </div>
               
               <div className="container mx-auto px-4">
-                {/* AI Recommendations Section */}
+                {/* AI Recommendations */}
                 <div className="mb-8">
                   <AIRecommendations 
                     userId={user.id}
@@ -981,7 +1236,7 @@ export default function HomePage() {
                   />
                 </div>
 
-                {/* Because You Liked Section */}
+                {/* Because You Liked */}
                 <div className="mb-8">
                   <BecauseYouLiked 
                     userId={user.id}
@@ -992,7 +1247,7 @@ export default function HomePage() {
                   />
                 </div>
                 
-                {/* Movie Feed with Infinite Scroll */}
+                {/* Movie Feed */}
                 <div className="mb-8">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-semibold">🎬 Discover Movies</h2>
@@ -1070,7 +1325,6 @@ export default function HomePage() {
             />
             <TrendingBar onViewDetails={handleViewDetails} />
             
-            {/* Experience Categories - Button that opens modal */}
             <div className="container mx-auto px-4 py-4">
               <ExperienceCategories 
                 onOpenModal={() => setIsExperienceModalOpen(true)}
@@ -1079,7 +1333,6 @@ export default function HomePage() {
             </div>
             
             <div className="container mx-auto px-4">
-              {/* MovieFeed with experienceFilter */}
               <div className="mb-8">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold">
@@ -1107,7 +1360,6 @@ export default function HomePage() {
                 />
               </div>
               
-              {/* ContentRow sections - only show if no experience filter */}
               {!selectedExperience && (
                 <>
                   {categories.filter(c => c.name === '🔥 Trending Now').map((category) => (
