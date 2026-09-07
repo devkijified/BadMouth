@@ -1,10 +1,16 @@
 // app/api/recommendations/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getAIProvider } from '@/services/ai/provider';
-import { supabase } from '@/lib/supabase/client';
+import { createClient } from '@supabase/supabase-js';
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+
+// Initialize server-side Supabase client with Service Role to bypass RLS safely in API routes
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+);
 
 async function getMovieDetails(tmdbId: string) {
   try {
@@ -80,8 +86,8 @@ export async function GET(request: NextRequest) {
 
     console.log('🎯 Fetching AI recommendations for user:', userId);
 
-    // Get user taste profile
-    const { data: tasteProfile, error: tasteError } = await supabase
+    // Get user taste profile using server admin client
+    const { data: tasteProfile, error: tasteError } = await supabaseAdmin
       .from('user_taste_profiles')
       .select('*')
       .eq('user_id', userId)
@@ -91,24 +97,24 @@ export async function GET(request: NextRequest) {
       console.error('Error fetching taste profile:', tasteError);
     }
 
-    console.log('📊 Taste profile:', tasteProfile ? 'Found' : 'Not found');
+    console.log('📊 Taste profile found:', tasteProfile ? 'Yes' : 'No', tasteProfile);
 
     let recommendations = [];
     let source = 'none';
 
-    // Try Gemini first
+    // Try Gemini AI first
     try {
-      console.log('🧠 Calling Gemini AI...');
+      console.log('🧠 Calling Gemini AI with user profile...');
       const aiProvider = getAIProvider();
       const result = await aiProvider.generateRecommendations({
         userId,
-        userTasteProfile: tasteProfile,
+        userTasteProfile: tasteProfile || {},
         watchHistory: [],
         limit: 10,
         excludeIds: [],
       });
 
-      console.log('📊 Gemini response:', result.recommendations?.length || 0, 'recommendations');
+      console.log('📊 Gemini raw response count:', result?.recommendations?.length || 0);
 
       if (result.recommendations && result.recommendations.length > 0) {
         const merged = await Promise.all(
@@ -129,21 +135,22 @@ export async function GET(request: NextRequest) {
         );
 
         recommendations = merged.filter((rec: any) => rec !== null);
-        source = 'gemini';
-        console.log(`✅ Gemini returned ${recommendations.length} valid recommendations`);
+        if (recommendations.length > 0) {
+          source = 'gemini';
+          console.log(`✅ Gemini successfully returned ${recommendations.length} personalized recommendations`);
+        }
       }
     } catch (error) {
-      console.error('❌ Gemini error:', error);
+      console.error('❌ Gemini error encountered:', error);
     }
 
-    // ✅ FALLBACK: If Gemini returns nothing, use TMDB trending
+    // ✅ FALLBACK: If Gemini returns nothing, use TMDB trending with taste profiling context
     if (recommendations.length === 0) {
       console.log('⚠️ No Gemini recommendations, falling back to TMDB trending...');
       
       const trendingMovies = await getTrendingMovies();
       
       if (trendingMovies.length > 0) {
-        // ✅ FIX: Cast entries to [string, number][] to fix type error
         let topGenres = 'various genres';
         if (tasteProfile?.genre_affinities) {
           const entries = Object.entries(tasteProfile.genre_affinities) as [string, number][];
@@ -157,7 +164,7 @@ export async function GET(request: NextRequest) {
         recommendations = trendingMovies.slice(0, 10).map((movie: any) => ({
           contentId: movie.id.toString(),
           score: 0.7 + (Math.random() * 0.2),
-          reason: `Trending now! Based on your interest in ${topGenres || 'movies'}, this is a must-watch.`,
+          reason: `Trending now! Based on your interest in ${topGenres}, this is a must-watch.`,
           content: {
             id: movie.id.toString(),
             title: movie.title,
@@ -184,7 +191,7 @@ export async function GET(request: NextRequest) {
           }
         }));
         source = 'tmdb-trending';
-        console.log(`✅ TMDB trending returned ${recommendations.length} recommendations`);
+        console.log(`✅ TMDB trending fallback returned ${recommendations.length} recommendations`);
       }
     }
 
@@ -225,11 +232,11 @@ export async function GET(request: NextRequest) {
           }
         }));
         source = 'tmdb-top-rated';
-        console.log(`✅ TMDB top rated returned ${recommendations.length} recommendations`);
+        console.log(`✅ TMDB top-rated fallback returned ${recommendations.length} recommendations`);
       }
     }
 
-    console.log(`✅ Returning ${recommendations.length} recommendations from ${source}`);
+    console.log(`✅ Returning ${recommendations.length} recommendations from source: ${source}`);
 
     return NextResponse.json({ 
       success: true, 
