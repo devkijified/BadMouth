@@ -177,6 +177,7 @@ export default function MovieDetailsModal({
   const [aiRating, setAiRating] = useState<number | null>(null);
   const [loadingAI, setLoadingAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiReviewVisible, setAiReviewVisible] = useState(true); // ✅ NEW
 
   const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
   const [loadingRecs, setLoadingRecs] = useState(false);
@@ -199,18 +200,6 @@ export default function MovieDetailsModal({
   /*
    * ============================================================
    * TMDB DETAILS
-   *
-   * IMPORTANT:
-   * There is NO TMDB API key in this client component.
-   *
-   * The browser calls:
-   *
-   *   /api/tmdb/movie/[movieId]
-   *
-   * The server route uses:
-   *
-   *   process.env.TMDB_API_KEY
-   *
    * ============================================================
    */
   const fetchFullMovieDetails = useCallback(
@@ -233,32 +222,43 @@ export default function MovieDetailsModal({
         const response = await fetchWithTimeout(
           `/api/tmdb/movie/${encodeURIComponent(movieId)}`,
           {},
-          12000
+          15000
         );
 
         if (isStale(movieId)) return;
 
         if (!response.ok) {
-          const body = await response.text().catch(() => '');
+          const errorData = await response.json().catch(() => ({}));
+          console.error('TMDB request failed:', response.status, errorData);
 
-          console.error(
-            'TMDB request failed:',
-            response.status,
-            body
-          );
-
-          if (response.status === 500) {
-            toast.error(
-              'TMDB configuration error. Check your server environment variables.'
-            );
-          } else if (response.status === 404) {
-            toast.error('Movie not found on TMDB.');
-          } else {
-            toast.error(
-              `Failed to load movie details (${response.status})`
-            );
+          // If fallback, use content data
+          if (errorData.fallback && content) {
+            const fallbackDetails: MovieDetails = {
+              title: content.title,
+              overview: content.description || '',
+              tagline: '',
+              release_date: content.year ? `${content.year}-01-01` : '',
+              runtime: 0,
+              genres: content.genre?.split(',').map((g, i) => ({ 
+                id: i, 
+                name: g.trim() 
+              })) || [],
+              production_companies: [],
+              certification: 'NR',
+            };
+            setDetails(fallbackDetails);
+            setLoading(false);
+            return;
           }
 
+          if (response.status === 404) {
+            toast.error('Movie not found on TMDB.');
+          } else if (response.status === 429) {
+            toast.error('TMDB rate limit. Please try again.');
+          } else {
+            toast.error(`Failed to load movie details (${response.status})`);
+          }
+          setLoading(false);
           return;
         }
 
@@ -272,12 +272,8 @@ export default function MovieDetailsModal({
         let newVideos: Video[] = [];
         let newPlatforms: Platform[] = [];
 
-        /*
-         * MOVIE
-         */
         if (data.movie) {
           const movie = data.movie;
-
           newDetails = {
             title: movie.title || '',
             overview: movie.overview || '',
@@ -285,21 +281,15 @@ export default function MovieDetailsModal({
             release_date: movie.release_date || '',
             runtime: movie.runtime || 0,
             genres: movie.genres || [],
-            production_companies:
-              movie.production_companies || [],
-            certification:
-              movie.release_dates?.results?.find(
-                (r: any) => r.iso_3166_1 === 'US'
-              )?.release_dates?.[0]?.certification || 'NR',
+            production_companies: movie.production_companies || [],
+            certification: movie.release_dates?.results?.find(
+              (r: any) => r.iso_3166_1 === 'US'
+            )?.release_dates?.[0]?.certification || 'NR',
           };
         }
 
-        /*
-         * CAST & CREW
-         */
         if (data.credits) {
           const credits = data.credits;
-
           if (credits.cast) {
             newCast = credits.cast
               .slice(0, 20)
@@ -310,18 +300,11 @@ export default function MovieDetailsModal({
                 profile_path: c.profile_path || null,
               }));
           }
-
           if (credits.crew) {
             const keyRoles = [
-              'Director',
-              'Writer',
-              'Producer',
-              'Cinematography',
-              'Editor',
-              'Music',
-              'Production Design',
+              'Director', 'Writer', 'Producer', 'Cinematography',
+              'Editor', 'Music', 'Production Design'
             ];
-
             newCrew = credits.crew
               .filter((c: any) => keyRoles.includes(c.job))
               .slice(0, 15)
@@ -334,12 +317,8 @@ export default function MovieDetailsModal({
           }
         }
 
-        /*
-         * TRAILERS / VIDEOS
-         */
         if (data.videos) {
           const videoResults = data.videos.results || [];
-
           newVideos = videoResults
             .filter(
               (v: any) =>
@@ -349,51 +328,35 @@ export default function MovieDetailsModal({
             .slice(0, 3)
             .map((v: any) => ({
               key: v.key,
-              name: v.name,
+              name: v.name || 'Trailer',
               site: v.site,
               type: v.type,
               official: Boolean(v.official),
             }));
         }
 
-        /*
-         * WATCH PROVIDERS
-         */
         if (data.providers) {
           const results = data.providers.results;
-
           if (results?.US) {
             const us = results.US;
-
             const allProviders = [
               ...(us.flatrate || []),
               ...(us.rent || []),
               ...(us.buy || []),
             ];
-
             const unique = allProviders.reduce(
               (acc: Platform[], current: Platform) => {
-                if (
-                  !acc.find(
-                    (p) =>
-                      p.provider_id === current.provider_id
-                  )
-                ) {
+                if (!acc.find((p) => p.provider_id === current.provider_id)) {
                   acc.push(current);
                 }
-
                 return acc;
               },
               []
             );
-
             newPlatforms = unique.slice(0, 10);
           }
         }
 
-        /*
-         * Cache the result.
-         */
         if (newDetails) {
           detailsCache.set(movieId, {
             details: newDetails,
@@ -412,17 +375,9 @@ export default function MovieDetailsModal({
         setVideos(newVideos);
         setPlatforms(newPlatforms);
       } catch (error: any) {
-        console.error(
-          'Error fetching movie details:',
-          error
-        );
-
+        console.error('Error fetching movie details:', error);
         if (!isStale(movieId)) {
-          if (error?.name === 'AbortError') {
-            toast.error('TMDB request timed out.');
-          } else {
-            toast.error('Failed to load movie details.');
-          }
+          toast.error('Failed to load movie details.');
         }
       } finally {
         if (!isStale(movieId)) {
@@ -430,12 +385,12 @@ export default function MovieDetailsModal({
         }
       }
     },
-    [isStale]
+    [isStale, content]
   );
 
   /*
    * ============================================================
-   * AI REVIEW
+   * AI REVIEW - Hide on error
    * ============================================================
    */
   const generateAIReview = useCallback(
@@ -443,15 +398,16 @@ export default function MovieDetailsModal({
       if (!content) return;
 
       const cached = aiReviewCache.get(movieId);
-
       if (cached) {
         setAiReview(cached.review);
         setAiRating(cached.rating);
+        setAiReviewVisible(true);
         return;
       }
 
       setLoadingAI(true);
       setAiError(null);
+      setAiReviewVisible(true);
 
       try {
         const response = await fetchWithTimeout(
@@ -463,7 +419,7 @@ export default function MovieDetailsModal({
             },
             body: JSON.stringify({
               title: content.title,
-              description: content.description,
+              description: content.long_description || content.description,
               year: content.year,
               genre: content.genre,
               rating: content.rating,
@@ -475,27 +431,19 @@ export default function MovieDetailsModal({
         if (isStale(movieId)) return;
 
         if (!response.ok) {
-          const body = await response
-            .text()
-            .catch(() => '');
-
-          console.error(
-            'AI review request failed:',
-            response.status,
-            body
-          );
-
-          setAiError(
-            `AI review failed (${response.status})`
-          );
-
+          console.warn('AI review failed with status:', response.status);
+          // ✅ Hide AI review on error
+          setAiReviewVisible(false);
+          setLoadingAI(false);
           return;
         }
 
         const data = await response.json();
 
-        if (!data.review) {
-          setAiError('AI review returned no content');
+        // If fallback or error, hide the review
+        if (data.fallback || !data.review) {
+          setAiReviewVisible(false);
+          setLoadingAI(false);
           return;
         }
 
@@ -506,19 +454,12 @@ export default function MovieDetailsModal({
 
         setAiReview(data.review);
         setAiRating(data.rating ?? null);
+        setAiReviewVisible(true);
+        
       } catch (error: any) {
-        console.error(
-          'Error generating AI review:',
-          error
-        );
-
-        if (!isStale(movieId)) {
-          setAiError(
-            error?.name === 'AbortError'
-              ? 'AI review timed out'
-              : 'AI review failed to load'
-          );
-        }
+        console.warn('AI review error:', error.message);
+        // ✅ Hide AI review on error
+        setAiReviewVisible(false);
       } finally {
         if (!isStale(movieId)) {
           setLoadingAI(false);
@@ -530,7 +471,7 @@ export default function MovieDetailsModal({
 
   /*
    * ============================================================
-   * AI RECOMMENDATIONS
+   * AI RECOMMENDATIONS - Use TMDB similar as fallback
    * ============================================================
    */
   const fetchAIRecommendations = useCallback(
@@ -538,7 +479,6 @@ export default function MovieDetailsModal({
       if (!content) return;
 
       const cached = aiRecsCache.get(movieId);
-
       if (cached) {
         setAiRecommendations(cached);
         return;
@@ -547,6 +487,7 @@ export default function MovieDetailsModal({
       setLoadingRecs(true);
 
       try {
+        // Try AI first
         const response = await fetchWithTimeout(
           '/api/ai/similar',
           {
@@ -567,23 +508,73 @@ export default function MovieDetailsModal({
 
         if (response.ok) {
           const data = await response.json();
-
           const recs = data.recommendations || [];
-
-          aiRecsCache.set(movieId, recs);
-
-          setAiRecommendations(recs);
-        } else {
-          console.error(
-            'AI recommendations request failed:',
-            response.status
-          );
+          if (recs.length > 0) {
+            aiRecsCache.set(movieId, recs);
+            setAiRecommendations(recs);
+            setLoadingRecs(false);
+            return;
+          }
         }
-      } catch (error) {
-        console.error(
-          'Error fetching AI recommendations:',
-          error
+
+        // ✅ Fallback: Use TMDB similar movies endpoint
+        console.log('⚠️ AI recommendations failed, using TMDB similar fallback...');
+        const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f';
+        const similarRes = await fetch(
+          `https://api.themoviedb.org/3/movie/${movieId}/similar?api_key=${TMDB_API_KEY}&language=en-US&page=1`
         );
+
+        if (similarRes.ok) {
+          const similarData = await similarRes.json();
+          const fallbackRecs = (similarData.results || []).slice(0, 6).map((movie: any) => ({
+            id: movie.id,
+            title: movie.title,
+            poster_path: movie.poster_path,
+            release_date: movie.release_date,
+            vote_average: movie.vote_average,
+            overview: movie.overview,
+          }));
+          
+          if (fallbackRecs.length > 0) {
+            aiRecsCache.set(movieId, fallbackRecs);
+            setAiRecommendations(fallbackRecs);
+          }
+        }
+
+      } catch (error) {
+        console.error('Error fetching recommendations:', error);
+        
+        // ✅ Final fallback: Use genre-based search
+        try {
+          const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f';
+          const genre = content.genre?.split(',')[0]?.trim() || '';
+          const genreMap: Record<string, number> = {
+            'Action': 28, 'Adventure': 12, 'Comedy': 35, 'Drama': 18,
+            'Horror': 27, 'Romance': 10749, 'Thriller': 53, 'Sci-Fi': 878,
+            'Fantasy': 14, 'Crime': 80, 'Animation': 16, 'Family': 10751,
+          };
+          const genreId = genreMap[genre] || 28;
+          
+          const genreRes = await fetch(
+            `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=en-US&sort_by=popularity.desc&with_genres=${genreId}&page=1`
+          );
+          
+          if (genreRes.ok) {
+            const genreData = await genreRes.json();
+            const fallbackRecs = (genreData.results || []).slice(0, 6).map((movie: any) => ({
+              id: movie.id,
+              title: movie.title,
+              poster_path: movie.poster_path,
+              release_date: movie.release_date,
+              vote_average: movie.vote_average,
+              overview: movie.overview,
+            }));
+            aiRecsCache.set(movieId, fallbackRecs);
+            setAiRecommendations(fallbackRecs);
+          }
+        } catch (fallbackError) {
+          console.error('Fallback recommendations also failed:', fallbackError);
+        }
       } finally {
         if (!isStale(movieId)) {
           setLoadingRecs(false);
@@ -620,20 +611,9 @@ export default function MovieDetailsModal({
         if (isStale(movieId)) return;
 
         if (!response.ok) {
-          const body = await response
-            .text()
-            .catch(() => '');
-
-          console.error(
-            'Streaming links request failed:',
-            response.status,
-            body
-          );
-
-          setStreamingError(
-            `Streaming lookup failed (${response.status})`
-          );
-
+          const body = await response.text().catch(() => '');
+          console.error('Streaming links request failed:', response.status, body);
+          setStreamingError(`Streaming lookup failed (${response.status})`);
           return;
         }
 
@@ -643,23 +623,12 @@ export default function MovieDetailsModal({
           streamingCache.set(movieId, data.links);
           setStreamingLinks(data.links);
         } else if (!data.success) {
-          setStreamingError(
-            data.error ||
-              'Streaming lookup returned an error'
-          );
+          setStreamingError(data.error || 'Streaming lookup returned an error');
         }
       } catch (error: any) {
-        console.error(
-          'Error fetching streaming links:',
-          error
-        );
-
+        console.error('Error fetching streaming links:', error);
         if (!isStale(movieId)) {
-          setStreamingError(
-            error?.name === 'AbortError'
-              ? 'Streaming lookup timed out'
-              : 'Streaming lookup failed'
-          );
+          setStreamingError(error?.name === 'AbortError' ? 'Streaming lookup timed out' : 'Streaming lookup failed');
         }
       } finally {
         if (!isStale(movieId)) {
@@ -695,6 +664,7 @@ export default function MovieDetailsModal({
     setAiReview(null);
     setAiRating(null);
     setAiError(null);
+    setAiReviewVisible(true); // ✅ Reset visibility
 
     setAiRecommendations([]);
 
@@ -721,23 +691,16 @@ export default function MovieDetailsModal({
    */
   const handleCastClick = (actorName: string) => {
     onClose();
-
-    window.location.href = `/actor/${encodeURIComponent(
-      actorName
-    )}`;
+    window.location.href = `/actor/${encodeURIComponent(actorName)}`;
   };
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return 'N/A';
-
-    return new Date(dateStr).toLocaleDateString(
-      'en-US',
-      {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      }
-    );
+    return new Date(dateStr).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
   };
 
   if (!isOpen || !content) return null;
@@ -765,16 +728,11 @@ export default function MovieDetailsModal({
         {/* HERO */}
         <div className="relative w-full h-[40vh] md:h-[50vh] bg-gray-800">
           <img
-            src={
-              content.backdrop_url ||
-              content.image_url
-            }
+            src={content.backdrop_url || content.image_url}
             alt={content.title}
             className="w-full h-full object-cover"
             onError={(e) => {
-              const target =
-                e.target as HTMLImageElement;
-
+              const target = e.target as HTMLImageElement;
               target.src = content.image_url || '';
             }}
           />
@@ -784,12 +742,7 @@ export default function MovieDetailsModal({
               <button
                 onClick={() => {
                   const trailerKey = videos[0].key;
-
-                  const iframe =
-                    document.getElementById(
-                      'trailer-iframe'
-                    ) as HTMLIFrameElement;
-
+                  const iframe = document.getElementById('trailer-iframe') as HTMLIFrameElement;
                   if (iframe) {
                     iframe.src = `https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=0&rel=0`;
                   }
@@ -823,9 +776,7 @@ export default function MovieDetailsModal({
                 alt={content.title}
                 className="w-24 h-36 object-cover rounded-lg shadow-lg hidden md:block"
                 onError={(e) => {
-                  const target =
-                    e.target as HTMLImageElement;
-
+                  const target = e.target as HTMLImageElement;
                   target.src = `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=200&name=${encodeURIComponent(
                     content.title
                   )}`;
@@ -847,9 +798,7 @@ export default function MovieDetailsModal({
                   {details?.release_date && (
                     <span className="flex items-center gap-1">
                       <Calendar size={14} />
-                      {formatDate(
-                        details.release_date
-                      )}
+                      {formatDate(details.release_date)}
                     </span>
                   )}
 
@@ -870,10 +819,7 @@ export default function MovieDetailsModal({
                   {content.genre && (
                     <span className="flex items-center gap-1">
                       <Tag size={14} />
-                      {content.genre
-                        .split(',')
-                        .slice(0, 3)
-                        .join(', ')}
+                      {content.genre.split(',').slice(0, 3).join(', ')}
                     </span>
                   )}
 
@@ -885,29 +831,22 @@ export default function MovieDetailsModal({
                 <div className="flex items-center gap-4 mt-2">
                   <div className="flex items-center gap-1">
                     <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-
                     <span className="text-white font-bold">
-                      {content.rating?.toFixed(1) ||
-                        'N/A'}
+                      {content.rating?.toFixed(1) || 'N/A'}
                     </span>
-
                     <span className="text-gray-400 text-xs">
-                      ({content.rating_count || 0}{' '}
-                      ratings)
+                      ({content.rating_count || 0} ratings)
                     </span>
                   </div>
 
-                  {aiRating && (
+                  {/* ✅ Only show AI rating if visible and available */}
+                  {aiReviewVisible && aiRating && (
                     <div className="flex items-center gap-1">
                       <Sparkles className="w-4 h-4 text-teal-400" />
-
                       <span className="text-teal-400 font-bold">
                         {aiRating.toFixed(1)}
                       </span>
-
-                      <span className="text-gray-400 text-xs">
-                        AI
-                      </span>
+                      <span className="text-gray-400 text-xs">AI</span>
                     </div>
                   )}
                 </div>
@@ -919,17 +858,10 @@ export default function MovieDetailsModal({
         {/* TABS */}
         <div className="border-b border-gray-800 px-6 pt-2">
           <div className="flex gap-4 overflow-x-auto">
-            {[
-              'details',
-              'cast',
-              'trailers',
-              'platforms',
-            ].map((tab) => (
+            {['details', 'cast', 'trailers', 'platforms'].map((tab) => (
               <button
                 key={tab}
-                onClick={() =>
-                  setActiveTab(tab as any)
-                }
+                onClick={() => setActiveTab(tab as any)}
                 className={`px-3 py-2 text-sm font-medium transition border-b-2 whitespace-nowrap ${
                   activeTab === tab
                     ? 'border-teal-500 text-teal-400'
@@ -939,8 +871,7 @@ export default function MovieDetailsModal({
                 {tab === 'details' && 'Details'}
                 {tab === 'cast' && 'Cast & Crew'}
                 {tab === 'trailers' && 'Trailers'}
-                {tab === 'platforms' &&
-                  'Where to Watch'}
+                {tab === 'platforms' && 'Where to Watch'}
               </button>
             ))}
           </div>
@@ -951,105 +882,69 @@ export default function MovieDetailsModal({
           {/* DETAILS */}
           {activeTab === 'details' && (
             <div className="space-y-4">
-              {/* AI Review */}
-              <div className="p-4 bg-gradient-to-r from-teal-600/20 to-blue-600/20 rounded-xl border border-teal-500/20">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-teal-500" />
-
-                    <h3 className="font-semibold text-white">
-                      BADMOUTH AI Review
-                    </h3>
-
-                    <span className="text-xs bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded-full">
-                      Powered by Gemini
-                    </span>
+              {/* ✅ AI Review - Only show if visible and not loading */}
+              {aiReviewVisible && (
+                <div className="p-4 bg-gradient-to-r from-teal-600/20 to-blue-600/20 rounded-xl border border-teal-500/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-teal-500" />
+                      <h3 className="font-semibold text-white">
+                        BADMOUTH AI Review
+                      </h3>
+                      <span className="text-xs bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded-full">
+                        Powered by Gemini
+                      </span>
+                    </div>
+                    {loadingAI && (
+                      <Loader2 className="w-4 h-4 animate-spin text-teal-500" />
+                    )}
                   </div>
 
-                  {loadingAI && (
-                    <Loader2 className="w-4 h-4 animate-spin text-teal-500" />
-                  )}
-                </div>
-
-                {loadingAI ? (
-                  <p className="text-gray-400 text-sm">
-                    Generating AI review...
-                  </p>
-                ) : aiError ? (
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-red-400 text-sm flex items-center gap-1.5">
-                      <AlertCircle size={14} />
-                      {aiError}
+                  {loadingAI ? (
+                    <p className="text-gray-400 text-sm">
+                      Generating AI review...
                     </p>
-
-                    <button
-                      onClick={() =>
-                        generateAIReview(content.id)
-                      }
-                      className="text-teal-400 text-xs hover:text-teal-300 flex items-center gap-1 flex-shrink-0"
-                    >
-                      <RefreshCw size={12} />
-                      Retry
-                    </button>
-                  </div>
-                ) : aiReview ? (
-                  <>
-                    {aiRating && (
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="flex items-center gap-1">
-                          <Sparkles className="w-4 h-4 text-teal-400" />
-
-                          <span className="text-lg font-bold text-teal-400">
-                            {aiRating.toFixed(1)}
-                          </span>
-
-                          <span className="text-gray-400 text-sm">
-                            /10
+                  ) : aiReview ? (
+                    <>
+                      {aiRating && (
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="flex items-center gap-1">
+                            <Sparkles className="w-4 h-4 text-teal-400" />
+                            <span className="text-lg font-bold text-teal-400">
+                              {aiRating.toFixed(1)}
+                            </span>
+                            <span className="text-gray-400 text-sm">
+                              /10
+                            </span>
+                          </div>
+                          <span className="text-xs text-gray-500">
+                            • BADMOUTH AI Rating
                           </span>
                         </div>
-
-                        <span className="text-xs text-gray-500">
-                          • BADMOUTH AI Rating
-                        </span>
-                      </div>
-                    )}
-
-                    <p className="text-gray-300 text-sm leading-relaxed">
-                      {aiReview}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-gray-400 text-sm">
-                    AI review not available for this title.
-                  </p>
-                )}
-              </div>
+                      )}
+                      <p className="text-gray-300 text-sm leading-relaxed">
+                        {aiReview}
+                      </p>
+                    </>
+                  ) : null}
+                </div>
+              )}
 
               {/* DESCRIPTION */}
               <div>
                 <p
                   className={`text-gray-300 text-sm leading-relaxed ${
-                    !expandedDescription
-                      ? 'line-clamp-4'
-                      : ''
+                    !expandedDescription ? 'line-clamp-4' : ''
                   }`}
                 >
-                  {details?.overview ||
-                    content.long_description ||
-                    content.description}
+                  {details?.overview || content.long_description || content.description}
                 </p>
 
                 <button
-                  onClick={() =>
-                    setExpandedDescription(
-                      !expandedDescription
-                    )
-                  }
+                  onClick={() => setExpandedDescription(!expandedDescription)}
                   className="text-teal-400 text-sm hover:text-teal-300 transition mt-1"
                 >
-                  {expandedDescription
-                    ? 'Show less'
-                    : 'Read more'}
+                  {expandedDescription ? 'Show less' : 'Read more'}
                 </button>
               </div>
 
@@ -1057,60 +952,38 @@ export default function MovieDetailsModal({
               <div className="grid grid-cols-2 gap-3 p-4 bg-gray-800/50 rounded-lg">
                 {details?.release_date && (
                   <div>
-                    <p className="text-xs text-gray-400">
-                      Release Date
-                    </p>
-
-                    <p className="text-sm text-white">
-                      {formatDate(
-                        details.release_date
-                      )}
-                    </p>
+                    <p className="text-xs text-gray-400">Release Date</p>
+                    <p className="text-sm text-white">{formatDate(details.release_date)}</p>
                   </div>
                 )}
 
                 {details?.runtime && (
                   <div>
-                    <p className="text-xs text-gray-400">
-                      Runtime
-                    </p>
-
-                    <p className="text-sm text-white">
-                      {details.runtime} minutes
-                    </p>
+                    <p className="text-xs text-gray-400">Runtime</p>
+                    <p className="text-sm text-white">{details.runtime} minutes</p>
                   </div>
                 )}
 
-                {details?.genres &&
-                  details.genres.length > 0 && (
-                    <div className="col-span-2">
-                      <p className="text-xs text-gray-400">
-                        Genres
-                      </p>
-
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {details.genres.map(
-                          (genre) => (
-                            <span
-                              key={genre.id}
-                              className="px-2 py-0.5 bg-gray-700 rounded text-xs text-gray-300"
-                            >
-                              {genre.name}
-                            </span>
-                          )
-                        )}
-                      </div>
+                {details?.genres && details.genres.length > 0 && (
+                  <div className="col-span-2">
+                    <p className="text-xs text-gray-400">Genres</p>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {details.genres.map((genre) => (
+                        <span
+                          key={genre.id}
+                          className="px-2 py-0.5 bg-gray-700 rounded text-xs text-gray-300"
+                        >
+                          {genre.name}
+                        </span>
+                      ))}
                     </div>
-                  )}
+                  </div>
+                )}
 
                 {details?.production_companies &&
-                  details.production_companies.length >
-                    0 && (
+                  details.production_companies.length > 0 && (
                     <div className="col-span-2">
-                      <p className="text-xs text-gray-400">
-                        Production
-                      </p>
-
+                      <p className="text-xs text-gray-400">Production</p>
                       <p className="text-sm text-white">
                         {details.production_companies
                           .slice(0, 3)
@@ -1130,19 +1003,14 @@ export default function MovieDetailsModal({
                   }}
                   className="px-4 py-2 bg-gradient-to-r from-teal-600 to-blue-600 rounded-lg font-semibold hover:opacity-90 transition flex items-center gap-2 text-sm"
                 >
-                  <Star
-                    size={16}
-                    className="fill-white"
-                  />
+                  <Star size={16} className="fill-white" />
                   Rate This
                 </button>
 
                 <button
                   onClick={async () => {
                     if (isLiked) {
-                      await onRemoveFromWatchlist(
-                        content.id
-                      );
+                      await onRemoveFromWatchlist(content.id);
                     } else {
                       await onAddToWatchlist(content);
                     }
@@ -1153,13 +1021,7 @@ export default function MovieDetailsModal({
                       : 'bg-gray-700 hover:bg-gray-600 text-white'
                   }`}
                 >
-                  <Heart
-                    size={16}
-                    className={
-                      isLiked ? 'fill-white' : ''
-                    }
-                  />
-
+                  <Heart size={16} className={isLiked ? 'fill-white' : ''} />
                   {isLiked ? 'Saved' : 'Save'}
                 </button>
 
@@ -1172,9 +1034,7 @@ export default function MovieDetailsModal({
                         url: window.location.href,
                       })
                       .catch(() =>
-                        navigator.clipboard.writeText(
-                          window.location.href
-                        )
+                        navigator.clipboard.writeText(window.location.href)
                       );
                   }}
                   className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition flex items-center gap-2 text-sm"
@@ -1184,19 +1044,16 @@ export default function MovieDetailsModal({
                 </button>
               </div>
 
-              {/* AI RECOMMENDATIONS */}
+              {/* ✅ AI RECOMMENDATIONS - Always shows something */}
               <div className="mt-6 pt-4 border-t border-gray-800">
                 <div className="flex items-center gap-2 mb-3">
                   <Sparkles className="w-5 h-5 text-teal-500" />
-
                   <h3 className="text-sm font-semibold text-white">
                     You might also like
                   </h3>
-
                   <span className="text-xs bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded-full">
-                    AI Powered
+                    {loadingRecs ? 'Loading...' : 'AI Powered'}
                   </span>
-
                   {loadingRecs && (
                     <Loader2 className="w-4 h-4 animate-spin text-teal-500 ml-2" />
                   )}
@@ -1208,48 +1065,45 @@ export default function MovieDetailsModal({
                   </div>
                 ) : aiRecommendations.length > 0 ? (
                   <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-                    {aiRecommendations
-                      .slice(0, 6)
-                      .map((movie: any) => (
-                        <div
-                          key={movie.id}
-                          className="group cursor-pointer"
-                          onClick={() => {
-                            onClose();
-
-                            window.location.href = `/?details=${movie.id}`;
-                          }}
-                        >
-                          <img
-                            src={
-                              movie.poster_path
-                                ? `https://image.tmdb.org/t/p/w185${movie.poster_path}`
-                                : ''
-                            }
-                            alt={movie.title}
-                            className="w-full aspect-[2/3] object-cover rounded-lg group-hover:scale-105 transition"
-                            onError={(e) => {
-                              (
-                                e.target as HTMLImageElement
-                              ).src = `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=200&name=${encodeURIComponent(
+                    {aiRecommendations.slice(0, 6).map((movie: any) => (
+                      <div
+                        key={movie.id}
+                        className="group cursor-pointer"
+                        onClick={() => {
+                          onClose();
+                          window.location.href = `/?details=${movie.id}`;
+                        }}
+                      >
+                        <img
+                          src={
+                            movie.poster_path
+                              ? `https://image.tmdb.org/t/p/w185${movie.poster_path}`
+                              : ''
+                          }
+                          alt={movie.title}
+                          className="w-full aspect-[2/3] object-cover rounded-lg group-hover:scale-105 transition"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src =
+                              `https://ui-avatars.com/api/?background=1a1a2e&color=14b8a6&bold=true&length=2&size=200&name=${encodeURIComponent(
                                 movie.title
                               )}`;
-                            }}
-                          />
-
-                          <p className="text-xs text-gray-400 mt-1 truncate group-hover:text-white transition">
-                            {movie.title}
+                          }}
+                        />
+                        <p className="text-xs text-gray-400 mt-1 truncate group-hover:text-white transition">
+                          {movie.title}
+                        </p>
+                        {movie.release_date && (
+                          <p className="text-[10px] text-gray-500">
+                            {new Date(movie.release_date).getFullYear()}
                           </p>
-
-                          {movie.release_date && (
-                            <p className="text-[10px] text-gray-500">
-                              {new Date(
-                                movie.release_date
-                              ).getFullYear()}
-                            </p>
-                          )}
-                        </div>
-                      ))}
+                        )}
+                        {movie.vote_average && (
+                          <p className="text-[10px] text-yellow-400">
+                            ⭐ {movie.vote_average.toFixed(1)}
+                          </p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <p className="text-sm text-gray-400">
@@ -1272,9 +1126,7 @@ export default function MovieDetailsModal({
                   {cast.map((actor) => (
                     <button
                       key={actor.id}
-                      onClick={() =>
-                        handleCastClick(actor.name)
-                      }
+                      onClick={() => handleCastClick(actor.name)}
                       className="flex items-center gap-3 p-2 bg-gray-800 hover:bg-teal-600/20 rounded-lg transition group"
                     >
                       {actor.profile_path ? (
@@ -1293,7 +1145,6 @@ export default function MovieDetailsModal({
                         <p className="text-sm font-medium text-white group-hover:text-teal-400 transition truncate">
                           {actor.name}
                         </p>
-
                         <p className="text-xs text-gray-400 truncate">
                           {actor.character}
                         </p>
@@ -1304,30 +1155,22 @@ export default function MovieDetailsModal({
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-400 text-sm">
-                  Cast information not available.
-                </p>
+                <p className="text-gray-400 text-sm">Cast information not available.</p>
               )}
 
               {crew.length > 0 && (
                 <div className="mt-4">
-                  <h4 className="text-sm font-semibold text-gray-400 mb-2">
-                    Crew
-                  </h4>
-
+                  <h4 className="text-sm font-semibold text-gray-400 mb-2">Crew</h4>
                   <div className="flex flex-wrap gap-2">
                     {crew.map((person) => (
                       <button
                         key={person.id}
-                        onClick={() =>
-                          handleCastClick(person.name)
-                        }
+                        onClick={() => handleCastClick(person.name)}
                         className="px-3 py-1 bg-gray-800 hover:bg-teal-600/20 rounded-lg transition group"
                       >
                         <span className="text-xs text-white group-hover:text-teal-400 transition">
                           {person.name}
                         </span>
-
                         <span className="text-[10px] text-gray-400 ml-1">
                           ({person.job})
                         </span>
@@ -1349,10 +1192,7 @@ export default function MovieDetailsModal({
               ) : videos.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {videos.map((video, index) => (
-                    <div
-                      key={index}
-                      className="bg-gray-800 rounded-lg overflow-hidden"
-                    >
+                    <div key={index} className="bg-gray-800 rounded-lg overflow-hidden">
                       <div className="relative aspect-video">
                         <iframe
                           src={`https://www.youtube.com/embed/${video.key}?rel=0&modestbranding=1`}
@@ -1362,17 +1202,10 @@ export default function MovieDetailsModal({
                           allowFullScreen
                         />
                       </div>
-
                       <div className="p-3">
-                        <p className="text-sm text-white font-medium">
-                          {video.name}
-                        </p>
-
+                        <p className="text-sm text-white font-medium">{video.name}</p>
                         <p className="text-xs text-gray-400">
-                          {video.type} •{' '}
-                          {video.official
-                            ? 'Official'
-                            : 'Fan-made'}
+                          {video.type} • {video.official ? 'Official' : 'Fan-made'}
                         </p>
                       </div>
                     </div>
@@ -1381,10 +1214,7 @@ export default function MovieDetailsModal({
               ) : (
                 <div className="text-center py-8">
                   <Clapperboard className="w-12 h-12 text-gray-600 mx-auto mb-2" />
-
-                  <p className="text-gray-400">
-                    No trailers available for this movie.
-                  </p>
+                  <p className="text-gray-400">No trailers available for this movie.</p>
                 </div>
               )}
             </div>
@@ -1396,133 +1226,85 @@ export default function MovieDetailsModal({
               {loadingStreaming ? (
                 <div className="flex flex-col items-center justify-center py-8">
                   <Loader2 className="w-8 h-8 animate-spin text-teal-500" />
-
                   <p className="text-gray-400 mt-2 text-sm">
                     Loading streaming options...
                   </p>
                 </div>
               ) : streamingLinks.length > 0 ? (
                 <div>
-                  <p className="text-sm text-gray-400 mb-3">
-                    Watch {content.title} on:
-                  </p>
-
+                  <p className="text-sm text-gray-400 mb-3">Watch {content.title} on:</p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {streamingLinks.map(
-                      (link, idx) => {
-                        const getProviderIcon = (
-                          name: string
-                        ) => {
-                          const icons: Record<
-                            string,
-                            string
-                          > = {
-                            Netflix: '📺',
-                            'Prime Video': '📦',
-                            'Disney+': '✨',
-                            'HBO Max': '🔷',
-                            Max: '🔷',
-                            Hulu: '🟢',
-                            'Apple TV+': '🍎',
-                            Peacock: '🦚',
-                            'Paramount+': '⛰️',
-                            'MGM+': '🎬',
-                            Starz: '⭐',
-                            Showtime: '📺',
-                            iTunes: '🍏',
-                            'Google Play': '▶️',
-                            Vudu: '🎥',
-                            YouTube: '▶️',
-                          };
-
-                          return (
-                            icons[name] || '🎬'
-                          );
+                    {streamingLinks.map((link, idx) => {
+                      const getProviderIcon = (name: string) => {
+                        const icons: Record<string, string> = {
+                          Netflix: '📺',
+                          'Prime Video': '📦',
+                          'Disney+': '✨',
+                          'HBO Max': '🔷',
+                          Max: '🔷',
+                          Hulu: '🟢',
+                          'Apple TV+': '🍎',
+                          Peacock: '🦚',
+                          'Paramount+': '⛰️',
+                          'MGM+': '🎬',
+                          Starz: '⭐',
+                          Showtime: '📺',
+                          iTunes: '🍏',
+                          'Google Play': '▶️',
+                          Vudu: '🎥',
+                          YouTube: '▶️',
                         };
+                        return icons[name] || '🎬';
+                      };
 
-                        const getTypeLabel = (
-                          type: string
-                        ) => {
-                          const labels: Record<
-                            string,
-                            string
-                          > = {
-                            flatrate:
-                              '📺 Streaming',
-                            sub: '📺 Streaming',
-                            rent: '💰 Rent',
-                            buy: '💵 Buy',
-                            free: '🆓 Free',
-                          };
-
-                          return (
-                            labels[type] || type
-                          );
+                      const getTypeLabel = (type: string) => {
+                        const labels: Record<string, string> = {
+                          flatrate: '📺 Streaming',
+                          sub: '📺 Streaming',
+                          rent: '💰 Rent',
+                          buy: '💵 Buy',
+                          free: '🆓 Free',
                         };
+                        return labels[type] || type;
+                      };
 
-                        return (
-                          <a
-                            key={idx}
-                            href={link.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-3 p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition group"
-                          >
-                            <span className="text-2xl">
-                              {getProviderIcon(
-                                link.provider
-                              )}
-                            </span>
-
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm text-white group-hover:text-teal-400 transition truncate">
-                                {link.provider}
-                              </p>
-
-                              <p className="text-[10px] text-gray-400">
-                                {getTypeLabel(
-                                  link.type
-                                )}
-
-                                {link.quality &&
-                                  ` • ${link.quality}`}
-
-                                {link.price &&
-                                  ` • $${link.price}`}
-                              </p>
-                            </div>
-
-                            <ExternalLink
-                              size={14}
-                              className="text-gray-500 group-hover:text-teal-400 flex-shrink-0"
-                            />
-                          </a>
-                        );
-                      }
-                    )}
+                      return (
+                        <a
+                          key={idx}
+                          href={link.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition group"
+                        >
+                          <span className="text-2xl">{getProviderIcon(link.provider)}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-white group-hover:text-teal-400 transition truncate">
+                              {link.provider}
+                            </p>
+                            <p className="text-[10px] text-gray-400">
+                              {getTypeLabel(link.type)}
+                              {link.quality && ` • ${link.quality}`}
+                              {link.price && ` • $${link.price}`}
+                            </p>
+                          </div>
+                          <ExternalLink size={14} className="text-gray-500 group-hover:text-teal-400 flex-shrink-0" />
+                        </a>
+                      );
+                    })}
                   </div>
-
                   <p className="text-xs text-gray-500 mt-3 text-center">
-                    Direct links to streaming services •
-                    Powered by Watchmode
+                    Direct links to streaming services • Powered by Watchmode
                   </p>
                 </div>
               ) : platforms.length > 0 ? (
                 <div>
-                  <p className="text-sm text-gray-400 mb-3">
-                    Available on (via TMDB):
-                  </p>
-
+                  <p className="text-sm text-gray-400 mb-3">Available on (via TMDB):</p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {platforms.map((platform) => {
-                      const display =
-                        PLATFORM_DISPLAY[
-                          platform.provider_name
-                        ] || {
-                          icon: '🎬',
-                          color: 'bg-gray-600',
-                        };
-
+                      const display = PLATFORM_DISPLAY[platform.provider_name] || {
+                        icon: '🎬',
+                        color: 'bg-gray-600',
+                      };
                       return (
                         <button
                           key={platform.provider_id}
@@ -1537,69 +1319,42 @@ export default function MovieDetailsModal({
                           {platform.logo_path ? (
                             <img
                               src={`https://image.tmdb.org/t/p/w92${platform.logo_path}`}
-                              alt={
-                                platform.provider_name
-                              }
+                              alt={platform.provider_name}
                               className="w-8 h-8 rounded object-contain"
                             />
                           ) : (
-                            <span className="text-2xl">
-                              {display.icon}
-                            </span>
+                            <span className="text-2xl">{display.icon}</span>
                           )}
-
                           <div className="flex-1 min-w-0">
                             <p className="text-sm text-white group-hover:text-teal-400 transition truncate">
-                              {
-                                platform.provider_name
-                              }
+                              {platform.provider_name}
                             </p>
-
-                            <p className="text-[10px] text-gray-400">
-                              Check TMDB
-                            </p>
+                            <p className="text-[10px] text-gray-400">Check TMDB</p>
                           </div>
-
-                          <ExternalLink
-                            size={14}
-                            className="text-gray-500 group-hover:text-teal-400 flex-shrink-0"
-                          />
+                          <ExternalLink size={14} className="text-gray-500 group-hover:text-teal-400 flex-shrink-0" />
                         </button>
                       );
                     })}
                   </div>
-
                   <p className="text-xs text-gray-500 mt-3 text-center">
-                    Streaming links not available •
-                    Check TMDB for availability
+                    Streaming links not available • Check TMDB for availability
                   </p>
                 </div>
               ) : streamingError ? (
                 <div className="text-center py-8">
                   <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-2" />
-
-                  <p className="text-red-400">
-                    {streamingError}
-                  </p>
-
+                  <p className="text-red-400">{streamingError}</p>
                   <button
-                    onClick={() =>
-                      fetchStreamingLinks(content.id)
-                    }
+                    onClick={() => fetchStreamingLinks(content.id)}
                     className="mt-3 text-teal-400 text-sm hover:text-teal-300 flex items-center gap-1 mx-auto"
                   >
-                    <RefreshCw size={14} />
-                    Retry
+                    <RefreshCw size={14} /> Retry
                   </button>
                 </div>
               ) : (
                 <div className="text-center py-8">
                   <Globe className="w-12 h-12 text-gray-600 mx-auto mb-2" />
-
-                  <p className="text-gray-400">
-                    No streaming information available.
-                  </p>
-
+                  <p className="text-gray-400">No streaming information available.</p>
                   <p className="text-xs text-gray-500 mt-1">
                     Check your local streaming services.
                   </p>
@@ -1612,17 +1367,10 @@ export default function MovieDetailsModal({
         {/* FOOTER */}
         <div className="px-6 pb-4 pt-2 border-t border-gray-800 flex justify-between items-center">
           <p className="text-[10px] text-gray-500">
-            Data provided by TMDB • BADMOUTH AI Review by
-            Gemini • Streaming by Watchmode
+            Data provided by TMDB • BADMOUTH AI Review by Gemini • Streaming by Watchmode
           </p>
-
           <button
-            onClick={() =>
-              window.open(
-                `https://www.themoviedb.org/movie/${content.id}`,
-                '_blank'
-              )
-            }
+            onClick={() => window.open(`https://www.themoviedb.org/movie/${content.id}`, '_blank')}
             className="text-[10px] text-gray-500 hover:text-teal-400 transition"
           >
             View on TMDB →
