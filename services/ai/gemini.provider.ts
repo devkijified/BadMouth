@@ -13,12 +13,12 @@ import {
 export class GeminiProvider implements AIProvider {
   private ai: GoogleGenAI | null = null;
   private modelName: string;
-  private fallbackModelName = 'gemini-2.5-flash'; // Standard supported modern fallback model
+  private fallbackModelName = 'gemini-2.0-flash'; // Universally supported stable fallback model
   private isInitialized = false;
 
   constructor(
     apiKey: string,
-    model = process.env.GEMINI_MODEL || 'gemini-3.7-flash'
+    model = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
   ) {
     const cleanApiKey = apiKey?.trim();
 
