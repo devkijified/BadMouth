@@ -13,7 +13,7 @@ import {
 export class GeminiProvider implements AIProvider {
   private ai: GoogleGenAI | null = null;
   private modelName: string;
-  private fallbackModelName = 'gemini-1.5-flash'; // Standard reliable fallback model
+  private fallbackModelName = 'gemini-2.5-flash'; // Standard supported modern fallback model
   private isInitialized = false;
 
   constructor(
@@ -73,7 +73,7 @@ export class GeminiProvider implements AIProvider {
               temperature: 0.7,
               topK: 40,
               topP: 0.95,
-              maxOutputTokens: 8192, // Expanded headroom for full recommendation lists
+              maxOutputTokens: 8192,
             },
           });
 
@@ -94,10 +94,16 @@ export class GeminiProvider implements AIProvider {
           const statusCode = error?.status || error?.error?.code;
           const errorMessage = error?.message || JSON.stringify(error);
 
-          // If quota is exhausted (429) or model is not found (404), do not waste time retrying.
-          // Switch immediately to the next model or fallback to TMDB.
-          if (statusCode === 429 || statusCode === 404 || errorMessage.includes('quota') || errorMessage.includes('RESOURCE_EXHAUSTED') || errorMessage.includes('NOT_FOUND')) {
-            console.warn(`⚠️ Gemini request on model [${currentModel}] encountered fatal status [${statusCode}]. Skipping further retries for this model.`);
+          // CRITICAL: If quota is exceeded (429) or model not found (404), break immediately.
+          // Do not waste time retrying since retries will just fail again instantly.
+          if (
+            statusCode === 429 || 
+            statusCode === 404 || 
+            errorMessage.includes('quota') || 
+            errorMessage.includes('RESOURCE_EXHAUSTED') || 
+            errorMessage.includes('NOT_FOUND')
+          ) {
+            console.warn(`⚠️ Fatal error [Status ${statusCode}] on model [${currentModel}]. Bypassing further retries to fail over immediately.`);
             break; 
           }
 
@@ -105,7 +111,7 @@ export class GeminiProvider implements AIProvider {
             console.warn(`⚠️ Gemini request failed on model [${currentModel}], retrying in ${currentDelay}ms... (${currentRetries} left). Error: ${errorMessage}`);
             await new Promise((resolve) => setTimeout(resolve, currentDelay));
             currentRetries--;
-            currentDelay *= 2; // Exponential backoff
+            currentDelay *= 2;
           } else {
             break;
           }
@@ -138,7 +144,7 @@ export class GeminiProvider implements AIProvider {
         },
       };
     } catch (error) {
-      console.error('❌ Gemini recommendation error (Quota/Network): Serving fallback recommendations smoothly.');
+      console.error('❌ Gemini quota/network limit reached. Falling back to TMDB trending seamlessly.');
 
       return this.getFallbackRecommendations(params);
     }
