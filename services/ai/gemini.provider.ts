@@ -190,7 +190,10 @@ Description: ${params.description || 'No description available'}
         return this.getDefaultTasteProfile();
       }
 
-      const jsonString = jsonMatch[0].replace(/,\s*([\]}])/g, '$1');
+      const jsonString = jsonMatch[0]
+        .replace(/,\s*([\]}])/g, '$1')
+        .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":');
+
       const parsed = JSON.parse(jsonString);
 
       return {
@@ -244,7 +247,10 @@ Return only valid JSON listing similar movie titles, reasons, or relevant data f
         return { similar: [] };
       }
 
-      const jsonString = jsonMatch[0].replace(/,\s*([\]}])/g, '$1');
+      const jsonString = jsonMatch[0]
+        .replace(/,\s*([\]}])/g, '$1')
+        .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":');
+
       return JSON.parse(jsonString);
     } catch (error) {
       console.error('❌ Gemini similar movies error:', error);
@@ -379,27 +385,51 @@ Return only JSON:
         .replace(/```/g, '')
         .trim();
 
+      // Attempt 1: Direct parse of main JSON block with safety cleanups
       const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        let jsonString = jsonMatch[0]
+          .replace(/,\s*([\]}])/g, '$1') // remove trailing commas
+          .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":'); // quote unquoted keys
 
-      if (!jsonMatch) {
-        return { recommendations: [] };
+        try {
+          const parsed = JSON.parse(jsonString);
+          if (parsed.recommendations && Array.isArray(parsed.recommendations)) {
+            return parsed;
+          }
+        } catch (e) {
+          // If direct parse fails, move to Fallback Extraction below
+        }
       }
 
-      const jsonString = jsonMatch[0].replace(/,\s*([\]}])/g, '$1');
+      // Attempt 2: Resilient item-by-item extraction if the JSON container was broken/cut off
+      const recommendations: any[] = [];
+      const itemRegex = /\{[^}]*?["']?contentId["']?\s*:\s*["']?([^"',}]+)["'][^}]*?\}/g;
+      let match;
 
-      const parsed = JSON.parse(jsonString);
-
-      if (
-        parsed.recommendations &&
-        Array.isArray(parsed.recommendations)
-      ) {
-        return parsed;
+      while ((match = itemRegex.exec(cleanedText)) !== null) {
+        try {
+          // Try to clean and parse each individual recommendation block found in text
+          let blockStr = match[0]
+            .replace(/,\s*([\]}])/g, '$1')
+            .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":');
+          
+          const item = JSON.parse(blockStr);
+          if (item.contentId) {
+            recommendations.push(item);
+          }
+        } catch (err) {
+          // Skip malformed individual blocks
+        }
       }
+
+      if (recommendations.length > 0) {
+        console.log(`⚠️ Recovered ${recommendations.length} recommendations via resilient parser.`);
+        return { recommendations };
+      }
+
     } catch (error) {
-      console.error(
-        '❌ Failed to parse recommendations:',
-        error
-      );
+      console.error('❌ Failed to parse recommendations completely:', error);
     }
 
     return { recommendations: [] };
