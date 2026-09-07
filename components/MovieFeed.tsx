@@ -206,63 +206,30 @@ export default function MovieFeed({
     fetchWatchlist();
   }, [userId]);
 
-  // Main fetch function with all filters
+  // ✅ UPDATED: Fetch movies using server API route
   const fetchMovies = useCallback(async (pageNum: number, append: boolean = true) => {
     try {
       if (pageNum === 1) setLoading(true);
       else setLoadingMore(true);
 
-      let url = `https://api.themoviedb.org/3/discover/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&page=${pageNum}`;
-
-      // Sort by
-      if (activePreset === 'trending') {
-        url += '&sort_by=popularity.desc';
-      } else if (activePreset === 'top-rated') {
-        url += '&sort_by=vote_average.desc&vote_count.gte=100';
-      } else if (activePreset === '2026') {
-        url += '&sort_by=popularity.desc&primary_release_year=2026';
-      }
-
-      // Genre filter
-      if (selectedGenre !== 'all' && GENRE_TO_ID[selectedGenre]) {
-        url += `&with_genres=${GENRE_TO_ID[selectedGenre]}`;
-      }
-
-      // Mood filter
-      if (selectedMood !== 'all' && MOOD_TO_GENRES[selectedMood]) {
-        const moodGenres = MOOD_TO_GENRES[selectedMood].join(',');
-        url += `&with_genres=${moodGenres}`;
-      }
-
-      // Year filter
-      if (selectedYear !== 'all' && activePreset !== '2026') {
-        url += `&primary_release_year=${selectedYear}`;
-      }
-
-      // Platform filter using TMDB watch providers
-      if (selectedPlatform !== 'all' && PLATFORM_IDS[selectedPlatform]) {
-        const providerId = PLATFORM_IDS[selectedPlatform];
-        url += `&with_watch_providers=${providerId}&watch_region=US`;
-      }
-
-      // ✅ Experience filter
+      // Build query params
+      const params = new URLSearchParams();
+      params.set('page', pageNum.toString());
+      
+      if (selectedGenre !== 'all') params.set('genre', selectedGenre);
+      if (selectedMood !== 'all') params.set('mood', selectedMood);
+      if (selectedYear !== 'all') params.set('year', selectedYear);
+      if (selectedPlatform !== 'all') params.set('platform', selectedPlatform);
+      if (activePreset) params.set('preset', activePreset);
+      if (searchQuery.trim()) params.set('query', searchQuery);
+      
+      // Experience filter
       if (experienceFilter) {
-        const experience = EXPERIENCE_CATEGORIES.find(c => c.id === experienceFilter);
-        if (experience && experience.tags.length > 0) {
-          const genreIds = experience.tags
-            .map(tag => GENRE_TO_ID[tag])
-            .filter(id => id !== undefined);
-          if (genreIds.length > 0) {
-            url += `&with_genres=${genreIds.join(',')}`;
-          }
-        }
+        params.set('experience', experienceFilter);
       }
 
-      // Search
-      if (searchQuery.trim()) {
-        url = `https://api.themoviedb.org/3/search/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&page=${pageNum}&query=${encodeURIComponent(searchQuery)}`;
-      }
-
+      const url = `/api/tmdb/discover?${params.toString()}`;
+      
       const response = await fetch(url);
       
       if (!response.ok) {
@@ -328,7 +295,7 @@ export default function MovieFeed({
     }, 500);
   };
 
-  // Fetch search suggestions
+  // ✅ UPDATED: Fetch search suggestions using server API route
   const fetchSuggestions = async (query: string) => {
     if (query.length < 2) {
       setSearchSuggestions([]);
@@ -337,7 +304,7 @@ export default function MovieFeed({
 
     try {
       const response = await fetch(
-        `https://api.themoviedb.org/3/search/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&query=${encodeURIComponent(query)}&page=1`
+        `/api/tmdb/search?query=${encodeURIComponent(query)}&page=1`
       );
       const data = await response.json();
       const suggestions = (data.results || []).slice(0, 5).map((m: any) => m.title);
