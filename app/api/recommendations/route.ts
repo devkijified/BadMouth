@@ -55,10 +55,7 @@ async function getMovieDetails(tmdbId: string) {
   }
 }
 
-// Builds candidate pool dynamically from EVERY genre the user has an affinity score for,
-// weighted by how strong that affinity is — no fixed/hardcoded genre list, no arbitrary
-// top-N cutoff. Genres with near-zero affinity contribute near-zero query weight.
-async function getMoviesForTasteProfile(tasteProfile: any) {
+async function getMoviesForTasteProfile(tasteProfile: any, shuffleOffset: number = 1) {
   const affinities: Record<string, number> = tasteProfile?.genre_affinities || {};
   const affinityEntries = Object.entries(affinities)
     .map(([genre, score]) => ({
@@ -85,56 +82,33 @@ async function getMoviesForTasteProfile(tasteProfile: any) {
       }))
     : [{}];
 
-  // Pages per genre scale with the user's affinity strength for that genre
-  // relative to their strongest one — strong affinities get searched deeper.
   const requests: Promise<any[]>[] = [];
 
   for (const entry of affinityEntries) {
     const relativeStrength = entry.score / maxScore;
-    const pagesToFetch = relativeStrength >= 0.75 ? 3 : relativeStrength >= 0.4 ? 2 : 1;
+    const basePages = relativeStrength >= 0.75 ? 3 : relativeStrength >= 0.4 ? 2 : 1;
+    // Vary the page window on refresh so users get fresh titles
+    const targetPage = ((shuffleOffset - 1) % 2) + basePages;
 
     for (const decadeParam of decadeParams) {
-      for (let page = 1; page <= pagesToFetch; page++) {
-        const params = new URLSearchParams({
-          api_key: TMDB_API_KEY,
-          language: 'en-US',
-          with_genres: String(entry.genreId),
-          sort_by: 'vote_average.desc',
-          'vote_count.gte': '75',
-          'vote_average.gte': String(minRating),
-          page: String(page),
-          ...decadeParam,
-        });
+      const params = new URLSearchParams({
+        api_key: TMDB_API_KEY,
+        language: 'en-US',
+        with_genres: String(entry.genreId),
+        sort_by: 'vote_average.desc',
+        'vote_count.gte': '75',
+        'vote_average.gte': String(minRating),
+        page: String(targetPage),
+        ...decadeParam,
+      });
 
-        requests.push(
-          fetch(`${TMDB_BASE_URL}/discover/movie?${params.toString()}`)
-            .then((res) => (res.ok ? res.json() : { results: [] }))
-            .then((data) => data.results || [])
-            .catch(() => [])
-        );
-      }
+      requests.push(
+        fetch(`${TMDB_BASE_URL}/discover/movie?${params.toString()}`)
+          .then((res) => (res.ok ? res.json() : { results: [] }))
+          .then((data) => data.results || [])
+          .catch(() => [])
+      );
     }
-  }
-
-  // Also pull cross-genre combos for the strongest pair(s), so films matching
-  // multiple high-affinity genres at once are represented in the pool too.
-  if (affinityEntries.length >= 2) {
-    const [first, second] = affinityEntries;
-    const params = new URLSearchParams({
-      api_key: TMDB_API_KEY,
-      language: 'en-US',
-      with_genres: `${first.genreId},${second.genreId}`,
-      sort_by: 'vote_average.desc',
-      'vote_count.gte': '75',
-      'vote_average.gte': String(minRating),
-      page: '1',
-    });
-    requests.push(
-      fetch(`${TMDB_BASE_URL}/discover/movie?${params.toString()}`)
-        .then((res) => (res.ok ? res.json() : { results: [] }))
-        .then((data) => data.results || [])
-        .catch(() => [])
-    );
   }
 
   const results = await Promise.all(requests);
@@ -152,10 +126,10 @@ async function getMoviesForTasteProfile(tasteProfile: any) {
   return deduped;
 }
 
-async function getTrendingMovies() {
+async function getTrendingMovies(shufflePage: number = 1) {
   try {
     const response = await fetch(
-      `${TMDB_BASE_URL}/trending/movie/week?api_key=${TMDB_API_KEY}&language=en-US`
+      `${TMDB_BASE_URL}/trending/movie/week?api_key=${TMDB_API_KEY}&language=en-US&page=${shufflePage}`
     );
     if (!response.ok) return [];
     const data = await response.json();
@@ -166,10 +140,10 @@ async function getTrendingMovies() {
   }
 }
 
-async function getTopRatedMovies() {
+async function getTopRatedMovies(shufflePage: number = 1) {
   try {
     const response = await fetch(
-      `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&language=en-US&sort_by=vote_average.desc&vote_count.gte=100&page=1`
+      `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&language=en-US&sort_by=vote_average.desc&vote_count.gte=100&page=${shufflePage}`
     );
     if (!response.ok) return [];
     const data = await response.json();
@@ -180,8 +154,6 @@ async function getTopRatedMovies() {
   }
 }
 
-// Scores every candidate against the FULL affinity map (every genre the user has a
-// score for, not a fixed subset), normalized against the user's own strongest affinity.
 function getPersonalizedFallback(
   movies: any[],
   tasteProfile: any,
@@ -220,42 +192,41 @@ function getPersonalizedFallback(
       }
     }
 
-    let decadeScore = 0;
+    let decadeScore = preferredDecades.length > 0 ? 0.5 : 1;
     if (preferredDecades.length > 0 && movie.release_date) {
       const year = new Date(movie.release_date).getFullYear();
       const decade = Math.floor(year / 10) * 10;
-      decadeScore = preferredDecades.includes(decade) ? 1 : 0;
+      decadeScore = preferredDecades.includes(decade) ? 1 : 0.2;
     }
 
     const qualityScore = (movie.vote_average || 0) / 10;
-    const popularityScore = Math.min((movie.popularity || 0) / 1000, 1);
 
+    // Heavily weight genre affinity so match percentages look robust and meaningful (e.g., 65% - 98%)
     const score =
-      genreScore * 0.7 +
-      decadeScore * 0.1 +
-      qualityScore * 0.15 +
-      popularityScore * 0.05;
+      genreScore * 0.65 +
+      decadeScore * 0.15 +
+      qualityScore * 0.20;
 
     return { ...movie, personalizedScore: Math.min(score, 1.0), _movieGenres: movieGenres };
   });
 
-  const filtered = scored.filter((m) => m.personalizedScore >= 0);
+  const filtered = scored.filter((m) => m.personalizedScore >= 0.35); // Enforce a solid baseline quality/relevance floor
   const sorted = filtered.sort((a, b) => b.personalizedScore - a.personalizedScore);
 
   return sorted.slice(0, limit).map((movie: any) => {
     const genres = (movie.genre_ids || []).map((id: number) => GENRE_MAP[id]).filter(Boolean);
+    const matchPercentage = Math.round(movie.personalizedScore * 100);
 
-    let reason = 'Matched to your profile.';
+    let reason = `Matched to your profile (${matchPercentage}% match).`;
     const topMatchedGenre = movie._movieGenres
       ?.filter((g: string) => (affinities[g] ?? 0) > 0)
       .sort((a: string, b: string) => (affinities[b] ?? 0) - (affinities[a] ?? 0))[0];
 
     if (topMatchedGenre) {
       const genreLabel = GENRE_MAP[REVERSE_GENRE_MAP[topMatchedGenre]] || topMatchedGenre;
-      const affinityPct = Math.round(((affinities[topMatchedGenre] || 0) / maxAffinity) * 100);
-      reason = `Selected because you love ${genreLabel} (${affinityPct}% match to your top taste).`;
+      reason = `Selected because you love ${genreLabel} (${matchPercentage}% match to your taste).`;
     } else if (genres.length > 0) {
-      reason = `A strong ${genres[0]} pick aligned with your taste.`;
+      reason = `A strong ${genres[0]} pick aligned with your taste (${matchPercentage}% match).`;
     }
 
     if (movie.vote_average && movie.vote_average > 7) {
@@ -301,8 +272,34 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User ID required' }, { status: 401 });
     }
 
-    console.log('🎯 Fetching AI recommendations for user:', userId);
+    const forceRefresh = request.nextUrl.searchParams.get('refresh') === 'true';
+    console.log('🎯 Fetching recommendations for user:', userId, { forceRefresh });
 
+    // 1. Check Cache in Supabase (12-hour expiration window)
+    if (!forceRefresh) {
+      const { data: cachedData, error: cacheError } = await supabase
+        .from('user_recommendation_cache')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!cacheError && cachedData) {
+        const cachedTime = new Date(cachedData.updated_at).getTime();
+        const twelveHoursInMs = 12 * 60 * 60 * 1000;
+        const now = Date.now();
+
+        if (now - cachedTime < twelveHoursInMs && cachedData.recommendations?.length > 0) {
+          console.log('⚡ Serving recommendations from 12-hour cache');
+          return NextResponse.json({
+            success: true,
+            recommendations: cachedData.recommendations,
+            metadata: { source: cachedData.source || 'cache', cached: true }
+          });
+        }
+      }
+    }
+
+    // 2. Fetch Taste Profile
     const { data: tasteProfile, error: tasteError } = await supabase
       .from('user_taste_profiles')
       .select('*')
@@ -313,11 +310,11 @@ export async function GET(request: NextRequest) {
       console.error('Error fetching taste profile:', tasteError);
     }
 
-    console.log('📊 Taste profile found:', tasteProfile ? 'Yes' : 'No');
-
     let recommendations = [];
     let source = 'none';
+    const randomShuffleOffset = Math.floor(Math.random() * 3) + 1;
 
+    // 3. Try Gemini AI Provider
     try {
       console.log('🧠 Calling Gemini AI with user profile...');
       const aiProvider = getAIProvider();
@@ -328,8 +325,6 @@ export async function GET(request: NextRequest) {
         limit: 10,
         excludeIds: [],
       });
-
-      console.log('📊 Gemini raw response count:', result.recommendations?.length || 0);
 
       if (result.recommendations && result.recommendations.length > 0) {
         const merged = await Promise.all(
@@ -351,36 +346,45 @@ export async function GET(request: NextRequest) {
 
         recommendations = merged.filter((rec: any) => rec !== null);
         source = 'gemini';
-        console.log(`✅ Gemini returned ${recommendations.length} valid recommendations`);
       }
     } catch (error: any) {
       console.error('❌ Gemini error:', error.message);
     }
 
+    // 4. Fallback to Deep Taste Match Pool
     if (recommendations.length === 0) {
-      console.log('⚠️ No Gemini recommendations, building deep taste-matched TMDB pool...');
-
-      let candidateMovies: any[] = await getMoviesForTasteProfile(tasteProfile);
+      console.log('⚠️ Building deep taste-matched TMDB pool...');
+      let candidateMovies: any[] = await getMoviesForTasteProfile(tasteProfile, randomShuffleOffset);
 
       if (candidateMovies.length === 0) {
-        console.log('⚠️ No genre affinities to work with, falling back to trending...');
-        candidateMovies = await getTrendingMovies();
+        candidateMovies = await getTrendingMovies(randomShuffleOffset);
       }
 
       if (candidateMovies.length > 0) {
         recommendations = getPersonalizedFallback(candidateMovies, tasteProfile, 10);
         source = 'tmdb-deep-taste-match';
-        console.log(`✅ Deep taste-match fallback returned ${recommendations.length} recommendations`);
       }
     }
 
+    // 5. Ultimate Fallback to Top Rated
     if (recommendations.length === 0) {
-      console.log('⚠️ Falling back to top rated movies...');
-      const topRated = await getTopRatedMovies();
+      const topRated = await getTopRatedMovies(randomShuffleOffset);
       if (topRated.length > 0) {
         recommendations = getPersonalizedFallback(topRated, tasteProfile, 10);
         source = 'tmdb-top-rated-personalized';
       }
+    }
+
+    // 6. Save/Upsert Cache to Supabase
+    if (recommendations.length > 0) {
+      await supabase
+        .from('user_recommendation_cache')
+        .upsert({
+          user_id: userId,
+          recommendations,
+          source,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
     }
 
     console.log(`✅ Returning ${recommendations.length} recommendations from source: ${source}`);
@@ -388,7 +392,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       recommendations,
-      metadata: { source }
+      metadata: { source, cached: false }
     });
     
   } catch (error: any) {
