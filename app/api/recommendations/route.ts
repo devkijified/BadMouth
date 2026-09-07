@@ -71,7 +71,7 @@ async function getTopRatedMovies() {
   }
 }
 
-// ✅ NEW: Smart fallback that uses taste profile to personalize recommendations
+// ✅ FIXED: Smart fallback with proper type handling
 function getPersonalizedFallback(
   movies: any[],
   tasteProfile: any,
@@ -79,23 +79,24 @@ function getPersonalizedFallback(
 ): any[] {
   if (!movies || movies.length === 0) return [];
 
-  // Get user's top genres from taste profile
-  const topGenres = tasteProfile?.genre_affinities
-    ? Object.entries(tasteProfile.genre_affinities)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([genre]) => genre.toLowerCase())
-    : [];
+  // ✅ FIX: Cast entries to [string, number][] to fix type error
+  let topGenres: string[] = [];
+  if (tasteProfile?.genre_affinities) {
+    const entries = Object.entries(tasteProfile.genre_affinities) as [string, number][];
+    topGenres = entries
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([genre]) => genre.toLowerCase());
+  }
 
   console.log('🎯 Top genres from taste profile:', topGenres);
 
   // Score each movie based on taste profile
   const scoredMovies = movies.map((movie: any) => {
-    let score = 0.5; // Base score
+    let score = 0.5;
     
     // Genre matching (higher weight)
     if (movie.genre_ids && movie.genre_ids.length > 0) {
-      // Get genre names for this movie
       const genreMap: Record<number, string> = {
         28: 'action', 12: 'adventure', 16: 'animation', 35: 'comedy',
         80: 'crime', 99: 'documentary', 18: 'drama', 10751: 'family',
@@ -106,10 +107,12 @@ function getPersonalizedFallback(
       
       const movieGenres = movie.genre_ids.map((id: number) => genreMap[id]?.toLowerCase()).filter(Boolean);
       
+      // ✅ FIX: Safely access genre affinities
+      const affinities = tasteProfile?.genre_affinities || {};
+      
       for (const genre of movieGenres) {
         if (topGenres.includes(genre)) {
-          // Boost score based on affinity weight
-          const affinity = tasteProfile?.genre_affinities?.[genre] || 0.5;
+          const affinity = (affinities as Record<string, number>)[genre] || 0.5;
           score += affinity * 0.3;
         }
       }
@@ -125,7 +128,7 @@ function getPersonalizedFallback(
       score += Math.min(movie.popularity / 1000, 0.2);
     }
 
-    // Boost for recency (2026 movies get a small bump)
+    // Boost for recency
     if (movie.release_date) {
       const year = new Date(movie.release_date).getFullYear();
       if (year >= 2025) {
@@ -133,9 +136,8 @@ function getPersonalizedFallback(
       }
     }
 
-    // Mood matching (if user has mood preferences)
+    // Mood matching
     if (tasteProfile?.mood_preferences && tasteProfile.mood_preferences.length > 0) {
-      // Map moods to genre expectations
       const moodGenres: Record<string, string[]> = {
         'action-packed': ['action', 'thriller', 'adventure'],
         'mind-bending': ['sci-fi', 'mystery', 'thriller'],
@@ -162,7 +164,6 @@ function getPersonalizedFallback(
         return map[id]?.toLowerCase();
       }).filter(Boolean) || [];
 
-      // Check if movie matches any of the user's mood preferences
       for (const mood of tasteProfile.mood_preferences) {
         const moodGenreList = moodGenres[mood.toLowerCase()] || [];
         if (movieGenres.some((g: string) => moodGenreList.includes(g))) {
@@ -175,15 +176,13 @@ function getPersonalizedFallback(
     return { ...movie, personalizedScore: Math.min(score, 1.0) };
   });
 
-  // Sort by personalized score (highest first)
+  // Sort by personalized score
   const sorted = scoredMovies.sort((a, b) => b.personalizedScore - a.personalizedScore);
 
   // Return top N with reasons
   return sorted.slice(0, limit).map((movie: any) => {
-    // Generate a personalized reason
     let reason = 'Trending and highly rated.';
     
-    // Pick top matching genre
     if (movie.genre_ids && movie.genre_ids.length > 0) {
       const genreMap: Record<number, string> = {
         28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy',
@@ -206,7 +205,6 @@ function getPersonalizedFallback(
       }
     }
 
-    // Add rating mention
     if (movie.vote_average && movie.vote_average > 7) {
       reason += ` ⭐ ${movie.vote_average.toFixed(1)}/10`;
     }
@@ -261,7 +259,6 @@ export async function GET(request: NextRequest) {
 
     console.log('🎯 Fetching AI recommendations for user:', userId);
 
-    // Get user taste profile
     const { data: tasteProfile, error: tasteError } = await supabase
       .from('user_taste_profiles')
       .select('*')
@@ -272,7 +269,7 @@ export async function GET(request: NextRequest) {
       console.error('Error fetching taste profile:', tasteError);
     }
 
-    console.log('📊 Taste profile found:', tasteProfile ? 'Yes' : 'No', tasteProfile || '');
+    console.log('📊 Taste profile found:', tasteProfile ? 'Yes' : 'No');
 
     let recommendations = [];
     let source = 'none';
@@ -317,22 +314,20 @@ export async function GET(request: NextRequest) {
       console.error('❌ Gemini error:', error.message);
     }
 
-    // ✅ SMART FALLBACK: Use taste profile to personalize recommendations
+    // Smart fallback
     if (recommendations.length === 0) {
       console.log('⚠️ No Gemini recommendations, falling back to personalized TMDB trending...');
       
-      // Get trending movies (get more than needed so we can filter)
       const trendingMovies = await getTrendingMovies();
       
       if (trendingMovies.length > 0) {
-        // Use the smart personalized fallback
         recommendations = getPersonalizedFallback(trendingMovies, tasteProfile, 10);
         source = 'tmdb-trending-personalized';
         console.log(`✅ Personalized TMDB trending returned ${recommendations.length} recommendations`);
       }
     }
 
-    // ✅ FINAL FALLBACK: If still nothing, use top rated with personalization
+    // Final fallback
     if (recommendations.length === 0) {
       console.log('⚠️ No trending movies, falling back to personalized top rated...');
       
