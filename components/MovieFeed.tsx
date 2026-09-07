@@ -160,10 +160,8 @@ export default function MovieFeed({
 
   // ✅ MAX LIMIT for public users (40 total)
   const MAX_PUBLIC_MOVIES = 40;
-  // ✅ PAGE SIZE (load 20 at a time)
-  const PAGE_SIZE = 20;
 
-  // ✅ Track if we've hit the public limit
+  // ✅ Check if public user has reached limit (computed, not ref)
   const hasReachedPublicLimit = isPublicUser && movies.length >= MAX_PUBLIC_MOVIES;
 
   // Fetch user taste profile (only for logged-in users)
@@ -223,17 +221,14 @@ export default function MovieFeed({
 
   // Main fetch function with all filters
   const fetchMovies = useCallback(async (pageNum: number, append: boolean = true) => {
+    // ✅ Check if we've reached the public limit
+    if (isPublicUser && movies.length >= MAX_PUBLIC_MOVIES) {
+      return;
+    }
+
     try {
       if (pageNum === 1) setLoading(true);
       else setLoadingMore(true);
-
-      // ✅ Check if we've reached the public limit
-      if (hasReachedPublicLimit) {
-        setHasMore(false);
-        setLoading(false);
-        setLoadingMore(false);
-        return;
-      }
 
       let url = `https://api.themoviedb.org/3/discover/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f'}&language=en-US&page=${pageNum}`;
 
@@ -332,7 +327,6 @@ export default function MovieFeed({
         if (currentTotal + finalMovies.length >= MAX_PUBLIC_MOVIES) {
           setHasMore(false);
         } else {
-          // Check if TMDB has more pages
           setHasMore(data.total_pages > pageNum && filteredMovies.length > 0);
         }
       } else {
@@ -352,7 +346,7 @@ export default function MovieFeed({
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, searchQuery, activePreset, watchlistIds, experienceFilter, isPublicUser, movies.length, hasReachedPublicLimit]);
+  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, searchQuery, activePreset, watchlistIds, experienceFilter, isPublicUser, movies.length]);
 
   // Debounced search handler
   const handleSearchChange = (value: string) => {
@@ -410,9 +404,9 @@ export default function MovieFeed({
     fetchMovies(1, false);
   }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, activePreset, experienceFilter, fetchMovies]);
 
-  // ✅ Fixed: Infinite scroll observer - properly stops at public limit
+  // ✅ Fixed: Infinite scroll observer - clean and simple
   useEffect(() => {
-    // ✅ Always clean up previous observer first
+    // ✅ Clean up previous observer
     if (observerRef.current) {
       observerRef.current.disconnect();
       observerRef.current = null;
@@ -433,7 +427,7 @@ export default function MovieFeed({
           const entry = entries[0];
           if (entry.isIntersecting && hasMore && !loadingMore && !loading) {
             // ✅ Double-check public limit before loading more
-            if (hasReachedPublicLimit) {
+            if (isPublicUser && movies.length >= MAX_PUBLIC_MOVIES) {
               setHasMore(false);
               return;
             }
@@ -442,20 +436,21 @@ export default function MovieFeed({
         },
         { 
           threshold: 0.1, 
-          rootMargin: '50px'
+          rootMargin: '100px'
         }
       );
 
       observerRef.current.observe(loaderRef.current);
     }
 
+    // ✅ Cleanup on unmount or dependency change
     return () => {
       if (observerRef.current) {
         observerRef.current.disconnect();
         observerRef.current = null;
       }
     };
-  }, [loading, loadingMore, hasMore, hasReachedPublicLimit]);
+  }, [loading, loadingMore, hasMore, hasReachedPublicLimit, isPublicUser, movies.length]);
 
   // Trigger fetch when page changes
   useEffect(() => {
@@ -907,7 +902,7 @@ export default function MovieFeed({
         })}
       </div>
 
-      {/* ✅ Fixed: Loading More Indicator - No flickering */}
+      {/* ✅ Fixed: Loading More Indicator */}
       <div ref={loaderRef} className="flex justify-center py-4">
         {loadingMore && (
           <div className="flex items-center gap-2">
@@ -917,7 +912,7 @@ export default function MovieFeed({
         )}
         {!hasMore && movies.length > 0 && (
           <p className="text-gray-500 text-sm">
-            {isPublicUser && movies.length >= MAX_PUBLIC_MOVIES 
+            {hasReachedPublicLimit
               ? '🎬 Showing 40 movies — sign in for unlimited access' 
               : 'No more movies to load'}
           </p>
