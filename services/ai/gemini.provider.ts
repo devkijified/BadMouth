@@ -13,6 +13,7 @@ import {
 export class GeminiProvider implements AIProvider {
   private ai: GoogleGenAI | null = null;
   private modelName: string;
+  private fallbackModelName = 'gemini-1.5-flash'; // High-availability fallback model
   private isInitialized = false;
 
   constructor(
@@ -39,7 +40,7 @@ export class GeminiProvider implements AIProvider {
       this.isInitialized = true;
 
       console.log(
-        `✅ Gemini initialized with model: ${this.modelName}`
+        `✅ Gemini initialized with model: ${this.modelName} (Fallback: ${this.fallbackModelName})`
       );
     } catch (error) {
       console.error('❌ Failed to initialize Gemini:', error);
@@ -47,38 +48,65 @@ export class GeminiProvider implements AIProvider {
     }
   }
 
-  private async generateText(prompt: string, retries = 2, delay = 1000): Promise<string> {
+  private async generateText(prompt: string, retries = 3, delay = 2000): Promise<string> {
     if (!this.isInitialized || !this.ai) {
       throw new Error('Gemini provider is not initialized');
     }
 
-    try {
-      const response = await this.ai.models.generateContent({
-        model: this.modelName,
-        contents: prompt,
-        config: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 1200,
-        },
-      });
-
-      const text = response.text?.trim();
-
-      if (!text) {
-        throw new Error('Gemini returned an empty response');
-      }
-
-      return text;
-    } catch (error) {
-      if (retries > 0) {
-        console.warn(`⚠️ Gemini request failed, retrying in ${delay}ms... (${retries} retries left)`, error);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        return this.generateText(prompt, retries - 1, delay * 2);
-      }
-      throw error;
+    // Try primary model first, switch to fallback model on persistent 503 / overload errors
+    const modelsToTry = [this.modelName];
+    if (this.fallbackModelName && this.fallbackModelName !== this.modelName) {
+      modelsToTry.push(this.fallbackModelName);
     }
+
+    let lastError: any;
+
+    for (const currentModel of modelsToTry) {
+      let currentRetries = retries;
+      let currentDelay = delay;
+
+      while (currentRetries >= 0) {
+        try {
+          const response = await this.ai.models.generateContent({
+            model: currentModel,
+            contents: prompt,
+            config: {
+              temperature: 0.7,
+              topK: 40,
+              topP: 0.95,
+              maxOutputTokens: 1200,
+            },
+          });
+
+          const text = response.text?.trim();
+
+          if (!text) {
+            throw new Error('Gemini returned an empty response');
+          }
+
+          if (currentModel !== this.modelName) {
+            console.log(`ℹ️ Successfully recovered using fallback model: ${currentModel}`);
+          }
+
+          return text;
+        } catch (error: any) {
+          lastError = error;
+          const isOverloaded = error?.status === 503 || error?.message?.includes('503') || error?.message?.includes('high demand');
+          
+          if (currentRetries > 0) {
+            console.warn(`⚠️ Gemini request failed on model [${currentModel}], retrying in ${currentDelay}ms... (${currentRetries} left). Error: ${error?.message || error}`);
+            await new Promise((resolve) => setTimeout(resolve, currentDelay));
+            currentRetries--;
+            currentDelay *= 2; // Exponential backoff
+          } else {
+            // Out of retries for this model, break inner loop to try next model
+            break;
+          }
+        }
+      }
+    }
+
+    throw lastError;
   }
 
   async generateRecommendations(
@@ -103,7 +131,7 @@ export class GeminiProvider implements AIProvider {
         },
       };
     } catch (error) {
-      console.error('❌ Gemini recommendation error:', error);
+      console.error('❌ Gemini recommendation error after all retries & model failovers:', error);
 
       return this.getFallbackRecommendations(params);
     }
@@ -385,12 +413,11 @@ Return only JSON:
         .replace(/```/g, '')
         .trim();
 
-      // Attempt 1: Direct parse of main JSON block with safety cleanups
       const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         let jsonString = jsonMatch[0]
-          .replace(/,\s*([\]}])/g, '$1') // remove trailing commas
-          .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":'); // quote unquoted keys
+          .replace(/,\s*([\]}])/g, '$1')
+          .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":');
 
         try {
           const parsed = JSON.parse(jsonString);
@@ -398,18 +425,16 @@ Return only JSON:
             return parsed;
           }
         } catch (e) {
-          // If direct parse fails, move to Fallback Extraction below
+          // Fall through to item regex parser
         }
       }
 
-      // Attempt 2: Resilient item-by-item extraction if the JSON container was broken/cut off
       const recommendations: any[] = [];
       const itemRegex = /\{[^}]*?["']?contentId["']?\s*:\s*["']?([^"',}]+)["'][^}]*?\}/g;
       let match;
 
       while ((match = itemRegex.exec(cleanedText)) !== null) {
         try {
-          // Try to clean and parse each individual recommendation block found in text
           let blockStr = match[0]
             .replace(/,\s*([\]}])/g, '$1')
             .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":');
@@ -419,12 +444,11 @@ Return only JSON:
             recommendations.push(item);
           }
         } catch (err) {
-          // Skip malformed individual blocks
+          // Skip invalid blocks
         }
       }
 
       if (recommendations.length > 0) {
-        console.log(`⚠️ Recovered ${recommendations.length} recommendations via resilient parser.`);
         return { recommendations };
       }
 
