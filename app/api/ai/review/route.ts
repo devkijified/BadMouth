@@ -1,8 +1,9 @@
 // app/api/ai/review/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,53 +16,50 @@ export async function POST(request: NextRequest) {
     if (!GEMINI_API_KEY) {
       console.error('GEMINI_API_KEY is not configured');
       return NextResponse.json({
-        review: `"${title}" is a ${year || 'recent'} ${genre || 'film'} that has received mixed to positive reviews. With a ${rating || 'decent'} rating, it offers an engaging experience for fans of the genre.`,
+        review: `"${title}" is a ${year || 'recent'} ${genre || 'film'} that offers an engaging experience for fans of the genre.`,
         rating: rating || 7.0
       });
     }
 
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.0-flash-lite-preview-02-05' 
+    const genAI = new GoogleGenAI({ 
+      apiKey: GEMINI_API_KEY 
     });
 
-    const prompt = `Write a concise, engaging review for the movie "${title}" (${year || 'N/A'}, ${genre || 'Various'}).
+    const prompt = `
+You are BADMOUTH AI, a sharp but fair movie critic.
 
-Movie Description: ${description || 'No description available'}
+Write a concise review in two short paragraphs.
 
-Provide a BADMOUTH AI review that includes:
-1. A brief, spoiler-free review (2-3 sentences)
-2. A rating from 1-10
+Rules:
+- Be direct, entertaining, and specific.
+- Discuss story, acting, pacing, direction, and overall enjoyment.
+- Do not invent actors, plot details, or facts.
+- Do not use Markdown headings.
+- Do not include a numerical rating.
 
-Format your response as JSON:
-{
-  "review": "Your review text here...",
-  "rating": 8.5
-}
+Movie title: ${title}
+Year: ${year || 'Unknown'}
+Genre: ${genre || 'Unknown'}
+Existing rating: ${rating ?? 'N/A'}
+Description: ${description || 'No description available'}
+`;
 
-Make the review honest, insightful, and engaging. The rating should reflect the movie's quality based on its genre and audience reception.`;
+    const response = await genAI.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: prompt,
+      config: {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 1200,
+      },
+    });
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    // Try to parse JSON from the response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return NextResponse.json({
-          review: parsed.review || text,
-          rating: parsed.rating || 7.0,
-        });
-      } catch (e) {
-        // If JSON parsing fails, return the raw text
-      }
-    }
+    const review = response.text?.trim() || `"${title}" is a compelling ${genre || 'film'} that offers an engaging experience.`;
 
     return NextResponse.json({
-      review: text || `"${title}" is a compelling ${genre || 'film'} that offers an engaging experience.`,
-      rating: 7.0,
+      review,
+      rating: rating || 7.0,
     });
 
   } catch (error: any) {
