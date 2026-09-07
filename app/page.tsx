@@ -32,26 +32,23 @@ const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302
 
 async function fetchPublicMovies() {
   try {
-    const [trendingRes, topRatedRes, upcomingRes] = await Promise.all([
+    const [trendingRes, topRatedRes] = await Promise.all([
       fetch(`https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_API_KEY}&language=en-US&page=1`),
       fetch(`https://api.themoviedb.org/3/movie/top_rated?api_key=${TMDB_API_KEY}&language=en-US&page=1`),
-      fetch(`https://api.themoviedb.org/3/movie/upcoming?api_key=${TMDB_API_KEY}&language=en-US&page=1`),
     ]);
 
-    const [trending, topRated, upcoming] = await Promise.all([
+    const [trending, topRated] = await Promise.all([
       trendingRes.json(),
       topRatedRes.json(),
-      upcomingRes.json(),
     ]);
 
     return {
       trending: trending.results || [],
       topRated: topRated.results || [],
-      upcoming: upcoming.results || [],
     };
   } catch (error) {
     console.error('Error fetching public movies:', error);
-    return { trending: [], topRated: [], upcoming: [] };
+    return { trending: [], topRated: [] };
   }
 }
 
@@ -137,8 +134,7 @@ export default function HomePage() {
   const [publicMovies, setPublicMovies] = useState<{
     trending: ContentItem[];
     topRated: ContentItem[];
-    upcoming: ContentItem[];
-  }>({ trending: [], topRated: [], upcoming: [] });
+  }>({ trending: [], topRated: [] });
   const [publicLoading, setPublicLoading] = useState(true);
 
   // Guards loadHomeData so it only runs once per session
@@ -157,7 +153,6 @@ export default function HomePage() {
       setPublicMovies({
         trending: movies.trending.map(formatMovieForContent),
         topRated: movies.topRated.map(formatMovieForContent),
-        upcoming: movies.upcoming.map(formatMovieForContent),
       });
       setPublicLoading(false);
     };
@@ -688,23 +683,15 @@ export default function HomePage() {
   if (!user) {
     return (
       <div className="min-h-screen bg-black">
-        {/* Header */}
+        {/* Header - No nav for public users */}
         <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
           isScrolled ? 'bg-black/95 backdrop-blur-md border-b border-gray-800' : 'bg-gradient-to-b from-black/80 to-transparent'
         }`}>
           <div className="container mx-auto px-4">
             <div className="flex items-center justify-between h-16">
-              <div className="flex items-center gap-8">
-                <button onClick={scrollToTop} className="text-xl font-bold bg-gradient-to-r from-teal-500 to-blue-500 bg-clip-text text-transparent">
-                  BADMOUTH
-                </button>
-                <nav className="hidden md:flex gap-6">
-                  <button className="text-gray-300 hover:text-white">Home</button>
-                  <button className="text-gray-300 hover:text-white">Movies</button>
-                  <button className="text-gray-300 hover:text-white">Music</button>
-                  <button className="text-gray-300 hover:text-white">Reels</button>
-                </nav>
-              </div>
+              <button onClick={scrollToTop} className="text-xl font-bold bg-gradient-to-r from-teal-500 to-blue-500 bg-clip-text text-transparent">
+                BADMOUTH
+              </button>
               <div className="flex items-center gap-4">
                 <Link href="/auth" className="px-4 py-2 bg-gradient-to-r from-teal-600 to-blue-600 rounded-lg text-sm font-semibold hover:opacity-90 transition flex items-center gap-2">
                   <LogIn size={16} /> Sign In
@@ -724,7 +711,7 @@ export default function HomePage() {
             </div>
           ) : (
             <>
-              {/* Public Hero */}
+              {/* Public Hero - Trending */}
               <HeroCarousel 
                 items={publicMovies.trending.slice(0, 5)} 
                 onViewDetails={handleViewDetails} 
@@ -732,47 +719,38 @@ export default function HomePage() {
                 activeTab="movie" 
               />
 
-              {/* Public Trending */}
+              {/* Public Trending - Limit to 20 */}
               <ContentRow 
                 title="🔥 Trending Now"
-                items={publicMovies.trending.slice(0, 10)}
+                items={publicMovies.trending.slice(0, 20)}
                 type="movie"
                 onViewDetails={handleViewDetails}
                 onRecommend={handleRecommend}
                 onAddToWatchlist={addToWatchlist}
                 onRemoveFromWatchlist={removeFromWatchlist}
                 isInWatchlist={isInWatchlist}
-                maxItems={10}
+                maxItems={20}
               />
 
-              {/* Public Top Rated */}
+              {/* Public Top Rated - Limit to 20 */}
               <ContentRow 
                 title="⭐ Top Rated"
-                items={publicMovies.topRated.slice(0, 10)}
+                items={publicMovies.topRated.slice(0, 20)}
                 type="movie"
                 onViewDetails={handleViewDetails}
                 onRecommend={handleRecommend}
                 onAddToWatchlist={addToWatchlist}
                 onRemoveFromWatchlist={removeFromWatchlist}
                 isInWatchlist={isInWatchlist}
-                maxItems={10}
+                maxItems={20}
               />
 
-              {/* Public Upcoming */}
-              <ContentRow 
-                title="📅 Coming Soon"
-                items={publicMovies.upcoming.slice(0, 10)}
-                type="movie"
-                onViewDetails={handleViewDetails}
-                onRecommend={handleRecommend}
-                onAddToWatchlist={addToWatchlist}
-                onRemoveFromWatchlist={removeFromWatchlist}
-                isInWatchlist={isInWatchlist}
-                maxItems={10}
-              />
-
-              {/* Experience Categories (Public) */}
+              {/* ✅ Experience Categories - Immediately under slider */}
               <div className="container mx-auto px-4 py-4">
+                <div className="mb-2">
+                  <h2 className="text-lg font-semibold text-white">How do you want to feel?</h2>
+                  <p className="text-xs text-gray-400">Pick a vibe and discover movies that match your mood</p>
+                </div>
                 <ExperienceCategories 
                   onOpenModal={() => setIsExperienceModalOpen(true)}
                   selectedCategory={selectedExperience ? EXPERIENCE_CATEGORIES.find(c => c.id === selectedExperience)?.name || null : null}
@@ -787,7 +765,7 @@ export default function HomePage() {
                 selectedCategory={selectedExperience}
               />
 
-              {/* Public Movie Feed with Filter */}
+              {/* ✅ Public Movie Feed - Limit to 60, with debounced search */}
               <div className="container mx-auto px-4">
                 <div className="mb-8">
                   <div className="flex items-center justify-between mb-4">
@@ -809,8 +787,16 @@ export default function HomePage() {
                 </div>
               </div>
 
+              {/* ✅ Disclaimer */}
+              <div className="container mx-auto px-4 pb-4">
+                <p className="text-[10px] text-gray-500 text-center">
+                  BADMOUTH recommends movies based on your preferences. We do not host or stream any content. 
+                  All movie data is provided by TMDB. Streaming links are provided for informational purposes only.
+                </p>
+              </div>
+
               {/* Sign Up CTA */}
-              <div className="container mx-auto px-4 py-12">
+              <div className="container mx-auto px-4 py-8">
                 <div className="bg-gradient-to-r from-teal-600/20 to-blue-600/20 rounded-2xl p-8 text-center border border-teal-500/20">
                   <Sparkles className="w-12 h-12 text-teal-500 mx-auto mb-4" />
                   <h2 className="text-2xl font-bold text-white mb-2">Ready for Personalized Recommendations?</h2>
@@ -826,24 +812,7 @@ export default function HomePage() {
           )}
         </main>
 
-        {/* Public Mobile Nav */}
-        <MobileNav 
-          activeTab={activeTab} 
-          onTabChange={(tab) => {
-            if (tab === 'movie') handleMoviesClick()
-            else if (tab === 'music') handleMusicClick()
-            else if (tab === 'reels') handleReelsClick()
-            else if (tab === 'explore') router.push('/explore')
-            else handleHomeClick()
-          }} 
-          onViewDetails={handleViewDetails}
-          onHomeClick={handleHomeClick}
-          onProfileClick={() => router.push('/auth')}
-          onWatchlistClick={() => router.push('/auth')}
-          items={[]}
-          currentPage={currentPage}
-        />
-
+        {/* Public Mobile Nav - Removed for public users */}
         {/* Public Details Modal */}
         <MovieDetailsModal
           isOpen={showDetailsModal}
