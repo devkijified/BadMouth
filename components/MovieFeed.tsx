@@ -198,7 +198,7 @@ export default function MovieFeed({
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, searchQuery, activePreset, watchlistIds, experienceFilter, isPublicUser, movies.length]);
+  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, searchQuery, activePreset, watchlistIds, experienceFilter, isPublicUser]);
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
@@ -229,7 +229,7 @@ export default function MovieFeed({
   useEffect(() => {
     setPage(1); setMovies([]); setHasMore(true);
     fetchMovies(1, false);
-  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, activePreset, experienceFilter, fetchMovies]);
+  }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, activePreset, experienceFilter]);
 
   useEffect(() => {
     if (isPublicUser) return;
@@ -261,7 +261,7 @@ export default function MovieFeed({
 
   useEffect(() => {
     if (page > 1) fetchMovies(page, true);
-  }, [page, fetchMovies]);
+  }, [page]);
 
   const getImageUrl = (path: string) => path ? (path.startsWith('http') ? path : `https://image.tmdb.org/t/p/w500${path}`) : null;
   const getBackdropUrl = (path: string) => path ? (path.startsWith('http') ? path : `https://image.tmdb.org/t/p/original${path}`) : null;
