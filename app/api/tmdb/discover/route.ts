@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
     const query = searchParams.get('query');
     const sort = searchParams.get('sort');
     const minVoteCount = searchParams.get('minVoteCount');
+    const genreId = searchParams.get('genreId'); // ✅ Added for modal fallback
 
     const TMDB_API_KEY = process.env.TMDB_API_KEY;
     if (!TMDB_API_KEY) {
@@ -66,13 +67,15 @@ export async function GET(request: NextRequest) {
     } else if (preset === '2026') {
       url += '&sort_by=popularity.desc&primary_release_year=2026';
     } else if (sort) {
-      // Explicit sort override (used by "For You" mode) — only applied
-      // when no preset already set one, so presets still win.
       url += `&sort_by=${sort}`;
     }
 
-    // Genre filter
-    if (genre && genre !== 'all' && GENRE_TO_ID[genre]) {
+    // ✅ Genre ID filter (from modal fallback)
+    if (genreId && !isNaN(Number(genreId))) {
+      url += `&with_genres=${genreId}`;
+    }
+    // Genre filter (from main discover UI)
+    else if (genre && genre !== 'all' && GENRE_TO_ID[genre]) {
       url += `&with_genres=${GENRE_TO_ID[genre]}`;
     }
 
@@ -93,8 +96,7 @@ export async function GET(request: NextRequest) {
       url += `&with_watch_providers=${providerId}&watch_region=US`;
     }
 
-    // Minimum vote count floor (used by "For You" mode to avoid obscure,
-    // barely-rated titles polluting the sorted-by-rating results)
+    // Minimum vote count floor
     if (minVoteCount && !url.includes('vote_count.gte')) {
       url += `&vote_count.gte=${minVoteCount}`;
     }
