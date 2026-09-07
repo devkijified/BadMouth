@@ -33,18 +33,43 @@ export default function RecommendModal({
     }
   }, [isOpen, item, userId])
 
+  // Helper to resolve the correct content UUID from the database
+  const resolveContentUuid = async (): Promise<string | null> => {
+    if (!item) return null
+
+    // If item.id is already a valid UUID format, use it directly
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (uuidRegex.test(String(item.id))) {
+      return String(item.id)
+    }
+
+    // Otherwise, look it up in the content table using tmdb_id or spotify_id
+    const { data, error } = await supabase
+      .from('content')
+      .select('id')
+      .or(`id.eq.${item.id},tmdb_id.eq.${Number(item.id) || 0}`)
+      .maybeSingle()
+
+    if (error || !data) {
+      console.error('Could not resolve content UUID:', error)
+      return null
+    }
+
+    return data.id
+  }
+
   const checkExistingRating = async () => {
     if (!item || !userId) return
     
     try {
-      // Force string conversion for safety against UUID/text/number mismatches
-      const contentIdStr = String(item.id)
+      const contentUuid = await resolveContentUuid()
+      if (!contentUuid) return
 
       const { data, error } = await supabase
         .from('recommendations')
         .select('rating, comment')
         .eq('user_id', userId)
-        .eq('content_id', contentIdStr)
+        .eq('content_id', contentUuid)
         .maybeSingle()
 
       if (error && error.code !== 'PGRST116') {
@@ -77,14 +102,18 @@ export default function RecommendModal({
     setIsLoading(true)
 
     try {
-      const contentIdStr = String(item.id)
+      const contentUuid = await resolveContentUuid()
+      
+      if (!contentUuid) {
+        throw new Error('Associated content record not found in the database.')
+      }
 
-      // Check if user already rated this
+      // Check if user already rated this content UUID
       const { data: existing, error: checkError } = await supabase
         .from('recommendations')
         .select('id')
         .eq('user_id', userId)
-        .eq('content_id', contentIdStr)
+        .eq('content_id', contentUuid)
         .maybeSingle()
 
       if (checkError && checkError.code !== 'PGRST116') {
@@ -106,12 +135,12 @@ export default function RecommendModal({
           .eq('id', existing.id)
         error = updateError
       } else {
-        // Insert new rating
+        // Insert new rating with the valid content UUID
         const { error: insertError } = await supabase
           .from('recommendations')
           .insert({
             user_id: userId,
-            content_id: contentIdStr,
+            content_id: contentUuid,
             content_type: item.type,
             rating: rating,
             comment: comment || null
@@ -124,11 +153,11 @@ export default function RecommendModal({
         throw new Error(error.message || 'Database write failed')
       }
 
-      // Update aggregate content rating safely
+      // Update aggregate content rating safely using the content UUID
       const { data: allRatings, error: ratingsError } = await supabase
         .from('recommendations')
         .select('rating')
-        .eq('content_id', contentIdStr)
+        .eq('content_id', contentUuid)
 
       if (ratingsError) {
         console.error('Ratings fetch error:', ratingsError)
@@ -142,7 +171,7 @@ export default function RecommendModal({
             rating: Math.round(avgRating * 10) / 10,
             rating_count: totalRatings
           })
-          .eq('id', item.id)
+          .eq('id', contentUuid)
 
         if (updateContentError) {
           console.error('Content aggregate update error:', updateContentError)
