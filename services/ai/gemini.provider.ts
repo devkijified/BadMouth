@@ -13,12 +13,12 @@ import {
 export class GeminiProvider implements AIProvider {
   private ai: GoogleGenAI | null = null;
   private modelName: string;
-  private fallbackModelName = 'gemini-1.5-flash'; // Highly stable universally available fallback model
+  private fallbackModelName = 'gemini-2.5-flash'; // Standard current stable model alias
   private isInitialized = false;
 
   constructor(
     apiKey: string,
-    model = process.env.GEMINI_MODEL || 'gemini-1.5-flash'
+    model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
   ) {
     const cleanApiKey = apiKey?.trim();
 
@@ -60,7 +60,8 @@ export class GeminiProvider implements AIProvider {
 
     let lastError: any;
 
-    for (const currentModel of modelsToTry) {
+    for (let currentModel of modelsToTry) {
+      // Ensure model names conform safely if needed
       let currentRetries = retries;
       let currentDelay = delay;
 
@@ -94,8 +95,9 @@ export class GeminiProvider implements AIProvider {
           const statusCode = error?.status || error?.error?.code;
           const errorMessage = error?.message || JSON.stringify(error);
 
-          // CRITICAL: If quota is exceeded (429) or model not found (404), break immediately.
-          // Do not waste time retrying since retries will just fail again instantly.
+          console.warn(`⚠️ Model [${currentModel}] threw error: [Status ${statusCode}] ${errorMessage}`);
+
+          // CRITICAL: If quota is exceeded (429) or model not found (404), break immediately to try next model or failover.
           if (
             statusCode === 429 || 
             statusCode === 404 || 
@@ -103,12 +105,12 @@ export class GeminiProvider implements AIProvider {
             errorMessage.includes('RESOURCE_EXHAUSTED') || 
             errorMessage.includes('NOT_FOUND')
           ) {
-            console.warn(`⚠️ Fatal error [Status ${statusCode}] on model [${currentModel}]. Bypassing further retries to fail over immediately.`);
+            console.warn(`⚠️ Skipping model [${currentModel}] due to fatal status code/error.`);
             break; 
           }
 
           if (currentRetries > 0) {
-            console.warn(`⚠️ Gemini request failed on model [${currentModel}], retrying in ${currentDelay}ms... (${currentRetries} left). Error: ${errorMessage}`);
+            console.warn(`⚠️ Retrying model [${currentModel}] in ${currentDelay}ms... (${currentRetries} left).`);
             await new Promise((resolve) => setTimeout(resolve, currentDelay));
             currentRetries--;
             currentDelay *= 2;
