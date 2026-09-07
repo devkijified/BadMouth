@@ -53,7 +53,6 @@ export class GeminiProvider implements AIProvider {
       throw new Error('Gemini provider is not initialized');
     }
 
-    // Try primary model first, switch to fallback model on persistent 503 / overload errors
     const modelsToTry = [this.modelName];
     if (this.fallbackModelName && this.fallbackModelName !== this.modelName) {
       modelsToTry.push(this.fallbackModelName);
@@ -74,7 +73,7 @@ export class GeminiProvider implements AIProvider {
               temperature: 0.7,
               topK: 40,
               topP: 0.95,
-              maxOutputTokens: 1200,
+              maxOutputTokens: 8192, // Expanded headroom to ensure large batches of recommendations never cut off
             },
           });
 
@@ -91,7 +90,6 @@ export class GeminiProvider implements AIProvider {
           return text;
         } catch (error: any) {
           lastError = error;
-          const isOverloaded = error?.status === 503 || error?.message?.includes('503') || error?.message?.includes('high demand');
           
           if (currentRetries > 0) {
             console.warn(`⚠️ Gemini request failed on model [${currentModel}], retrying in ${currentDelay}ms... (${currentRetries} left). Error: ${error?.message || error}`);
@@ -99,7 +97,6 @@ export class GeminiProvider implements AIProvider {
             currentRetries--;
             currentDelay *= 2; // Exponential backoff
           } else {
-            // Out of retries for this model, break inner loop to try next model
             break;
           }
         }
@@ -332,13 +329,14 @@ ${
 }
 ${genres?.length ? `Genres: ${genres.join(', ')}` : ''}
 
-Recommend ${limit} movies.
+Recommend exactly ${limit} movies. Provide their exact titles and years.
 
 Format strictly as:
 {
   "recommendations": [
     {
-      "contentId": "12345",
+      "title": "Movie Title",
+      "year": 2023,
       "score": 0.95,
       "reason": "Short explanation"
     }
@@ -425,12 +423,13 @@ Return only JSON:
             return parsed;
           }
         } catch (e) {
-          // Fall through to item regex parser
+          // Fall through to fallback extraction
         }
       }
 
+      // Fallback regex extractor for items containing title or contentId
       const recommendations: any[] = [];
-      const itemRegex = /\{[^}]*?["']?contentId["']?\s*:\s*["']?([^"',}]+)["'][^}]*?\}/g;
+      const itemRegex = /\{[^}]*?(?:["']?title["']?|["']?contentId["']?)[^}]*?\}/g;
       let match;
 
       while ((match = itemRegex.exec(cleanedText)) !== null) {
@@ -440,7 +439,7 @@ Return only JSON:
             .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":');
           
           const item = JSON.parse(blockStr);
-          if (item.contentId) {
+          if (item.title || item.contentId) {
             recommendations.push(item);
           }
         } catch (err) {
