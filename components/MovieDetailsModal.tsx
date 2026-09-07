@@ -85,6 +85,24 @@ interface TMDBResponse {
   providers?: any;
 }
 
+interface RecommendationItem {
+  id: string;
+  title: string;
+  image_url: string | null;
+  backdrop_url: string | null;
+  description: string;
+  longdescription: string;
+  year: number | null;
+  rating: number | null;
+  rating_count: number;
+  genre: string;
+  type: string;
+  tmdb_id?: number;
+  recommendation_reason?: string;
+  recommendation_score?: number;
+  source: 'ai' | 'tmdb-similar' | 'tmdb-discover';
+}
+
 const PLATFORM_DISPLAY: Record<
   string,
   { icon: string; color: string }
@@ -123,7 +141,7 @@ const aiReviewCache = new Map<
   }
 >();
 
-const aiRecsCache = new Map<string, any[]>();
+const aiRecsCache = new Map<string, RecommendationItem[]>();
 const streamingCache = new Map<string, any[]>();
 
 // Wraps a fetch with a timeout so a hung request doesn't spin forever
@@ -158,6 +176,7 @@ export default function MovieDetailsModal({
   onAddToWatchlist,
   onRemoveFromWatchlist,
   isInWatchlist,
+  userId,
 }: MovieDetailsModalProps) {
   const [loading, setLoading] = useState(false);
 
@@ -177,9 +196,9 @@ export default function MovieDetailsModal({
   const [aiRating, setAiRating] = useState<number | null>(null);
   const [loadingAI, setLoadingAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [aiReviewVisible, setAiReviewVisible] = useState(true); // ✅ NEW
+  const [aiReviewVisible, setAiReviewVisible] = useState(true);
 
-  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
+  const [aiRecommendations, setAiRecommendations] = useState<RecommendationItem[]>([]);
   const [loadingRecs, setLoadingRecs] = useState(false);
 
   const [activeTab, setActiveTab] = useState<
@@ -432,7 +451,6 @@ export default function MovieDetailsModal({
 
         if (!response.ok) {
           console.warn('AI review failed with status:', response.status);
-          // ✅ Hide AI review on error
           setAiReviewVisible(false);
           setLoadingAI(false);
           return;
@@ -440,7 +458,6 @@ export default function MovieDetailsModal({
 
         const data = await response.json();
 
-        // If fallback or error, hide the review
         if (data.fallback || !data.review) {
           setAiReviewVisible(false);
           setLoadingAI(false);
@@ -458,7 +475,6 @@ export default function MovieDetailsModal({
         
       } catch (error: any) {
         console.warn('AI review error:', error.message);
-        // ✅ Hide AI review on error
         setAiReviewVisible(false);
       } finally {
         if (!isStale(movieId)) {
@@ -471,7 +487,7 @@ export default function MovieDetailsModal({
 
   /*
    * ============================================================
-   * AI RECOMMENDATIONS - Use TMDB similar as fallback
+   * AI RECOMMENDATIONS - Use personalized API first, then TMDB similar, then genre discovery
    * ============================================================
    */
   const fetchAIRecommendations = useCallback(
@@ -487,101 +503,164 @@ export default function MovieDetailsModal({
       setLoadingRecs(true);
 
       try {
-        // Try AI first
-        const response = await fetchWithTimeout(
-          '/api/ai/similar',
+        let recommendations: RecommendationItem[] = [];
+
+        // 1. Try personalized recommendations first (like AIRecommendations.tsx)
+        const aiResponse = await fetchWithTimeout(
+          '/api/recommendations',
           {
-            method: 'POST',
             headers: {
-              'Content-Type': 'application/json',
+              'x-user-id': userId,
             },
-            body: JSON.stringify({
-              title: content.title,
-              genre: content.genre,
-              year: content.year,
-            }),
           },
           20000
         );
 
         if (isStale(movieId)) return;
 
-        if (response.ok) {
-          const data = await response.json();
-          const recs = data.recommendations || [];
-          if (recs.length > 0) {
-            aiRecsCache.set(movieId, recs);
-            setAiRecommendations(recs);
-            setLoadingRecs(false);
-            return;
+        if (aiResponse.ok) {
+          const aiData = await aiResponse.json();
+
+          if (aiData.success && Array.isArray(aiData.recommendations)) {
+            recommendations = aiData.recommendations
+              .filter((rec: any) => {
+                const recommendedItem = rec.content;
+                return (
+                  recommendedItem &&
+                  recommendedItem.id !== content.id
+                );
+              })
+              .slice(0, 6)
+              .map((rec: any) => ({
+                ...rec.content,
+                recommendation_reason: rec.reason,
+                recommendation_score: rec.score,
+                source: 'ai' as const,
+              }));
           }
         }
 
-        // ✅ Fallback: Use TMDB similar movies endpoint
-        console.log('⚠️ AI recommendations failed, using TMDB similar fallback...');
-        const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f';
-        const similarRes = await fetch(
-          `https://api.themoviedb.org/3/movie/${movieId}/similar?api_key=${TMDB_API_KEY}&language=en-US&page=1`
-        );
+        // 2. If personalized recommendations fail, use TMDB similar movies
+        if (recommendations.length === 0) {
+          console.log('⚠️ AI recommendations failed, using TMDB similar fallback...');
 
-        if (similarRes.ok) {
-          const similarData = await similarRes.json();
-          const fallbackRecs = (similarData.results || []).slice(0, 6).map((movie: any) => ({
-            id: movie.id,
-            title: movie.title,
-            poster_path: movie.poster_path,
-            release_date: movie.release_date,
-            vote_average: movie.vote_average,
-            overview: movie.overview,
-          }));
-          
-          if (fallbackRecs.length > 0) {
-            aiRecsCache.set(movieId, fallbackRecs);
-            setAiRecommendations(fallbackRecs);
+          const tmdbResponse = await fetchWithTimeout(
+            `/api/tmdb/similar/${encodeURIComponent(movieId)}`,
+            {},
+            15000
+          );
+
+          if (tmdbResponse.ok) {
+            const tmdbData = await tmdbResponse.json();
+
+            recommendations = (tmdbData.results || [])
+              .filter((movie: any) => String(movie.id) !== String(movieId))
+              .slice(0, 6)
+              .map((movie: any) => ({
+                id: String(movie.id),
+                title: movie.title,
+                image_url: movie.poster_path
+                  ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
+                  : null,
+                backdrop_url: movie.backdrop_path
+                  ? `https://image.tmdb.org/t/p/w1280${movie.backdrop_path}`
+                  : null,
+                description: movie.overview || '',
+                longdescription: movie.overview || '',
+                year: movie.release_date
+                  ? Number(movie.release_date.slice(0, 4))
+                  : null,
+                rating: movie.vote_average || null,
+                rating_count: movie.vote_count || 0,
+                genre: '',
+                type: 'movie',
+                tmdb_id: movie.id,
+                recommendation_reason: 'Similar to this title',
+                source: 'tmdb-similar' as const,
+              }));
           }
         }
 
+        // 3. Final fallback: genre-based discovery
+        if (recommendations.length === 0) {
+          const genre = content.genre
+            ?.split(',')
+            .map((value) => value.trim())
+            .filter(Boolean)[0];
+
+          const genreMap: Record<string, number> = {
+            Action: 28,
+            Adventure: 12,
+            Animation: 16,
+            Comedy: 35,
+            Crime: 80,
+            Drama: 18,
+            Family: 10751,
+            Fantasy: 14,
+            Horror: 27,
+            Romance: 10749,
+            'Science Fiction': 878,
+            'Sci-Fi': 878,
+            Thriller: 53,
+          };
+
+          const genreId = genre ? genreMap[genre] : undefined;
+
+          const query = genreId
+            ? `/api/tmdb/discover?genreId=${genreId}`
+            : '/api/tmdb/popular';
+
+          const fallbackResponse = await fetchWithTimeout(
+            query,
+            {},
+            15000
+          );
+
+          if (fallbackResponse.ok) {
+            const fallbackData = await fallbackResponse.json();
+
+            recommendations = (fallbackData.results || [])
+              .filter((movie: any) => String(movie.id) !== String(movieId))
+              .slice(0, 6)
+              .map((movie: any) => ({
+                id: String(movie.id),
+                title: movie.title,
+                image_url: movie.poster_path
+                  ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
+                  : null,
+                backdrop_url: movie.backdrop_path
+                  ? `https://image.tmdb.org/t/p/w1280${movie.backdrop_path}`
+                  : null,
+                description: movie.overview || '',
+                longdescription: movie.overview || '',
+                year: movie.release_date
+                  ? Number(movie.release_date.slice(0, 4))
+                  : null,
+                rating: movie.vote_average || null,
+                rating_count: movie.vote_count || 0,
+                genre: genre || '',
+                type: 'movie',
+                tmdb_id: movie.id,
+                recommendation_reason: genre
+                  ? `Popular ${genre} title`
+                  : 'Popular title',
+                source: 'tmdb-discover' as const,
+              }));
+          }
+        }
+
+        aiRecsCache.set(movieId, recommendations);
+        setAiRecommendations(recommendations);
       } catch (error) {
         console.error('Error fetching recommendations:', error);
-        
-        // ✅ Final fallback: Use genre-based search
-        try {
-          const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || 'e40a2dd7da8c15d302e6790211dd958f';
-          const genre = content.genre?.split(',')[0]?.trim() || '';
-          const genreMap: Record<string, number> = {
-            'Action': 28, 'Adventure': 12, 'Comedy': 35, 'Drama': 18,
-            'Horror': 27, 'Romance': 10749, 'Thriller': 53, 'Sci-Fi': 878,
-            'Fantasy': 14, 'Crime': 80, 'Animation': 16, 'Family': 10751,
-          };
-          const genreId = genreMap[genre] || 28;
-          
-          const genreRes = await fetch(
-            `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=en-US&sort_by=popularity.desc&with_genres=${genreId}&page=1`
-          );
-          
-          if (genreRes.ok) {
-            const genreData = await genreRes.json();
-            const fallbackRecs = (genreData.results || []).slice(0, 6).map((movie: any) => ({
-              id: movie.id,
-              title: movie.title,
-              poster_path: movie.poster_path,
-              release_date: movie.release_date,
-              vote_average: movie.vote_average,
-              overview: movie.overview,
-            }));
-            aiRecsCache.set(movieId, fallbackRecs);
-            setAiRecommendations(fallbackRecs);
-          }
-        } catch (fallbackError) {
-          console.error('Fallback recommendations also failed:', fallbackError);
-        }
+        setAiRecommendations([]);
       } finally {
         if (!isStale(movieId)) {
           setLoadingRecs(false);
         }
       }
     },
-    [content, isStale]
+    [content, userId, isStale]
   );
 
   /*
@@ -664,7 +743,7 @@ export default function MovieDetailsModal({
     setAiReview(null);
     setAiRating(null);
     setAiError(null);
-    setAiReviewVisible(true); // ✅ Reset visibility
+    setAiReviewVisible(true);
 
     setAiRecommendations([]);
 
@@ -839,7 +918,6 @@ export default function MovieDetailsModal({
                     </span>
                   </div>
 
-                  {/* ✅ Only show AI rating if visible and available */}
                   {aiReviewVisible && aiRating && (
                     <div className="flex items-center gap-1">
                       <Sparkles className="w-4 h-4 text-teal-400" />
@@ -882,7 +960,6 @@ export default function MovieDetailsModal({
           {/* DETAILS */}
           {activeTab === 'details' && (
             <div className="space-y-4">
-              {/* ✅ AI Review - Only show if visible and not loading */}
               {aiReviewVisible && (
                 <div className="p-4 bg-gradient-to-r from-teal-600/20 to-blue-600/20 rounded-xl border border-teal-500/20">
                   <div className="flex items-center justify-between mb-2">
@@ -1044,7 +1121,7 @@ export default function MovieDetailsModal({
                 </button>
               </div>
 
-              {/* ✅ AI RECOMMENDATIONS - Always shows something */}
+              {/* AI RECOMMENDATIONS - Always shows something */}
               <div className="mt-6 pt-4 border-t border-gray-800">
                 <div className="flex items-center gap-2 mb-3">
                   <Sparkles className="w-5 h-5 text-teal-500" />
@@ -1052,7 +1129,7 @@ export default function MovieDetailsModal({
                     You might also like
                   </h3>
                   <span className="text-xs bg-teal-500/20 text-teal-400 px-2 py-0.5 rounded-full">
-                    {loadingRecs ? 'Loading...' : 'AI Powered'}
+                    {loadingRecs ? 'Loading...' : aiRecommendations.some(r => r.source === 'ai') ? 'AI Powered' : 'TMDB'}
                   </span>
                   {loadingRecs && (
                     <Loader2 className="w-4 h-4 animate-spin text-teal-500 ml-2" />
@@ -1065,21 +1142,18 @@ export default function MovieDetailsModal({
                   </div>
                 ) : aiRecommendations.length > 0 ? (
                   <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-                    {aiRecommendations.slice(0, 6).map((movie: any) => (
-                      <div
-                        key={movie.id}
-                        className="group cursor-pointer"
+                    {aiRecommendations.slice(0, 6).map((movie) => (
+                      <button
+                        key={`${movie.source}-${movie.id}`}
+                        type="button"
+                        className="group cursor-pointer text-left"
                         onClick={() => {
                           onClose();
                           window.location.href = `/?details=${movie.id}`;
                         }}
                       >
                         <img
-                          src={
-                            movie.poster_path
-                              ? `https://image.tmdb.org/t/p/w185${movie.poster_path}`
-                              : ''
-                          }
+                          src={movie.image_url || ''}
                           alt={movie.title}
                           className="w-full aspect-[2/3] object-cover rounded-lg group-hover:scale-105 transition"
                           onError={(e) => {
@@ -1092,17 +1166,27 @@ export default function MovieDetailsModal({
                         <p className="text-xs text-gray-400 mt-1 truncate group-hover:text-white transition">
                           {movie.title}
                         </p>
-                        {movie.release_date && (
+                        {movie.year && (
                           <p className="text-[10px] text-gray-500">
-                            {new Date(movie.release_date).getFullYear()}
+                            {movie.year}
                           </p>
                         )}
-                        {movie.vote_average && (
+                        {movie.rating != null && (
                           <p className="text-[10px] text-yellow-400">
-                            ⭐ {movie.vote_average.toFixed(1)}
+                            ⭐ {Number(movie.rating).toFixed(1)}
                           </p>
                         )}
-                      </div>
+                        {movie.source === 'ai' && (
+                          <p className="text-[10px] text-teal-400 mt-1">
+                            For you
+                          </p>
+                        )}
+                        {movie.source !== 'ai' && (
+                          <p className="text-[10px] text-gray-500 mt-1">
+                            Similar title
+                          </p>
+                        )}
+                      </button>
                     ))}
                   </div>
                 ) : (
