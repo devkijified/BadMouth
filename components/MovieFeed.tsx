@@ -181,12 +181,11 @@ export default function MovieFeed({
       let filteredMovies = formattedMovies;
       if (!isPublicUser) filteredMovies = formattedMovies.filter((m: Movie) => !watchlistIds.has(m.id));
 
-      // ✅ Public users: limit to 40 movies, no infinite scroll
       if (isPublicUser) {
         const currentTotal = append ? movies.length : 0;
         const remainingSlots = MAX_PUBLIC_MOVIES - currentTotal;
         filteredMovies = filteredMovies.slice(0, remainingSlots);
-        setHasMore(false); // Always stop at 40 for public
+        setHasMore(false);
       } else {
         setHasMore(data.total_pages > pageNum && filteredMovies.length > 0);
       }
@@ -232,9 +231,8 @@ export default function MovieFeed({
     fetchMovies(1, false);
   }, [selectedGenre, selectedMood, selectedYear, selectedPlatform, activePreset, experienceFilter, fetchMovies]);
 
-  // ✅ Infinite scroll ONLY for logged-in users
   useEffect(() => {
-    if (isPublicUser) return; // Skip for public users
+    if (isPublicUser) return;
 
     if (observerRef.current) {
       observerRef.current.disconnect();
@@ -456,7 +454,7 @@ export default function MovieFeed({
                 <button onClick={(e) => handleAddToWatchlist(movie, e)} className="absolute bottom-2 right-2 p-1.5 bg-black/70 rounded-full hover:bg-teal-600 transition">
                   <Heart size={14} className={isLiked ? 'fill-teal-500 text-teal-500' : 'text-gray-400'} />
                 </button>
-                {movie.genres?.length > 0 && (
+                {movie.genres && movie.genres.length > 0 && (
                   <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">
                     {movie.genres.slice(0, 2).map(g => (
                       <span key={g} className="text-[8px] px-1.5 py-0.5 bg-black/70 rounded text-white/80">{g}</span>
